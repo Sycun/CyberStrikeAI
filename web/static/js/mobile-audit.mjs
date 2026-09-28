@@ -188,13 +188,31 @@ const DETECT = `(function(){
   var de=document.documentElement;
   var viewport={ innerH:vh, docClientH:de.clientHeight, bodyClientH:document.body.clientHeight, docScrollH:de.scrollHeight, bodyOverflowY:getComputedStyle(document.body).overflowY };
 
+  /* 9 : collapsed scroller — an inner overflow:auto region squeezed to a sliver
+     by a height-locked flex parent, while that parent itself cannot scroll.
+     Reads to the user as "this page will not scroll at all". */
+  var slivers=[];
+  all.forEach(function(el){
+    var c=getComputedStyle(el);
+    if(!/auto|scroll/.test(c.overflowY)) return;
+    var r=el.getBoundingClientRect();
+    if(r.height>=140 || r.height<2) return;
+    if(el.scrollHeight < Math.max(300, r.height*2)) return;
+    var p=scrollAncestor(el,'y');
+    // if a parent can scroll, the content is still reachable; only flag when it cannot
+    var outerLocked = !p;
+    slivers.push({ el:nm(el), p:path(el), boxH:Math.round(r.height), contentH:el.scrollHeight,
+                   hidden: el.scrollHeight - Math.round(r.height), outerLocked: outerLocked,
+                   parentOvfY: p?getComputedStyle(p).overflowY:'none', flex:c.flex, minH:c.minHeight });
+  });
+
   function top(arr,n){ var m=new Map(); arr.forEach(function(o){ var k=o.el||o.a; if(!m.has(k)) m.set(k,o) }); return [...m.values()].slice(0,n) }
 
   return {
     vw:vw, vh:vh,
     counts:{ overflow:overflow.length, unreachable:unreachable.length, squeezed:squeezed.length,
              scrollers:scrollers.length, noTouch:noTouch.length, rootBad:rootBad.length,
-             truncated:truncated.length, tiny:tiny.length, overlaps:overlaps.length },
+             truncated:truncated.length, tiny:tiny.length, overlaps:overlaps.length, slivers:slivers.length },
     overflow:top(overflow.sort(function(a,b){return b.over-a.over}),6),
     unreachable:top(unreachable.sort(function(a,b){return b.over-a.over}),6),
     squeezed:top(squeezed.sort(function(a,b){return a.minW-b.minW}),6),
@@ -202,6 +220,7 @@ const DETECT = `(function(){
     truncated:top(truncated.sort(function(a,b){return b.lost-a.lost}),8),
     tiny:top(tiny.sort(function(a,b){return (a.w*a.h)-(b.w*b.h)}),6),
     overlaps:top(overlaps.sort(function(a,b){return b.pct-a.pct}),6),
+    slivers:top(slivers.sort(function(a,b){return b.hidden-a.hidden}),6),
     rootBad:rootBad, viewport:viewport
   };
 })()`;
@@ -218,7 +237,7 @@ await ev(`(()=>{const u=document.getElementById('login-username'),p=document.get
 await sleep(7000);
 
 const report = {};
-let grand = { overflow: 0, unreachable: 0, squeezed: 0, noTouch: 0, rootBad: 0, truncated: 0, tiny: 0, overlaps: 0 };
+let grand = { overflow: 0, unreachable: 0, squeezed: 0, noTouch: 0, rootBad: 0, truncated: 0, tiny: 0, overlaps: 0, slivers: 0 };
 const W1 = 22;
 for (const pg of pages) {
   const label = await openTarget(pg);
@@ -228,9 +247,9 @@ for (const pg of pages) {
   const c = r.counts;
   grand.overflow += c.overflow; grand.unreachable += c.unreachable; grand.squeezed += c.squeezed;
   grand.noTouch += c.noTouch; grand.rootBad += c.rootBad; grand.truncated += c.truncated;
-  grand.tiny += c.tiny; grand.overlaps += c.overlaps;
-  const bad = c.overflow + c.unreachable + c.squeezed + c.noTouch + c.rootBad + c.truncated + c.overlaps;
-  console.log(`${label.padEnd(W1)} ovf=${String(c.overflow).padStart(2)} unreach=${String(c.unreachable).padStart(2)} squeeze=${String(c.squeezed).padStart(2)} noTouch=${String(c.noTouch).padStart(2)} trunc=${String(c.truncated).padStart(2)} overlap=${String(c.overlaps).padStart(2)} tap<44=${String(c.tiny).padStart(3)} ${bad ? '' : '  OK'}`);
+  grand.tiny += c.tiny; grand.overlaps += c.overlaps; grand.slivers += (c.slivers||0);
+  const bad = c.overflow + c.unreachable + c.noTouch + c.rootBad + c.truncated + c.overlaps + (c.slivers||0);
+  console.log(`${label.padEnd(W1)} ovf=${String(c.overflow).padStart(2)} unreach=${String(c.unreachable).padStart(2)} sliver=${String(c.slivers).padStart(2)} noTouch=${String(c.noTouch).padStart(2)} trunc=${String(c.truncated).padStart(2)} overlap=${String(c.overlaps).padStart(2)} tap<44=${String(c.tiny).padStart(3)} ${bad ? '' : '  OK'}`);
   const shot = await send('Page.captureScreenshot', { format: 'png' }, sessionId);
   fs.writeFileSync(`${OUT}/${label.replace(/[^a-z0-9-]/gi, '_')}.png`, Buffer.from(shot.data, 'base64'));
 }
@@ -244,12 +263,13 @@ console.log(`2 squeezed panes     ${grand.squeezed}`);
 console.log(`4 scrollers w/o touch ${grand.noTouch}   rootOverscrollBad ${grand.rootBad}`);
 console.log(`5 truncated text     ${grand.truncated}`);
 console.log(`7 overlapping boxes  ${grand.overlaps}`);
+console.log(`9 collapsed scroller ${grand.slivers}   (page cannot scroll at all)`);
 console.log(`6 small tap targets  ${grand.tiny}`);
 console.log(`report -> ${OUT}/audit.json`);
 
 // dump the worst instances of each class for triage
 for (const [page, r] of Object.entries(report)) {
-  for (const k of ['unreachable', 'truncated', 'overlaps', 'squeezed', 'noTouch', 'overflow']) {
+  for (const k of ['slivers', 'unreachable', 'truncated', 'overlaps', 'squeezed', 'noTouch', 'overflow']) {
     if (!r[k]?.length) continue;
     console.log(`\n--- ${k} @ ${page}`);
     r[k].slice(0, 4).forEach(o => console.log('   ' + JSON.stringify(o).slice(0, 220)));
