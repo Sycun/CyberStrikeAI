@@ -70,6 +70,19 @@
         padding-right: var(--cs-sa-right);
     }
 
+    /* --- on-screen keyboard ---
+       `dvh` does not shrink for the iOS keyboard, so the shell above stays full
+       height while only the strip above the keyboard is visible: the rest paints
+       as a blank band, and Safari often leaves the offset stuck after the keyboard
+       closes. mobile-nav.js measures visualViewport.height and, while a keyboard
+       is up, adds .cs-kb and sets --cs-kb-h to that concrete px value. The class
+       is opt-in so browsers without dvh keep the two-declaration fallback above. */
+    html.cs-kb,
+    html.cs-kb body,
+    html.cs-kb .container {
+        height: var(--cs-kb-h);
+    }
+
     /* --- header: two rows — brand row, then an icon action strip --- */
     header {
         padding: 0;

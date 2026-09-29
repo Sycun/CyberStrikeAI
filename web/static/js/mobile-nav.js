@@ -170,6 +170,30 @@
         }
     }
 
+    /* ---------------- on-screen keyboard ---------------- */
+
+    // iOS keeps 100dvh at full height when the keyboard opens, so the shell
+    // overhangs the visible area: a blank band appears below the focused field
+    // and the offset often survives the keyboard closing. Size the shell to the
+    // visual viewport for as long as the keyboard is up.
+    function clearKeyboardViewport() {
+        var root = document.documentElement;
+        root.classList.remove('cs-kb');
+        root.style.removeProperty('--cs-kb-h');
+    }
+
+    function syncKeyboardViewport() {
+        var vv = window.visualViewport;
+        if (!vv) return;
+        if (!isMobile() || window.innerHeight - vv.height <= 80) {
+            clearKeyboardViewport();
+            return;
+        }
+        var root = document.documentElement;
+        root.style.setProperty('--cs-kb-h', Math.round(vv.height) + 'px');
+        root.classList.add('cs-kb');
+    }
+
     /* ---------------- global wiring ---------------- */
 
     function onRouteChange() {
@@ -217,7 +241,19 @@
         document.addEventListener('click', function (e) {
             if (e.target && e.target.closest && e.target.closest('header')) syncPopoverAnchor();
         }, true);
-        window.addEventListener('resize', syncPopoverAnchor);
+        window.addEventListener('resize', function () { syncPopoverAnchor(); syncKeyboardViewport(); });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', function () {
+                syncKeyboardViewport();
+                syncPopoverAnchor();
+            });
+            window.visualViewport.addEventListener('scroll', syncKeyboardViewport);
+        }
+        document.addEventListener('focusout', function (e) {
+            if (e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) {
+                window.setTimeout(syncKeyboardViewport, 120);
+            }
+        });
 
         document.addEventListener('keydown', function (e) {
             if (e.key !== 'Escape') return;
