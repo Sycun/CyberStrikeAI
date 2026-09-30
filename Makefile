@@ -121,6 +121,8 @@ wiring-check:
 	$(GO) test -count=1 -timeout 200s ./internal/handler/ -run 'TestToolLayer|TestRebuildToolLayer|TestSaveConfigDoesNot|TestEveryKindReports'
 	## 启动扫描必须覆盖每个"运行路径读表"的 kind：漏一行，装任何一个包就会把整批内置配方换掉
 	$(GO) test -count=1 -run 'TestBuiltInCapabilityScanCoversEveryServedKind' ./internal/app/
+	## 能力包的两种视图必须同源：包自带的单元副本要与表里的状态一致（真机点验抓到的分叉）
+	$(GO) test -count=1 -run 'TestBundleViewsFollowTheUnitSwitch' ./internal/plugin/
 
 ## 前端契约测试：169 条，全部按源码形状断言。它们此前没有 runner，所以三次改名/搬家把断言
 ## 锚点挪走之后没人发现（实测：两条在上游提交 470eb5e 上就已经是红的，一条是本轮把裸 SQL

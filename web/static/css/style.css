@@ -46655,3 +46655,135 @@ html[data-theme="dark"] { --tool-blocked-color: #f4bc62; }
     font-size: .75rem;
     line-height: 1.6;
 }
+
+/* ---------------------------------------------------------------------------
+   能力包控制台（plugins）：装/摘/启停。单元状态用色块标出"已生效/未生效"，
+   未生效的具体原因放在 title 上，因为把整句原因塞进表格会让行高不可控。
+   --------------------------------------------------------------------------- */
+.plugin-console {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.plugin-intro {
+    color: var(--text-secondary);
+    margin: 0 0 12px;
+}
+
+.plugin-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+.plugin-summary-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.plugin-section-title {
+    font-size: 15px;
+    margin: 0 0 10px;
+}
+
+.plugin-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.plugin-card-broken {
+    border-color: var(--warning-color, #d9822b);
+}
+
+.plugin-card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.plugin-card-head h4 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.plugin-card-meta {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.plugin-card-desc,
+.plugin-card-units {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.plugin-card-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.plugin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.plugin-table th,
+.plugin-table td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.plugin-kind {
+    color: var(--text-secondary);
+}
+
+.plugin-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+}
+
+.plugin-chip-served {
+    background: rgba(37, 168, 112, 0.14);
+    border-color: rgba(37, 168, 112, 0.4);
+    color: #1f8a5b;
+}
+
+.plugin-chip-unserved {
+    background: rgba(217, 130, 43, 0.14);
+    border-color: rgba(217, 130, 43, 0.4);
+    color: #b06a17;
+    cursor: help;
+}
+
+.plugin-error {
+    color: var(--danger-color, #c0392b);
+    font-size: 13px;
+}
+
+.plugin-drift-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+}

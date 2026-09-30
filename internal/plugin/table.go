@@ -88,18 +88,42 @@ func (t *Table) ByName(kind Kind, name string) (Unit, bool) {
 }
 
 func (t *Table) Bundle(id string) (*Bundle, bool) {
-	b, ok := t.cur.Load().bundles[id]
-	return b, ok
+	snap := t.cur.Load()
+	b, ok := snap.bundles[id]
+	if !ok {
+		return nil, false
+	}
+	return resolveBundle(snap, b), true
 }
 
 func (t *Table) Bundles() []*Bundle {
 	snap := t.cur.Load()
 	out := make([]*Bundle, 0, len(snap.bundles))
 	for _, b := range snap.bundles {
-		out = append(out, b)
+		out = append(out, resolveBundle(snap, b))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// resolveBundle re-reads a bundle's units from the unit map, which is the only authority for
+// their state.
+//
+// A bundle carries its own copy of its units from install time, so without this step switching a
+// unit off - which updates the map - would keep reporting the stale copy through every bundle
+// view, and the console would show a unit as enabled while the run path had already stopped
+// serving it. The two views of the same object must not be able to disagree.
+func resolveBundle(snap *snapshot, b *Bundle) *Bundle {
+	out := *b
+	out.Units = make([]Unit, 0, len(b.Units))
+	for _, u := range b.Units {
+		if current, ok := snap.units[u.ID]; ok {
+			out.Units = append(out.Units, current)
+			continue
+		}
+		out.Units = append(out.Units, u)
+	}
+	return &out
 }
 
 // ErrConflict says a unit identity is already held by somebody else. It is a distinct

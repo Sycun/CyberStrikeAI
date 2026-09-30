@@ -11,6 +11,9 @@ func (deps routeDeps) registerPluginRoutes(protected *gin.RouterGroup) {
 	pluginHandler := deps.pluginHandler
 
 	protected.GET("/plugins", pluginHandler.GetState)
+	// What can be installed, read from the bundles root: without it the console could only show
+	// what is already in, and "one click to extend" would require typing a directory name.
+	protected.GET("/plugins/available", pluginHandler.ListAvailable)
 	protected.POST("/plugins/install", pluginHandler.Install)
 	protected.DELETE("/plugins/bundles/:id", pluginHandler.Uninstall)
 	// kind and name are separate segments because a unit identity contains a slash

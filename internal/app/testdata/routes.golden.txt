@@ -105,6 +105,7 @@ GET /api/multi-agent/markdown-agents/{filename}
 GET /api/notifications/summary
 GET /api/openapi/spec
 GET /api/plugins
+GET /api/plugins/available
 GET /api/process-details/{id}
 GET /api/projects
 GET /api/projects/dashboard-summary

@@ -426,6 +426,16 @@
                     <div class="nav-section-label" role="presentation">
                         <span data-i18n="navGroups.administration">平台管理</span>
                     </div>
+                    <div class="nav-item" data-page="plugins-management">
+                        <div class="nav-item-content" data-title="能力包" onclick="switchPage('plugins-management')" data-i18n="nav.plugins" data-i18n-attr="data-title" data-i18n-skip-text="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 8v8a2 2 0 0 1-1 1.73l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.73l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"></path>
+                                <path d="m3.3 7 8.7 5 8.7-5"></path>
+                                <path d="M12 22V12"></path>
+                            </svg>
+                            <span data-i18n="nav.plugins">能力包</span>
+                        </div>
+                    </div>
                     <div class="nav-item" data-page="platform-rbac">
                         <div class="nav-item-content" data-title="平台权限" onclick="switchPage('platform-rbac')" data-i18n="nav.platformRbac" data-i18n-attr="data-title" data-i18n-skip-text="true">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3388,6 +3398,18 @@
                 </div>
 
                 <!-- 角色管理页面 -->
+                <div id="page-plugins-management" class="page">
+                    <div class="page-header">
+                        <h2 data-i18n="plugins.title">能力包</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="loadPluginConsole()" data-i18n="common.refresh">刷新</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <p class="plugin-intro" data-i18n="plugins.intro">装一个角色包即刻生效，摘掉即刻回到原状：这里显示的与运行路径读的是同一张能力表。</p>
+                        <div id="plugin-console" class="plugin-console"></div>
+                    </div>
+                </div>
                 <div id="page-roles-management" class="page">
                     <div class="page-header">
                         <h2 data-i18n="roles.title">角色管理</h2>
@@ -6937,6 +6959,7 @@
     <script src="/static/js/tasks.js"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>
+    <script src="/static/js/plugins.js"></script>
     <script src="/static/js/roles.js"></script>
     <script src="/static/js/rbac.js"></script>
     <script src="/static/js/c2.js"></script>

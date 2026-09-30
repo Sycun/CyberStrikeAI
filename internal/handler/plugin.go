@@ -420,3 +420,66 @@ func (h *PluginHandler) replyMutationError(c *gin.Context, op, subject string, e
 	h.logger.Error("能力表变更失败", zap.String("op", op), zap.String("subject", subject), zap.Error(err))
 	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }
+
+// availableBundle is one directory under the bundles root, whether or not it is installed.
+type availableBundle struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Version     string     `json:"version"`
+	Description string     `json:"description,omitempty"`
+	Installed   bool       `json:"installed"`
+	Units       []unitView `json:"units"`
+	// Error is a manifest that could not be read or resolved. It is per pack: one half-written
+	// bundle.yaml must not turn the list of "what can I install" into a 500.
+	Error string `json:"error,omitempty"`
+}
+
+// ListAvailable answers GET /api/plugins/available - the catalogue the console offers for one
+// click. It reads only directory names and their manifests under the configured bundles root, and
+// never returns a path that escapes it.
+func (h *PluginHandler) ListAvailable(c *gin.Context) {
+	if h == nil || h.table == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "capability table unavailable"})
+		return
+	}
+	root := h.bundles
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			c.JSON(http.StatusOK, gin.H{"bundlesRoot": root, "bundles": []availableBundle{}})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]availableBundle, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		if _, statErr := os.Stat(filepath.Join(dir, plugin.ManifestFileName)); statErr != nil {
+			continue
+		}
+		item := availableBundle{ID: entry.Name()}
+		bundle, loadErr := loadBundle(dir)
+		if loadErr != nil {
+			item.Error = loadErr.Error()
+			out = append(out, item)
+			continue
+		}
+		item.Name = bundle.Name
+		item.Version = bundle.Version
+		item.Description = bundle.Description
+		if _, installed := h.table.Bundle(bundle.ID); installed {
+			item.Installed = true
+		}
+		item.Units = make([]unitView, 0, len(bundle.Units))
+		for _, u := range bundle.Units {
+			item.Units = append(item.Units, toUnitView(u))
+		}
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	c.JSON(http.StatusOK, gin.H{"bundlesRoot": root, "bundles": out})
+}

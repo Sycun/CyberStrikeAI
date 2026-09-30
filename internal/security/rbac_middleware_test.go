@@ -141,6 +141,7 @@ func TestPluginInstallIsItsOwnPermissionFromUnitToggling(t *testing.T) {
 		method, path, want string
 	}{
 		{http.MethodGet, "/api/plugins", "plugins:read"},
+		{http.MethodGet, "/api/plugins/available", "plugins:read"},
 		{http.MethodPost, "/api/plugins/install", "plugins:install"},
 		{http.MethodDelete, "/api/plugins/bundles/pack-a", "plugins:install"},
 		{http.MethodPost, "/api/plugins/units/role/CTF/enabled", "plugins:write"},

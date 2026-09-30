@@ -101,6 +101,7 @@ agent 走 `agents.LoadMarkdownAgentPaths`、配方走 `RecipeSpecs`（缺能力�
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | GET | `/api/plugins` | 已装包 + 独立单元 + `generation` + `drift` + 每单元的 `served` |
+| GET | `/api/plugins/available` | 能力包目录里**可安装**的包（含每个包声明的单元与是否已装） |
 | POST | `/api/plugins/install` | `{"bundle":"<包名>"}` → 装入并立刻生效 |
 | DELETE | `/api/plugins/bundles/{id}` | 卸载（只摘表，不删文件） |
 | POST | `/api/plugins/units/{kind}/{name}/enabled` | 启停单个单元 |
@@ -108,6 +109,15 @@ agent 走 `agents.LoadMarkdownAgentPaths`、配方走 `RecipeSpecs`（缺能力�
 
 `identity` 里带斜杠（`role/CTF`），所以路由拆成 `:kind/:name` 两段 —— 单段会被 gin 在匹配前
 就解掉转义而命中不到。
+
+## 前端页面
+
+「平台管理 → 能力包」（`web/static/js/plugins.js`）就是这张表的界面：可安装的包一排「安装」按钮，
+已装的包列出每个单元并带 `已生效 / 未生效` 标记（未生效的原因放在悬浮提示里），
+启停与卸载都在同一页完成。**这一页是点出来的，不是推出来的**：真机点验抓到过两个单测抓不到的缺陷 ——
+调一个页面上并不存在的 toast 助手（安装其实成功了，界面却写「安装失败」），
+以及启停按钮把三个参数当成一个 JSON 数组发出去（服务端收到 `/units/tool,semgrep,false/undefined/enabled`）。
+所以 `plugins-ui.test.cjs` 现在**执行**渲染出来的 `onclick` 文本，而不是只解析它。
 
 两点不装作已完成：
 

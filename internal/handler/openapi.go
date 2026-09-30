@@ -3899,6 +3899,25 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					},
 				},
 			},
+			"/api/plugins/available": map[string]interface{}{
+				"get": map[string]interface{}{
+					"tags":        []string{"能力插件"},
+					"summary":     "列出能力包目录里可安装的能力包",
+					"description": "只读取能力包根目录下的目录名与 bundle.yaml 清单，返回每个包的 id/名称/版本/所含能力单元及是否已安装；清单损坏以该条目的 error 返回而不是让整个列表失败",
+					"operationId": "listAvailablePlugins",
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "获取成功",
+						},
+						"503": map[string]interface{}{
+							"description": "能力表不可用",
+						},
+						"401": map[string]interface{}{
+							"description": "未授权",
+						},
+					},
+				},
+			},
 			"/api/plugins/install": map[string]interface{}{
 				"post": map[string]interface{}{
 					"tags":        []string{"能力插件"},

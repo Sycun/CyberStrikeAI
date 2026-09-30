@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -73,6 +74,7 @@ func (e *pluginTestEnv) do(t *testing.T, method, path, body string) *httptest.Re
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.GET("/api/plugins", e.plugins.GetState)
+	r.GET("/api/plugins/available", e.plugins.ListAvailable)
 	r.POST("/api/plugins/install", e.plugins.Install)
 	r.DELETE("/api/plugins/bundles/:id", e.plugins.Uninstall)
 	r.POST("/api/plugins/units/:kind/:name/enabled", e.plugins.EnableUnit)
@@ -288,6 +290,29 @@ func TestPluginEnableSwitchIsServedWithoutMovingFiles(t *testing.T) {
 	if role.Enabled {
 		t.Fatalf("the run path still treats the disabled role as enabled")
 	}
+	// The console reads the same switch through the bundle view. A bundle keeps its own copy of
+	// its units, so if the view did not re-resolve them the row would stay "enabled" while the run
+	// path had already stopped serving it - the exact disagreement a real click produced.
+	rec = env.do(t, http.MethodGet, "/api/plugins", "")
+	found := false
+	for _, raw := range decodeState(t, rec)["bundles"].([]interface{}) {
+		b := raw.(map[string]interface{})
+		if b["id"] != "reporting-pack" {
+			continue
+		}
+		for _, rawU := range b["units"].([]interface{}) {
+			u := rawU.(map[string]interface{})
+			if u["id"] == "role/报告撰写" {
+				found = true
+				if u["enabled"] != false {
+					t.Fatalf("the bundle view still reports the switched-off unit as enabled: %v", u)
+				}
+			}
+		}
+	}
+	if !found {
+		t.Fatal("the installed bundle view lost the role unit entirely")
+	}
 	after, err := plugin.Digest(path)
 	if err != nil {
 		t.Fatal(err)
@@ -458,4 +483,66 @@ func TestEveryKindReportsItsActualServedState(t *testing.T) {
 			t.Errorf("kind %q: served=%v reason=%q, want not-served with a stated reason", kind, isServed, reason)
 		}
 	}
+}
+
+// The console needs "what can I install" before it can offer one click. Two properties are
+// pinned here: the listing must mark what is already in, and one half-written pack must not
+// take the whole list down with it.
+func TestPluginAvailableListsPacksAndSurvivesABrokenManifest(t *testing.T) {
+	env := newPluginTestEnv(t, true)
+	// A pack whose manifest points at a file that is not there: unusable, but it must show up as
+	// one broken row rather than a 500 on the catalogue.
+	writeTestFile(t, filepath.Join(env.bundles, "broken-pack", plugin.ManifestFileName),
+		"id: broken-pack\nversion: 1.0.0\nunits:\n  - kind: role\n    path: roles/缺失.yaml\n")
+	// A directory with no manifest is not a pack: skipped, not reported.
+	writeTestFile(t, filepath.Join(env.bundles, "notes", "README.md"), "just notes\n")
+
+	rec := env.do(t, http.MethodGet, "/api/plugins/available", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("available returned %d: %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	rows := map[string]map[string]interface{}{}
+	for _, raw := range state["bundles"].([]interface{}) {
+		b := raw.(map[string]interface{})
+		rows[b["id"].(string)] = b
+	}
+	if len(rows) != 2 {
+		t.Fatalf("catalogue lists %v, want reporting-pack and broken-pack only", catalogIDs(rows))
+	}
+	if _, ok := rows["notes"]; ok {
+		t.Errorf("a directory without a manifest is offered as an installable pack")
+	}
+	good := rows["reporting-pack"]
+	if good["installed"] != false {
+		t.Fatalf("an uninstalled pack reported installed: %v", good)
+	}
+	if len(good["units"].([]interface{})) != 4 {
+		t.Fatalf("reporting-pack lists %v units, want the 4 it declares", good["units"])
+	}
+	broken := rows["broken-pack"]
+	msg, _ := broken["error"].(string)
+	if !strings.Contains(msg, "缺失") {
+		t.Fatalf("the broken pack row carries no usable reason: %q", msg)
+	}
+
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	rec = env.do(t, http.MethodGet, "/api/plugins/available", "")
+	for _, raw := range decodeState(t, rec)["bundles"].([]interface{}) {
+		b := raw.(map[string]interface{})
+		if b["id"] == "reporting-pack" && b["installed"] != true {
+			t.Fatalf("after install the catalogue still reports the pack as available: %v", b)
+		}
+	}
+}
+
+func catalogIDs(m map[string]map[string]interface{}) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

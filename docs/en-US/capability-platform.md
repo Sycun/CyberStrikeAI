@@ -242,7 +242,14 @@ one identity scheme and one live table:
   a read is `currentRoles(h.config)` (`internal/handler/live_config.go`). If assembly forgets to
   install the live store, `make wiring-check` fails - and that omission **compiles cleanly with the
   enabled-path tests green**, which is why it has to be a gate.
-- The one-click surface exists: `GET /api/plugins` (per-unit `served`, plus `generation` and
+- The one-click surface **and its page** exist: `GET /api/plugins` (per-unit `served`, plus `generation` and
+  `drift`) and `GET /api/plugins/available` - the catalogue a console needs before "one click" can be a
+  button at all - with the console page under Platform management driving install / unplug / enable
+  against that same table. Clicking it caught two defects no unit test could see: a toast helper that
+  does not exist on that page (so a successful install rendered as "install failed"), and a switch
+  button that passed three arguments as one JSON array (the server received
+  `/units/tool,semgrep,false/undefined/enabled`), which is why `plugins-ui.test.cjs` now *executes* the
+  rendered `onclick` text instead of only parsing it. The endpoints are:
   `drift`), `POST /api/plugins/install`, `DELETE /api/plugins/bundles/{id}`,
   `POST /api/plugins/units/{kind}/{name}/enabled`, `DELETE /api/plugins/units/{kind}/{name}`.
   Installs are confined to `<configDir>/bundles` (`../` and absolute paths are 400), and unit

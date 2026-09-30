@@ -199,7 +199,9 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
 - 角色一侧已经接通到运行路径：写 = 「写文件 → 进表 → 发布新快照」，读 = `currentRoles(h.config)`
   （`internal/handler/live_config.go`），装配漏装活配置快照会让 `make wiring-check` 变红——
   而这个漏接**编译得过、启用路径测试也全绿**，所以它必须是门禁。
-- 一键安装的接口已经在了：`GET /api/plugins`（含每单元的 `served`、`generation`、`drift`）、
+- 一键安装的接口与**页面**都在了：`GET /api/plugins`（含每单元的 `served`、`generation`、`drift`）、
+  `GET /api/plugins/available`（可安装清单，前端「一键」要有东西可点），
+  前端「平台管理 → 能力包」页把安装/卸载/启停都在同一张表上做完成；
   `POST /api/plugins/install`、`DELETE /api/plugins/bundles/{id}`、
   `POST /api/plugins/units/{kind}/{name}/enabled`、`DELETE /api/plugins/units/{kind}/{name}`。
   安装只允许从 `<configDir>/bundles` 里挑（`../`、绝对路径一律 400）；单元身份含斜杠，
