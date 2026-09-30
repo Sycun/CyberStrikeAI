@@ -154,7 +154,7 @@ func markModelFacingTraceForPersistence(msgs []adk.Message) []adk.Message {
 }
 
 // einoExtractExitDeliverableFromMsgs 从轨迹中提取当前轮次的 exit 正式交付物
-//（工具输出或 assistant 调用 exit 时的 arguments.final_result）。
+// （工具输出或 assistant 调用 exit 时的 arguments.final_result）。
 // 若更靠近末尾出现了非 exit 的工具结果，则认为 exit 不是终态交付。
 func einoExtractExitDeliverableFromMsgs(msgs []adk.Message) string {
 	for i := len(msgs) - 1; i >= 0; i-- {

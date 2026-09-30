@@ -54,25 +54,18 @@ vet:
 fmt:
 	gofmt -w cmd internal
 
-## fmt-check 才是门禁。`gofmt -l cmd internal` 在重构起点上有 29 个上游遗留文件；窄接口那一轮
-## 重写 internal/audit/resource_availability.go 时顺手把它规范掉了，实测降到 28。
-## handler 层裸句柄归零那一轮同样只留下"确实改过"的文件：实测 26。期间有 9 个文件是
-## **纯被 gofmt 重排、与改动无关**的，用 `git diff --ignore-all-space --ignore-blank-lines` 找出来
-## 并 `git checkout HEAD --` 还原了（第一次还原用错了引用点，取到的是索引里的格式化版本，
-## 所以基线一度被误报成 21）。全仓
-## 重排会把无关改动混进解耦 diff，所以这里用 ratchet：既存债务可以留着，但不许再加，
-## 降了要收紧。（这个数字是 `gofmt -l cmd internal | wc -l` 的输出，包含 cmd/ 两个。）
+## fmt-check 才是门禁，且已经是**硬零**。重构起点上 `gofmt -l cmd internal` 有 29 个上游遗留文件，
+## 一路 ratchet 到 26；这一轮把剩下的债务一次性清成 0，条件是它**只以独立提交出现**：26 个文件逐个
+## 用 `diff <(gofmt <(git show HEAD:f)) f` 证过与工作区内容逐字节相同，即纯重排、零语义改动，
+## 所以它不混进任何解耦 diff，也不需要一个"存量豁免名单"。
+## 硬零之后 `make fmt` 随时可跑、跑完不会带出无关改动——这正是之前 ratchet 阶段不敢这么做的原因。
 .PHONY: fmt-check
 fmt-check:
 	@unformatted=$$(gofmt -l cmd internal | wc -l | tr -d ' '); \
-	baseline=26; \
-	if [ "$$unformatted" -gt "$$baseline" ]; then \
-		echo "gofmt needed (baseline $$baseline, now $$unformatted):"; gofmt -l cmd internal; exit 1; \
+	if [ "$$unformatted" -ne 0 ]; then \
+		echo "gofmt needed on $$unformatted file(s) (the gate is hard zero):"; gofmt -l cmd internal; exit 1; \
 	fi; \
-	if [ "$$unformatted" -lt "$$baseline" ]; then \
-		echo "gofmt debt down to $$unformatted; tighten the fmt-check baseline"; \
-	fi; \
-	echo "gofmt debt: $$unformatted / baseline $$baseline"
+	echo "gofmt: clean"
 
 .PHONY: lint
 lint:

@@ -23,8 +23,8 @@ jobs:
         run: make test-race
       - name: Vet
         run: make vet
-      # ratchet：仓库有 29 个上游遗留文件不是 gofmt 形态，门禁只要求不再增加。
-      - name: gofmt (ratchet)
+      # 硬零：起点的 29 个上游遗留文件已在独立提交里清完（逐个证过纯重排），所以这里不需要名单。
+      - name: gofmt (hard zero)
         run: make fmt-check
       # P6 收敛判据：Eino 只能收在越来越少的包里。逐包基线，新引入的包直接红。
       - name: Layering (Eino convergence + handler size ratchets)
