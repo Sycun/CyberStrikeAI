@@ -50,6 +50,8 @@ var PermissionCatalog = map[string]string{
 	"plugins:read":              "View installed capability bundles and capability units",
 	"plugins:write":             "Enable, disable, or detach individual capability units",
 	"plugins:install":           "Install or uninstall a capability bundle, which changes what the running agent can do",
+	"update:read":               "View this installation's source version and whether its own repository has anything newer",
+	"update:apply":              "Pull this installation's own repository, rebuild the platform binary, and optionally stand the process down",
 	"knowledge:read":            "View knowledge base and retrieval logs",
 	"knowledge:write":           "Create, update, index, and scan knowledge base",
 	"knowledge:delete":          "Delete knowledge items and retrieval logs",

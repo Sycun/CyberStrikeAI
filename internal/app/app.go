@@ -747,6 +747,15 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		}
 	}
 
+	// The one-click update acts on this installation's own tree, rooted where the live config
+	// file is. Its restart hook exits after a graceful shutdown, which is only "a restart" when
+	// something supervises the process - so the endpoint reports whether it is standing down or
+	// whether somebody has to start it again, instead of promising a boot that may not happen.
+	updateHandler := handler.NewUpdateHandler(configDir, log.Logger, auditSvc, func() {
+		app.Shutdown()
+		os.Exit(0)
+	})
+
 	// 设置路由（使用 App 实例以便动态获取 handler）
 	setupRoutes(routeDeps{
 		app:                   app,
@@ -769,6 +778,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		chatUploadsHandler:    chatUploadsHandler,
 		roleHandler:           roleHandler,
 		pluginHandler:         pluginHandler,
+		updateHandler:         updateHandler,
 		skillsHandler:         skillsHandler,
 		markdownAgentsHandler: markdownAgentsHandler,
 		fofaHandler:           fofaHandler,
@@ -1077,6 +1087,7 @@ type routeDeps struct {
 	chatUploadsHandler    *handler.ChatUploadsHandler
 	roleHandler           *handler.RoleHandler
 	pluginHandler         *handler.PluginHandler
+	updateHandler         *handler.UpdateHandler
 	skillsHandler         *handler.SkillsHandler
 	markdownAgentsHandler *handler.MarkdownAgentsHandler
 	fofaHandler           *handler.FofaHandler
@@ -1164,6 +1175,7 @@ func setupRoutes(deps routeDeps) {
 	deps.registerRobotRoutes(protected)
 	deps.registerRoleRoutes(protected)
 	deps.registerPluginRoutes(protected)
+	deps.registerUpdateRoutes(protected)
 	deps.registerSkillRoutes(protected)
 	deps.registerTaskRoutes(protected)
 	deps.registerTerminalRoutes(protected)

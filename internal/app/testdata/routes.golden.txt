@@ -134,6 +134,8 @@ GET /api/skills/{name}/file
 GET /api/skills/{name}/files
 GET /api/storage/meta
 GET /api/storage/status
+GET /api/system/update
+GET /api/system/update/job
 GET /api/terminal/ws
 GET /api/tool-guard
 GET /api/usage/tokens
@@ -230,6 +232,9 @@ POST /api/robot/wecom
 POST /api/roles
 POST /api/skills
 POST /api/storage/cleanup
+POST /api/system/update/apply
+POST /api/system/update/check
+POST /api/system/update/rollback
 POST /api/terminal/run
 POST /api/terminal/run/stream
 POST /api/tool-guard/test
