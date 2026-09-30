@@ -35,6 +35,35 @@ go run ./cmd/server --config config.yaml
 
 前端是静态页面，模板在 `web/templates/`，JS/CSS 在 `web/static/`。修改后刷新浏览器即可验证，多数场景不需要单独前端构建。
 
+## 开发树与测试树
+
+重构现场（开发树）只放源码。**编译、跑门禁、起服务做真机点验都在测试树**（默认
+`~/csai-测试版`，它是开发树的一个 clone）——这样 build 出来的二进制、跑起来写的
+`config.yaml` / `data/` / `log/` 永远不会落在开发树里，也就不会被 `git add` 顺走。
+
+一次性建法：
+
+```bash
+git clone --single-branch --branch main <开发树路径> ~/csai-测试版
+cp ~/csai-测试版/config.example.yaml ~/csai-测试版/config.yaml  # 端口改成自己的，别与生产实例抢
+```
+
+日常四条（`scripts/testtree.sh` 是同一件事的底层命令）：
+
+| 命令 | 做什么 |
+|---|---|
+| `make test-sync` | 开发树源码灌进测试树；开发树已不存在的**代码文件**在测试树同步删除 |
+| `make test-verify` | 逐文件摘要比对两树，不一致就非零退出并列出文件 |
+| `make test-gates` | sync + verify，然后在测试树里跑 `fmt-check vet layering-check wiring-check js-check test-race` 并 build 两个二进制 |
+| `make test-run` | sync + verify，然后在测试树里 build 并起服务（它自己的库与端口） |
+
+判据是**内容**而不是 git HEAD：调试期间的改动常常还没提交，而规矩是"两边一起改"。
+所以在测试树里单独改一个代码文件，`make test-verify` 会直接红并指名那个文件；
+正确做法是回开发树改完再 `make test-sync`。测试树的 `config.yaml` / `data/` / `log/`
+是被忽略的运行时文件，既不参与比对也不会被删；手工放进测试树 `bundles/` 里待验的能力包
+同样只在 verify 里提示、不删（那是点验的输入，不是源码）。
+测试树位置可用 `CSAI_TESTTREE` 或 `make test-gates TESTTREE=...` 覆盖。
+
 ## 路由
 
 路由由 `internal/app` 的**分域注册器**装配：`setupRoutes(routeDeps)` 只负责建组、挂中间件并逐个调用

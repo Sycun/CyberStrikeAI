@@ -141,6 +141,36 @@ js-check:
 	@command -v node >/dev/null 2>&1 || { echo "node missing: the front-end contract tests need Node 18+"; exit 1; }
 	node --test web/static/js/*.test.cjs
 
+## ---------------------------------------------------------------------------
+## 开发树 / 测试树隔离
+##
+## 开发树只放源码：编译产物、跑起来的服务、它写的 config.yaml / data/ / log/ 全部留在
+## 测试树（默认 ~/csai-测试版，本仓库的一个 clone）。这样"顺手 build"不会在重构现场留下
+## 可能被误提交的二进制或临时库。
+##
+## 一致性按**文件内容**比（tracked + 未被忽略的新文件），不按 git HEAD 比：调试期间的修改
+## 常常还没提交，而要求就是"两边一起改"。测试树自己那份 config.yaml/data/ 是被忽略的运行时
+## 文件，既不参与比对，也不会被 sync 删除。
+## ---------------------------------------------------------------------------
+
+TESTTREE ?= $(HOME)/csai-测试版
+
+.PHONY: test-verify
+test-verify: ## 两树源码是否同一份（逐文件摘要比对）
+	@CSAI_TESTTREE="$(TESTTREE)" ./scripts/testtree.sh verify
+
+.PHONY: test-sync
+test-sync: ## 把开发树源码灌进测试树（并删掉测试树里开发树已没有的源码文件）
+	@CSAI_TESTTREE="$(TESTTREE)" ./scripts/testtree.sh sync
+
+.PHONY: test-gates
+test-gates: ## 在测试树里 sync + verify + 全套门禁 + build，开发树不产生二进制
+	@CSAI_TESTTREE="$(TESTTREE)" ./scripts/testtree.sh gates
+
+.PHONY: test-run
+test-run: ## 在测试树里 build 并起服务（它自己的端口与数据库）
+	@CSAI_TESTTREE="$(TESTTREE)" ./scripts/testtree.sh run
+
 .PHONY: ci
 ci: fmt-check vet test-race js-check lint arch-lint layering-check wiring-check
 	$(GO) build $(PKG)

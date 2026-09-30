@@ -37,6 +37,37 @@ go run ./cmd/server --config config.yaml
 
 The frontend is static. Most JS/CSS/template changes only require a browser refresh.
 
+## Development Tree and Test Tree
+
+The development tree holds source only. **Building, running the gates and doing live
+verification all happen in a test tree** (by default `~/csai-测试版`, a clone of this one), so a
+compiled binary, or the `config.yaml` / `data/` / `log/` a running instance writes, can never end
+up next to the refactor and get committed by accident.
+
+One-time setup:
+
+```bash
+git clone --single-branch --branch main <path-to-dev-tree> ~/csai-测试版
+cp ~/csai-测试版/config.example.yaml ~/csai-测试版/config.yaml  # give it its own ports
+```
+
+The four daily commands (thin wrappers around `scripts/testtree.sh`):
+
+| command | what it does |
+|---|---|
+| `make test-sync` | pushes the dev tree's source into the test tree, and deletes code files the dev tree no longer has |
+| `make test-verify` | compares both trees file by file (digests) and exits non-zero listing what differs |
+| `make test-gates` | sync + verify, then runs `fmt-check vet layering-check wiring-check js-check test-race` and both builds **in the test tree** |
+| `make test-run` | sync + verify, then builds and starts the server in the test tree |
+
+Parity is measured on **content**, not on git HEAD, because a debugging change is usually not
+committed yet while the rule is "both trees change together". Editing a code file inside the test
+tree makes `make test-verify` fail and name that file; go back to the dev tree, edit there, then
+`make test-sync`. The test tree's `config.yaml` / `data/` / `log/` are ignored runtime files - never
+compared, never deleted - and a bundle dropped into its `bundles/` on purpose is only reported, not
+removed, because that is verification input rather than source. Override the location with
+`CSAI_TESTTREE` or `make test-gates TESTTREE=...`.
+
 ## Adding a Business Module
 
 Do not add only a handler. A complete module usually needs:
