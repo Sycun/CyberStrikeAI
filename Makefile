@@ -139,6 +139,14 @@ wiring-check:
 .PHONY: js-check
 js-check:
 	@command -v node >/dev/null 2>&1 || { echo "node missing: the front-end contract tests need Node 18+"; exit 1; }
+	@## Parse every console script before running any test. The contract tests each load the
+	@## handful of functions they assert on, so a file the browser cannot parse at all - a stray
+	@## brace, which is how a hand-edited one-liner replacement once broke 通知 and the whole
+	@## 一键更新 page silently, since the container stayed display:none - passes 202 tests and
+	@## only shows up when a person opens the page.
+	@for f in web/static/js/*.js web/static/js/generated/*.js; do \
+	  node --check "$$f" >/dev/null || { echo "js parse failed: $$f"; node --check "$$f"; exit 1; }; \
+	done
 	node --test web/static/js/*.test.cjs
 
 ## ---------------------------------------------------------------------------

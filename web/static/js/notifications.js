@@ -60,7 +60,6 @@
     function htmlEscape(value) {
         return CSAI.escapeHtml(value);
     }
-    }
 
     function t(key, fallback, params) {
         if (typeof window !== 'undefined' && typeof window.t === 'function') {
