@@ -108,7 +108,7 @@ function initRouter() {
     const hash = window.location.hash.slice(1);
     if (hash) {
         const hashParts = hash.split('?');
-        let pageId = hashParts[0];
+        let pageId = hashParts[0].replace(/^#?\//, '');
         if (pageId === 'c2') pageId = 'c2-listeners';
         if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'workflows', 'skills-monitor', 'skills-management', 'agents-management', 'plugins-management', 'system-update', 'settings', 'tasks', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
@@ -628,7 +628,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const hash = window.location.hash.slice(1);
         // 处理带参数的hash（如 chat?conversation=xxx）
         const hashParts = hash.split('?');
-        let pageId = hashParts[0];
+        let pageId = hashParts[0].replace(/^#?\//, '');
         
         if (pageId === 'c2') pageId = 'c2-listeners';
         if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'tasks', 'workflows', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'skills-monitor', 'skills-management', 'agents-management', 'plugins-management', 'system-update', 'settings', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {

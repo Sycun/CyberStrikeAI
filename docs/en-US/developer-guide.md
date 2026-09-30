@@ -81,7 +81,7 @@ cannot disagree about why an update was refused.
 
 | entry | how it is used |
 |---|---|
-| console | Platform management -> One-click update (`#/system-update`). Opening the page reads the local tree only and does not go online; **Check** is what performs the fetch; **Update** starts a job the page polls; the page also carries the "exit after updating" option and a rollback button |
+| console | Platform management -> One-click update (`#system-update`). Opening the page reads the local tree only and does not go online; **Check** is what performs the fetch; **Update** starts a job the page polls; the page also carries the "exit after updating" option and a rollback button |
 | REST | `GET /api/system/update` (state on disk, no network), `POST /api/system/update/check` (fetch, then report the gap), `POST /api/system/update/apply` (`202` with `job_id`, polled through `GET /api/system/update/job`), `POST /api/system/update/rollback` |
 | CLI | `./cyberstrike-ai -check-update`, `./cyberstrike-ai -update`, `./cyberstrike-ai -update-rollback`. The install root is the directory holding `--config`, or the current directory when `--config` was not given |
 

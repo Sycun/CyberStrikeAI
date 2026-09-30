@@ -466,12 +466,17 @@ function renderUpdateApplyBody(status, job) {
         parts.push('<div class="update-warn">' + escapeHtml(updateT('noToolchainWarn')) + '</div>');
     }
 
-    const disabled = blocked ? ' disabled' : '';
+    // Both halves matter: `disabled` for the browser, `data-state-disabled` so the platform's
+    // permission gate (which writes el.disabled for every [data-require-permission] element)
+    // does not re-enable the button for a user who holds update:apply. In a real browser that
+    // write produced an enabled 一键更新 directly under "有 53 个产品源码文件被本地改过".
+    const stateDisabled = blocked ? ' disabled data-state-disabled="true"' : '';
+    const checkingDisabled = updateChecking ? ' disabled data-state-disabled="true"' : '';
     parts.push('<div class="update-actions">' +
-        '<button class="btn-primary update-apply-btn"' + disabled +
+        '<button class="btn-primary update-apply-btn"' + stateDisabled +
         ' data-require-permission="update:apply" onclick="startUpdateApply()">' +
         escapeHtml(updateT('applyBtn')) + '</button>' +
-        '<button class="btn-secondary update-check-btn"' + (updateChecking ? ' disabled' : '') +
+        '<button class="btn-secondary update-check-btn"' + checkingDisabled +
         ' data-require-permission="update:apply" onclick="checkForUpdates()">' +
         escapeHtml(updateChecking ? updateT('checking') : updateT('checkBtn')) + '</button>' +
         '</div>');
@@ -589,7 +594,7 @@ function renderUpdateRollbackBody(status) {
     return '<p class="update-hint">' +
         escapeHtml(updateT('rollbackTarget', { commit: status.rollbackTo || '-' })) + '</p>' +
         '<div class="update-actions"><button class="btn-secondary update-rollback-btn"' +
-        (running ? ' disabled' : '') + ' data-require-permission="update:apply" ' +
+        (running ? ' disabled data-state-disabled="true"' : '') + ' data-require-permission="update:apply" ' +
         'onclick="rollbackUpdate()">' + escapeHtml(updateT('rollbackBtn')) + '</button></div>';
 }
 
