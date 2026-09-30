@@ -27,7 +27,10 @@ type PluginHandler struct {
 	// tool unit. It is a constructor argument for the same reason the audit service is: leaving
 	// it out is not an error, it is a bundle whose recipe silently never becomes executable
 	// while the table says it is installed.
-	tools  toolLayerRebuilder
+	tools toolLayerRebuilder
+	// mcp is the live external-MCP manager. A pack that declares a server writes it there and
+	// removes it from there, so the declaration has one home; installing never starts it.
+	mcp    MCPProvisioner
 	logger *zap.Logger
 	audit  *audit.Service
 }
@@ -49,8 +52,8 @@ type catalogPublisher interface {
 // SetAudit method on purpose: every other handler is wired with a setter that the assembly has
 // to remember, which is why an audit-completeness gate exists for them. Here forgetting is a
 // compile error, so the handler is also deliberately outside that gate's scope.
-func NewPluginHandler(table *plugin.Table, bundlesDir string, publisher catalogPublisher, tools toolLayerRebuilder, auditSvc *audit.Service, logger *zap.Logger) *PluginHandler {
-	return &PluginHandler{table: table, bundles: bundlesDir, republish: publisher, tools: tools, audit: auditSvc, logger: logger}
+func NewPluginHandler(table *plugin.Table, bundlesDir string, publisher catalogPublisher, tools toolLayerRebuilder, mcpManager MCPProvisioner, auditSvc *audit.Service, logger *zap.Logger) *PluginHandler {
+	return &PluginHandler{table: table, bundles: bundlesDir, republish: publisher, tools: tools, mcp: mcpManager, audit: auditSvc, logger: logger}
 }
 
 type unitView struct {
@@ -64,26 +67,24 @@ type unitView struct {
 	Reason  string `json:"reason,omitempty"`
 }
 
-// servedKinds lists the kinds whose run path reads the table. A unit of any other kind is
-// installed - it has an identity, it is listed, it can be removed - but the response says so
-// plainly instead of letting "installed" read as "live".
+// servedKinds lists the kinds whose run path reads the table. Every kind is in it now: a role,
+// agent, skill or recipe is served from the table's paths, and an MCP declaration is written into
+// the live external-MCP manager by install and removed by unplug. What stays separate is
+// *started*: a declared server arrives disabled, because running a process is the operator's call
+// and not a side effect of clicking install - the unit's own enabled flag carries that.
 var servedKinds = map[plugin.Kind]string{
 	plugin.KindRole:  "",
 	plugin.KindAgent: "",
 	plugin.KindSkill: "",
 	plugin.KindTool:  "",
+	plugin.KindMCP:   "",
 }
 
 func unitServed(u plugin.Unit) (bool, string) {
 	if gap, ok := servedKinds[u.Kind]; ok {
 		return true, gap
 	}
-	switch u.Kind {
-	case plugin.KindMCP:
-		return false, "external MCP servers add and remove through their own live manager, which registers a capability spec per tool; the table tracks the declaration but does not feed that path"
-	default:
-		return false, "no run path reads this kind from the capability table yet"
-	}
+	return false, "unknown capability kind: no run path is wired to it"
 }
 
 func toUnitView(u plugin.Unit) unitView {
@@ -94,10 +95,30 @@ func toUnitView(u plugin.Unit) unitView {
 	}
 }
 
+// liveUnitView is toUnitView for a unit that is actually installed, where an MCP unit's served flag
+// has a second condition: the live manager has to still hold the declaration the pack made.
+//
+// Without this the console would keep claiming a server is served after config.yaml grew a
+// declaration of the same name (the file wins there, and the pack loses the live slot).
+func (h *PluginHandler) liveUnitView(u plugin.Unit) unitView {
+	v := toUnitView(u)
+	if u.Kind != plugin.KindMCP || !v.Served {
+		return v
+	}
+	if h.mcp == nil {
+		v.Served, v.Reason = false, "未接入外部 MCP 管理器：包声明的服务器只写在能力表里，无人连接"
+		return v
+	}
+	if _, owned := h.mcp.PackOwner(u.Name); !owned {
+		v.Served, v.Reason = false, "外部 MCP 管理器已不再持有本包对该名称的声明（配置文件里有同名服务器）"
+	}
+	return v
+}
+
 func (h *PluginHandler) bundleView(b *plugin.Bundle) gin.H {
 	units := make([]unitView, 0, len(b.Units))
 	for _, u := range b.Units {
-		units = append(units, toUnitView(u))
+		units = append(units, h.liveUnitView(u))
 	}
 	return gin.H{
 		"id": b.ID, "name": b.Name, "version": b.Version,
@@ -119,7 +140,7 @@ func (h *PluginHandler) GetState(c *gin.Context) {
 	for _, kind := range plugin.Kinds {
 		for _, u := range h.table.Units(kind) {
 			if u.Bundle == "" {
-				standalone = append(standalone, toUnitView(u))
+				standalone = append(standalone, h.liveUnitView(u))
 			}
 		}
 	}
@@ -166,10 +187,17 @@ func (h *PluginHandler) Install(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := h.checkMCPConflicts(bundle); err != nil {
+		// Refused before anything changed: a pack must not be able to replace a server the
+		// operator declared in config.yaml, whose tools may be in use right now.
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
 	if err := h.table.InstallBundle(bundle); err != nil {
 		h.replyMutationError(c, "install", bundle.ID, err)
 		return
 	}
+	declared, mcpMessage := h.installMCPDeclarations(bundle)
 	report := h.republishCatalog(c, bundleHasKind(bundle, plugin.KindTool))
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "bundle_install", "安装能力包", "plugin_bundle", bundle.ID, map[string]interface{}{
@@ -178,12 +206,57 @@ func (h *PluginHandler) Install(c *gin.Context) {
 			"roles":   report.roles,
 		})
 	}
-	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
+	body := mergeToolLayerReport(gin.H{
 		"message":   "能力包已安装并生效",
 		"bundle":    h.bundleView(bundle),
 		"roles":     report.roles,
 		"refreshed": report.refreshed,
-	}, report))
+	}, report)
+	if declared > 0 || mcpMessage != "" {
+		body["mcp_declared"] = declared
+		body["mcp_started"] = false
+		if mcpMessage != "" {
+			body["mcp_message"] = mcpMessage
+		}
+	}
+	c.JSON(http.StatusOK, body)
+}
+
+// installMCPDeclarations writes a pack's server declarations into the live manager and switches
+// the units off, so the table, the manager and the console all say "declared, not started".
+func (h *PluginHandler) installMCPDeclarations(bundle *plugin.Bundle) (int, string) {
+	servers := mcpUnitsOf(bundle.Units)
+	if len(servers) == 0 {
+		return 0, ""
+	}
+	updated := make([]plugin.Unit, 0, len(servers))
+	for _, u := range servers {
+		off, err := h.table.SetEnabled(u.ID, false)
+		if err != nil {
+			return 0, fmt.Sprintf("%s: %v", u.ID, err)
+		}
+		updated = append(updated, off)
+	}
+	bundle.Units = replaceUnits(bundle.Units, updated)
+	return h.provisionMCP(bundle.ID, updated)
+}
+
+// replaceUnits swaps the refreshed copies of a few units back into a bundle's unit list, so a
+// response built from the bundle reports the state the table actually holds.
+func replaceUnits(units []plugin.Unit, refreshed []plugin.Unit) []plugin.Unit {
+	byID := make(map[string]plugin.Unit, len(refreshed))
+	for _, u := range refreshed {
+		byID[u.ID] = u
+	}
+	out := make([]plugin.Unit, 0, len(units))
+	for _, u := range units {
+		if r, ok := byID[u.ID]; ok {
+			out = append(out, r)
+			continue
+		}
+		out = append(out, u)
+	}
+	return out
 }
 
 // Uninstall handles DELETE /api/plugins/bundles/:id.
@@ -198,22 +271,31 @@ func (h *PluginHandler) Uninstall(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("能力包 %q 未安装", id)})
 		return
 	}
-	// The kinds this pack contributes decide whether the tool surface has to be rebuilt, and the
-	// bundle is gone from the table once the uninstall succeeds, so read it first.
+	// The kinds this pack contributes decide whether the tool surface has to be rebuilt and
+	// whether the MCP manager loses a server, and the bundle is gone from the table once the
+	// uninstall succeeds, so read it first.
 	wantTools := bundleHasKind(existing, plugin.KindTool)
 	if err := h.table.UninstallBundle(id); err != nil {
 		h.replyMutationError(c, "uninstall", id, err)
 		return
 	}
+	removed, mcpMessage := h.dropMCP(existing.Units)
 	report := h.republishCatalog(c, wantTools)
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "bundle_uninstall", "卸载能力包", "plugin_bundle", id, map[string]interface{}{
 			"roles": report.roles,
 		})
 	}
-	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
+	body := mergeToolLayerReport(gin.H{
 		"message": "能力包已卸载", "id": id, "roles": report.roles, "refreshed": report.refreshed,
-	}, report))
+	}, report)
+	if removed > 0 || mcpMessage != "" {
+		body["mcp_removed"] = removed
+		if mcpMessage != "" {
+			body["mcp_message"] = mcpMessage
+		}
+	}
+	c.JSON(http.StatusOK, body)
 }
 
 // EnableUnit handles POST /api/plugins/units/:kind/:name/enabled - flip without touching
@@ -245,14 +327,29 @@ func (h *PluginHandler) EnableUnit(c *gin.Context) {
 		return
 	}
 	report := h.republishCatalog(c, unitIDKind(id) == plugin.KindTool)
+	mcpStarted, mcpMessage := false, ""
+	if unitIDKind(id) == plugin.KindMCP {
+		// The switch is the operator's decision to run the process, so this is where a declared
+		// server is allowed to start - never install.
+		declared, msg := h.provisionMCP(unit.Bundle, []plugin.Unit{unit})
+		mcpStarted = declared > 0 && unit.Enabled
+		mcpMessage = msg
+	}
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "unit_enabled", "启停能力单元", "plugin_unit", id, map[string]interface{}{
 			"enabled": *body.Enabled, "roles": report.roles,
 		})
 	}
-	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
-		"message": "已更新", "unit": toUnitView(unit), "roles": report.roles, "refreshed": report.refreshed,
-	}, report))
+	respBody := mergeToolLayerReport(gin.H{
+		"message": "已更新", "unit": h.liveUnitView(unit), "roles": report.roles, "refreshed": report.refreshed,
+	}, report)
+	if unitIDKind(id) == plugin.KindMCP {
+		respBody["mcp_applied"] = mcpStarted
+		if mcpMessage != "" {
+			respBody["mcp_message"] = mcpMessage
+		}
+	}
+	c.JSON(http.StatusOK, respBody)
 }
 
 // RemoveLocalUnit handles DELETE /api/plugins/units/:kind/:name for a unit that came from a
@@ -263,17 +360,29 @@ func (h *PluginHandler) RemoveLocalUnit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "kind 与 name 不能为空"})
 		return
 	}
+	victim, _ := h.table.Unit(id)
 	if err := h.table.RemoveLocal(id); err != nil {
 		h.replyMutationError(c, "remove", id, err)
 		return
+	}
+	dropped, mcpMessage := 0, ""
+	if victim.Kind == plugin.KindMCP {
+		dropped, mcpMessage = h.dropMCP([]plugin.Unit{victim})
 	}
 	report := h.republishCatalog(c, unitIDKind(id) == plugin.KindTool)
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "unit_detach", "从能力表摘除单元", "plugin_unit", id, map[string]interface{}{"roles": report.roles})
 	}
-	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
+	body := mergeToolLayerReport(gin.H{
 		"message": "已从能力表摘除（不删除文件）", "id": id, "roles": report.roles, "refreshed": report.refreshed,
-	}, report))
+	}, report)
+	if victim.Kind == plugin.KindMCP {
+		body["mcp_removed"] = dropped
+		if mcpMessage != "" {
+			body["mcp_message"] = mcpMessage
+		}
+	}
+	c.JSON(http.StatusOK, body)
 }
 
 // mergeToolLayerReport states the tool-layer outcome in the body, including why it did not happen.
@@ -476,6 +585,8 @@ func (h *PluginHandler) ListAvailable(c *gin.Context) {
 		}
 		item.Units = make([]unitView, 0, len(bundle.Units))
 		for _, u := range bundle.Units {
+			// The catalogue states what installing *would* wire, so it uses the static verdict:
+			// nothing is declared yet and an MCP row must not read as shadowed before it exists.
 			item.Units = append(item.Units, toUnitView(u))
 		}
 		out = append(out, item)

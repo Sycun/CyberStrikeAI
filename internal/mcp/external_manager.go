@@ -51,8 +51,11 @@ type externalMCPServerRuntime struct {
 
 // ExternalMCPManager 外部MCP管理器
 type ExternalMCPManager struct {
-	clients      map[string]ExternalMCPClient
-	configs      map[string]config.ExternalMCPServerConfig
+	clients map[string]ExternalMCPClient
+	configs map[string]config.ExternalMCPServerConfig
+	// packServers holds only the servers a capability pack declared, so reloading config.yaml can
+	// rebuild `configs` without erasing them. See internal/mcp/pack_servers.go.
+	packServers  map[string]packServerEntry
 	logger       *zap.Logger
 	storage      MonitorStorage                // 可选的持久化存储
 	executions   map[string]*ToolExecution     // 执行记录
@@ -124,6 +127,7 @@ func NewExternalMCPManagerWithStorage(logger *zap.Logger, storage MonitorStorage
 	manager := &ExternalMCPManager{
 		clients:            make(map[string]ExternalMCPClient),
 		configs:            make(map[string]config.ExternalMCPServerConfig),
+		packServers:        make(map[string]packServerEntry),
 		logger:             logger,
 		storage:            storage,
 		executions:         make(map[string]*ToolExecution),
@@ -236,6 +240,10 @@ func normalizeExternalMCPResilienceConfig(cfg ExternalMCPResilienceConfig) Exter
 }
 
 // LoadConfigs 加载配置
+//
+// The map is rebuilt from config.yaml, so without the pack overlay below a 应用配置 click would
+// drop every server a capability pack declared while its unit still claimed to be served. Where
+// the file declares a name a pack also declares, the file wins and the pack loses the live slot.
 func (m *ExternalMCPManager) LoadConfigs(cfg *config.ExternalMCPConfig) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -244,9 +252,20 @@ func (m *ExternalMCPManager) LoadConfigs(cfg *config.ExternalMCPConfig) {
 		return
 	}
 
-	m.configs = make(map[string]config.ExternalMCPServerConfig)
+	m.configs = make(map[string]config.ExternalMCPServerConfig, len(cfg.Servers)+len(m.packServers))
 	for name, serverCfg := range cfg.Servers {
 		m.configs[name] = serverCfg
+	}
+	for name, entry := range m.packServers {
+		if _, claimed := cfg.Servers[name]; claimed {
+			delete(m.packServers, name)
+			if m.logger != nil {
+				m.logger.Warn("能力包声明的外部 MCP 服务器与配置文件同名，保留配置文件的声明",
+					zap.String("name", name), zap.String("bundle", entry.owner))
+			}
+			continue
+		}
+		m.configs[name] = entry.cfg
 	}
 }
 
@@ -263,28 +282,32 @@ func (m *ExternalMCPManager) GetConfigs() map[string]config.ExternalMCPServerCon
 }
 
 // AddOrUpdateConfig 添加或更新配置
+//
+// Refused for a server a capability pack declared: the operator-side write paths would otherwise
+// replace (or, through a start/stop that only knows the name, empty out) a declaration that lives
+// in the pack's files. Switching such a server is the capability unit's job.
 func (m *ExternalMCPManager) AddOrUpdateConfig(name string, serverCfg config.ExternalMCPServerConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 如果已存在客户端，先关闭
-	if client, exists := m.clients[name]; exists {
-		client.Close()
-		delete(m.clients, name)
+	if entry, owned := m.packServers[name]; owned {
+		return fmt.Errorf("%w：%s 由能力包 %q 声明，请在能力控制台启停该单元",
+			ErrPackOwnedServer, name, entry.owner)
 	}
 
-	m.configs[name] = serverCfg
-
-	// 如果启用，自动连接
-	if m.isEnabled(serverCfg) {
-		go m.connectClient(name, serverCfg)
-	}
+	m.applyConfigLocked(name, serverCfg)
 
 	return nil
 }
 
 // RemoveConfig 移除配置
+//
+// A pack-declared server is removed by unplugging the pack (RemovePackServer), so that the table
+// and the live manager lose it together rather than the unit silently keeping a dead server.
 func (m *ExternalMCPManager) RemoveConfig(name string) error {
+	if err := m.checkNotPackOwned(name, "删除"); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -312,7 +335,14 @@ func (m *ExternalMCPManager) RemoveConfig(name string) error {
 }
 
 // StartClient 启动客户端（用户手动启动；连接失败不自动重试）
+//
+// A pack-declared server is started by its capability unit switch, which is also what records the
+// state; starting it here would flip the live config without the table knowing, and the console
+// would then serve a different answer than the manager.
 func (m *ExternalMCPManager) StartClient(name string) error {
+	if err := m.checkNotPackOwned(name, "启动"); err != nil {
+		return err
+	}
 	return m.startClient(name, false)
 }
 
@@ -420,6 +450,9 @@ func (m *ExternalMCPManager) startClient(name string, autoReconnect bool) error 
 
 // StopClient 停止客户端
 func (m *ExternalMCPManager) StopClient(name string) error {
+	if err := m.checkNotPackOwned(name, "停止"); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

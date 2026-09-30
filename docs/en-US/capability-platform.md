@@ -271,14 +271,37 @@ one identity scheme and one live table:
   rule, an approval prompt and an audit row. Tests pin both the per-tool override (a sibling tool
   of the same server is unaffected) and the fallback (an inventory that has not arrived yet is
   decided by the declared namespace policy, not waved through as unknown).
-- When a bundle declares a tool recipe that no run path reads from the table yet, the response
-  says `served:false` with the reason instead of counting it as live. Letting "installed" read as
-  "in effect" is the exact failure this layer exists to prevent - and the flag itself rots if
-  nobody watches it: the running server reported `[('role', True), ('agent', False), ('skill',
-  True)]` after the agent run path had already moved onto the table, and no test caught it because
-  the fixture pack had no agent unit. The pack now ships `agents/report-analyst.md`, install
-  asserts `served=true`, and uninstall asserts the unit leaves the table - presence asserted before
-  absence, so the second half cannot be passing because the unit was never there.
+- **The server declarations themselves moved onto the table** (`mcp/<name>` units, shipped as
+  `bundles/<id>/mcp/*.yaml`). Installing a pack writes into the same live manager that
+  `/api/external-mcp/*` drives, so there is one server list rather than two. Four rules, each with
+  a test: installing and cold-start-up **declare but never start** (the server arrives disabled in
+  both the table and the manager, and the unit switch is what spawns the process - `enabled: true`
+  in a pack file is the pack author's intent, not the operator's consent to run a command); a pack
+  **cannot take over** a server the operator's `config.yaml` already declares (the live manager is
+  consulted before anything changes and a collision is a 409 naming the server, and `LoadConfigs` -
+  应用配置 - gives the file precedence on a collision, so the pack loses the live slot); the
+  reverse is refused too - the four MCP-page endpoints answer 409 with the owning pack for a
+  pack-owned name, because they only know a name, and 启动 would read the file's entry that does
+  not exist and save the resulting empty value back, turning a working server into a declaration
+  that can never connect; and pack declarations get **no `${VAR}` expansion**, because one
+  `Authorization: "Bearer ${CSAI_LLM_API_KEY}"` would ship a credential to a server the pack author
+  chose. The live map is rebuilt from the file and then overlaid with the pack set, so 应用配置
+  cannot erase a pack declaration; unplug removes only servers the pack declared (`PackOwner` that
+  points elsewhere is skipped and named in the response). Switch state is not persisted yet, so a
+  restart returns a pack server to disabled - a server that must survive restarts belongs in
+  `config.yaml`.
+- `served:false` only tells the truth. All five kinds now have a run path that reads the table, so
+  `servedKinds` is the same size as `plugin.Kinds` and `TestEveryKindReportsItsActualServedState`
+  pins both directions (drop a kind and it is red; add a kind to `plugin.Kinds` without wiring it and
+  it is red). For MCP there is a second condition the table cannot see: the live manager must
+  **still hold** the declaration, so after `config.yaml` claims the same name the console marks the
+  unit not-served with the reason instead of going on reporting it served.
+  Letting "installed" read as "in effect" is the exact failure this layer exists to prevent - and the
+  flag itself rots if nobody watches it: the running server reported `[('role', True), ('agent',
+  False), ('skill', True)]` after the agent run path had already moved onto the table, and no test
+  caught it because the fixture pack had no agent unit. The pack now ships `agents/report-analyst.md`,
+  install asserts `served=true`, and uninstall asserts the unit leaves the table - presence asserted
+  before absence, so the second half cannot be passing because the unit was never there.
 - Skills are wired through too, and only after **replacing a vendor implementation**: Eino's own
   backend accepts one `BaseDir`, so a skill inside a bundle was structurally unreachable.
   `internal/einoskill` implements that two-method backend over the capability table instead (no

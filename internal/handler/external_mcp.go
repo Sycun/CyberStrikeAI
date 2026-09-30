@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -39,6 +40,24 @@ func NewExternalMCPHandler(manager *mcp.ExternalMCPManager, cfg *config.Config, 
 		configPath: configPath,
 		logger:     logger,
 	}
+}
+
+// refusePackOwned answers for a server a capability pack declared, reporting true when it did.
+//
+// These four endpoints only know a server by name; the declaration itself lives in the pack's
+// files. Left unguarded, 启动 here would write an empty servers.<name> entry into config.yaml (the
+// name has no config-file record to read back) and the pack's real command would be shadowed by a
+// half-configured server the next time the file is loaded.
+func (h *ExternalMCPHandler) refusePackOwned(c *gin.Context, name string) bool {
+	owner, owned := h.manager.PackOwner(name)
+	if !owned {
+		return false
+	}
+	c.JSON(http.StatusConflict, gin.H{
+		"error":  fmt.Sprintf("外部 MCP 服务器 %q 由能力包 %q 声明，请在能力控制台启停该单元，或先卸载该包", name, owner),
+		"bundle": owner,
+	})
+	return true
 }
 
 // GetExternalMCPs 获取所有外部MCP配置
@@ -162,6 +181,9 @@ func (h *ExternalMCPHandler) AddOrUpdateExternalMCP(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "名称不能为空"})
 		return
 	}
+	if h.refusePackOwned(c, name) {
+		return
+	}
 
 	// 验证配置
 	if err := h.validateConfig(req.Config); err != nil {
@@ -174,6 +196,12 @@ func (h *ExternalMCPHandler) AddOrUpdateExternalMCP(c *gin.Context) {
 
 	// 添加或更新配置
 	if err := h.manager.AddOrUpdateConfig(name, req.Config); err != nil {
+		if errors.Is(err, mcp.ErrPackOwnedServer) {
+			// The pre-check above can lose a race with an install; the manager's answer is the
+			// one that holds, and a refusal is not a server error.
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		h.logger.Error("添加或更新外部MCP配置失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "添加或更新配置失败: " + err.Error()})
 		return
@@ -223,6 +251,9 @@ func (h *ExternalMCPHandler) AddOrUpdateExternalMCP(c *gin.Context) {
 // DeleteExternalMCP 删除外部MCP配置
 func (h *ExternalMCPHandler) DeleteExternalMCP(c *gin.Context) {
 	name := c.Param("name")
+	if h.refusePackOwned(c, name) {
+		return
+	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -262,6 +293,9 @@ func (h *ExternalMCPHandler) DeleteExternalMCP(c *gin.Context) {
 // StartExternalMCP 启动外部MCP
 func (h *ExternalMCPHandler) StartExternalMCP(c *gin.Context) {
 	name := c.Param("name")
+	if h.refusePackOwned(c, name) {
+		return
+	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -310,6 +344,9 @@ func (h *ExternalMCPHandler) StartExternalMCP(c *gin.Context) {
 // StopExternalMCP 停止外部MCP
 func (h *ExternalMCPHandler) StopExternalMCP(c *gin.Context) {
 	name := c.Param("name")
+	if h.refusePackOwned(c, name) {
+		return
+	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()

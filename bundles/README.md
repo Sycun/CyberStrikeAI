@@ -91,7 +91,50 @@ agent 走 `agents.LoadMarkdownAgentPaths`、配方走 `RecipeSpecs`（缺能力�
 | skill | ✅ | ✅ `internal/einoskill` 用能力表实现 Eino 的 `skill.Backend` | ✅ |
 | agent | ✅ | ✅ 运行路径与管理台都走表（`agents.LoadMarkdownAgents`） | ✅ |
 | tool | ✅ | ✅ 配方清单由表驱动重建（`ToolLayer.Rebuild`，与 `POST /config/apply` 同一条序列） | ✅ 装完即重建 |
-| mcp | ✅ 每个远端工具一个身份（`LayerRemote`，按服务器成组装卸） | ✅ 授权按工具身份判定，判定不到再回到命名空间策略 | — |
+| mcp | ✅ 包声明的服务器写进**活的** `ExternalMCPManager`（与 `/api/external-mcp/*` 同一个对象）；每个远端工具另有身份（`LayerRemote`，按服务器成组装卸） | ✅ 授权按工具身份判定，判定不到再回到命名空间策略 | ✅ 装完只写声明，**不启动进程** |
+
+## 包声明的 MCP 服务器
+
+一个包可以带 `mcp/<name>.yaml`，字段就是一台外部 MCP 服务器的声明：
+
+```yaml
+type: stdio            # stdio | http/sse
+command: python3       # stdio 必填；http/sse 用 url
+args: ["-c", "pass"]
+env: {FOO: bar}        # 只取字面值，见下
+url: http://127.0.0.1:8000/sse   # http/sse 必填
+headers: {Authorization: "Bearer literal-token"}
+description: 实验室 MCP
+timeout: 45
+enabled: true          # 读得到，但装包时不生效——开关是单元的，不是文件的
+```
+
+单元身份是 `mcp/<name>`，`<name>` 就是文件名去掉扩展名，也是管理器里的服务器名。四条规则，
+每条都有测试兜着：
+
+1. **装包不等于启动进程。** 装完（以及每次冷启动重新声明时）服务器一律以停用状态进表进管理器，
+   控制台与 MCP 页都显示"已声明未启动"。拉起进程是运维者按下单元开关那一下：
+   `POST /api/plugins/units/mcp/<name>/enabled {"enabled":true}`。包文件里的 `enabled: true` 是
+   包作者的意图，不是运维者的同意；能力表的开关状态目前不落库，所以重启会回到停用——
+   **要跨重启常驻的服务器，请写进 `config.yaml`**（那份声明本身就是运维者的同意）。
+2. **包不能覆盖运维者在 `config.yaml` 里声明的服务器。** 装包前查活的管理器，撞名直接 409 并点名
+   那台服务器；`LoadConfigs`（`应用配置`）遇到同名时**文件优先**，包失去这个活动槽位。
+3. **反向也不行：MCP 页不能改写包声明的服务器。** `PUT/DELETE/…/start/…/stop` 对包拥有的名字返回
+   409 并指出包 ID。这四个端点只认名字，`启动` 会去读 `config.yaml` 里根本不存在的那一条，
+   然后把读到的空值存回文件——一台能用的服务器就被换成一条永远连不上的空声明了。
+4. **包声明不做 `${VAR}` 展开。** `config.yaml` 与 MCP 页都会展开环境变量引用，那是运维者自己的
+   文件；包是别人写的内容，展开等于让包读本进程的环境，一条
+   `Authorization: "Bearer ${CSAI_LLM_API_KEY}"` 就把凭据送去了包作者选的服务器。声明里的字面值
+   原样进管理器。
+
+`应用配置` 不会清空包声明：管理器的 `configs` 由文件重建后再叠加包那一份（第 2 条的例外就是这里
+的"文件优先"）。卸载只删自己声明过的服务器——`PackOwner` 不指向本包就跳过并在响应里说明是谁的。
+
+这几条在 `make wiring-check` 里都有对应测试：`TestBootDeclaresPackServers`（启动只声明不启动）、
+`TestPackDeclaration*` / `TestReloadKeepsPackServers*` / `TestOperatorSideWritesRefuse*`（管理器侧）、
+`TestExternalMCPPageCannotMutateAPackDeclaredServer`（HTTP 侧）、
+`TestPluginInstallDeclaresMCPServerWithoutStartingIt` 与 `TestPluginConsoleReportsAShadowedMCPServer`
+（控制台与表同源）。
 
 ## 外部 MCP 工具也有身份
 

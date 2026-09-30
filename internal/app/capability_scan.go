@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/handler"
+	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/plugin"
 
 	"go.uber.org/zap"
@@ -175,4 +177,44 @@ func bundleOwnedToolUnits(table *plugin.Table) int {
 		}
 	}
 	return n
+}
+
+// provisionDeclaredServers re-declares the MCP servers that packs own into the live external-MCP
+// manager at start-up. The manager reads its servers from config.yaml, which a pack cannot edit,
+// so without this a declaration would exist only in the table until somebody reinstalled the pack.
+//
+// Every one of them comes back switched off, and the capability unit is flipped off to match. A
+// pack's file saying `enabled: true` is the pack author's intent, not the operator's consent to
+// spawn a process, and the table has no persisted switch state to honour - so the same rule that
+// holds for install holds here: declaring is not starting. A server the operator wants to live
+// across restarts belongs in config.yaml, where their own declaration is the consent.
+func provisionDeclaredServers(mgr *mcp.ExternalMCPManager, table *plugin.Table) (int, string) {
+	if mgr == nil || table == nil {
+		return 0, "未启用外部 MCP 管理器，包声明的服务器只留在能力表里"
+	}
+	var declared int
+	var note string
+	for _, u := range table.Units(plugin.KindMCP) {
+		if u.Enabled {
+			off, err := table.SetEnabled(u.ID, false)
+			if err != nil {
+				note = fmt.Sprintf("%s: %v", u.ID, err)
+				continue
+			}
+			u = off
+		}
+		cfg, err := handler.LoadMCPDeclaration(u.Path)
+		if err != nil {
+			note = fmt.Sprintf("%s: %v", u.ID, err)
+			continue
+		}
+		cfg.Disabled = !u.Enabled
+		cfg.ExternalMCPEnable = u.Enabled
+		if err := mgr.DeclarePackServer(u.Name, u.Bundle, cfg); err != nil {
+			note = fmt.Sprintf("%s: %v", u.ID, err)
+			continue
+		}
+		declared++
+	}
+	return declared, note
 }

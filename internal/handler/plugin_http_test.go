@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/plugin"
 
 	"github.com/gin-gonic/gin"
@@ -23,16 +24,62 @@ type pluginTestEnv struct {
 	plugins  *PluginHandler
 	roles    *RoleHandler
 	tools    *recordingToolLayer
+	mcp      *recordingMCP
 	table    *plugin.Table
 	bundles  string
 	recorder *httptest.ResponseRecorder
 }
 
-// recordingToolLayer stands in for the config handler's tool-surface rebuild so the test can see
-// whether the plug-in surface asked for one, and for which pack.
+// recordingMCP stands in for the external MCP manager so the test can see what a pack declared,
+// with which enable state, under which owner, and what an unplug took away.
+type recordingMCP struct {
+	configs map[string]config.ExternalMCPServerConfig
+	owners  map[string]string
+	adds    []string
+	removes []string
+}
+
+// recordingToolLayer stands in for the tool-surface rebuild so the test can see whether the
+// plug-in surface asked for one, and for which pack.
 type recordingToolLayer struct {
 	calls int
 	err   error
+}
+
+func (r *recordingMCP) GetConfigs() map[string]config.ExternalMCPServerConfig {
+	out := make(map[string]config.ExternalMCPServerConfig, len(r.configs))
+	for k, v := range r.configs {
+		out[k] = v
+	}
+	return out
+}
+
+func (r *recordingMCP) DeclarePackServer(name, bundleID string, serverCfg config.ExternalMCPServerConfig) error {
+	if name == "" || bundleID == "" {
+		return fmt.Errorf("recordingMCP: declaration needs both a name and an owning bundle")
+	}
+	r.configs[name] = serverCfg
+	r.owners[name] = bundleID
+	r.adds = append(r.adds, name)
+	return nil
+}
+
+func (r *recordingMCP) RemovePackServer(name string) error {
+	if _, owned := r.owners[name]; !owned {
+		// The real manager refuses too, but there the pack bookkeeping is what made it owned; an
+		// unowned removal here means the test asked the plug-in surface to delete a server it
+		// never declared.
+		return fmt.Errorf("recordingMCP: %q is not a pack declaration", name)
+	}
+	delete(r.owners, name)
+	delete(r.configs, name)
+	r.removes = append(r.removes, name)
+	return nil
+}
+
+func (r *recordingMCP) PackOwner(name string) (string, bool) {
+	owner, ok := r.owners[name]
+	return owner, ok
 }
 
 func (r *recordingToolLayer) Rebuild() error {
@@ -49,8 +96,14 @@ func newPluginTestEnv(t *testing.T, withBuiltInBundle bool) *pluginTestEnv {
 		table:   table,
 		bundles: bundlesDir,
 		tools:   &recordingToolLayer{},
+		// Pre-initialised because a test has to be able to write an operator-declared server in
+		// before any handler code runs.
+		mcp: &recordingMCP{
+			configs: map[string]config.ExternalMCPServerConfig{},
+			owners:  map[string]string{},
+		},
 	}
-	env.plugins = NewPluginHandler(table, bundlesDir, roles, env.tools, nil, zap.NewNop())
+	env.plugins = NewPluginHandler(table, bundlesDir, roles, env.tools, env.mcp, nil, zap.NewNop())
 
 	if withBuiltInBundle {
 		// The real example pack, copied next to the test config so the install path is exercised
@@ -362,7 +415,7 @@ func TestPluginUnitDetachRespectsOwnership(t *testing.T) {
 }
 
 func TestPluginHandlerWithoutATableIsUnavailableNotPanic(t *testing.T) {
-	h := NewPluginHandler(nil, "", nil, nil, nil, zap.NewNop())
+	h := NewPluginHandler(nil, "", nil, nil, nil, nil, zap.NewNop())
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.GET("/api/plugins", h.GetState)
@@ -465,23 +518,26 @@ func TestPluginToolUnitSwitchRebuildsTheToolLayer(t *testing.T) {
 	}
 }
 
-// The per-kind served verdict, walked from the kind list itself: a kind added to plugin.Kinds
-// without deciding how it is served fails here rather than shipping a field that quietly lies.
+// The per-kind served verdict, walked from the kind list itself: every kind plugin.Kinds declares
+// must have a run path wired to it, and a kind added there without wiring fails here rather than
+// shipping a served flag that quietly lies.
 func TestEveryKindReportsItsActualServedState(t *testing.T) {
-	served := map[plugin.Kind]bool{
-		plugin.KindRole: true, plugin.KindAgent: true, plugin.KindSkill: true, plugin.KindTool: true,
+	if len(servedKinds) != len(plugin.Kinds) {
+		t.Fatalf("servedKinds covers %v but plugin.Kinds declares %d kinds: a kind without a run path "+
+			"is offered for install and never served", servedKindNames(), len(plugin.Kinds))
 	}
 	for _, kind := range plugin.Kinds {
 		isServed, reason := unitServed(plugin.Unit{Kind: kind})
-		if served[kind] {
-			if !isServed || reason != "" {
-				t.Errorf("kind %q: served=%v reason=%q, want served with no reason", kind, isServed, reason)
-			}
-			continue
+		if !isServed || reason != "" {
+			t.Errorf("kind %q: served=%v reason=%q, want served with no reason", kind, isServed, reason)
 		}
-		if isServed || strings.TrimSpace(reason) == "" {
-			t.Errorf("kind %q: served=%v reason=%q, want not-served with a stated reason", kind, isServed, reason)
+		if _, ok := servedKinds[kind]; !ok {
+			t.Errorf("kind %q is in plugin.Kinds but not in servedKinds", kind)
 		}
+	}
+	// The other direction: an kind nobody wired must say so out loud, not report served.
+	if isServed, reason := unitServed(plugin.Unit{Kind: plugin.Kind("widget")}); isServed || reason == "" {
+		t.Errorf("unknown kind reported served=%v reason=%q", isServed, reason)
 	}
 }
 
@@ -545,4 +601,254 @@ func catalogIDs(m map[string]map[string]interface{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// A pack that declares an MCP server: installing writes the declaration into the live manager and
+// leaves it switched off. Starting a process is not a side effect of clicking install.
+func writeMCPPack(t *testing.T, env *pluginTestEnv) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(env.bundles, "mcp-pack", "mcp", "lab-server.yaml"),
+		"type: stdio\ncommand: python3\nargs: [\"-c\", \"pass\"]\ndescription: 实验室 MCP\nenabled: true\n")
+	writeTestFile(t, filepath.Join(env.bundles, "mcp-pack", plugin.ManifestFileName),
+		"id: mcp-pack\nname: MCP 声明包\nversion: 1.0.0\nunits:\n  - kind: mcp\n    path: mcp/lab-server.yaml\n")
+}
+
+func TestPluginInstallDeclaresMCPServerWithoutStartingIt(t *testing.T) {
+	env := newPluginTestEnv(t, false)
+	writeMCPPack(t, env)
+
+	rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"mcp-pack"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install: %d %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	if state["mcp_declared"] != float64(1) {
+		t.Fatalf("the declaration was not written into the manager: %v", state)
+	}
+	if state["mcp_started"] != false {
+		t.Fatalf("installing a pack started a server: %v", state)
+	}
+	cfg, ok := env.mcp.configs["lab-server"]
+	if !ok {
+		t.Fatal("the manager never received the declared server")
+	}
+	if cfg.ExternalMCPEnable || !cfg.Disabled {
+		t.Fatalf("the declared server arrived enabled: enable=%v disabled=%v", cfg.ExternalMCPEnable, cfg.Disabled)
+	}
+	if cfg.Command != "python3" {
+		t.Fatalf("the declaration lost its command: %+v", cfg)
+	}
+	// The table agrees with the manager, so the console cannot show one state and serve another.
+	unit, ok := env.table.Unit("mcp/lab-server")
+	if !ok {
+		t.Fatal("the declared unit is missing from the table")
+	}
+	if unit.Enabled {
+		t.Fatalf("the table says enabled while the manager says disabled: %+v", unit)
+	}
+
+	// The switch is where starting becomes the operator's decision.
+	rec = env.do(t, http.MethodPost, "/api/plugins/units/mcp/lab-server/enabled", `{"enabled":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("enable: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := decodeState(t, rec)["mcp_applied"]; got != true {
+		t.Fatalf("the switch did not report applying the declaration: %v", got)
+	}
+	if cfg := env.mcp.configs["lab-server"]; !cfg.ExternalMCPEnable || cfg.Disabled {
+		t.Fatalf("switching the unit on did not enable the server: %+v", cfg)
+	}
+
+	rec = env.do(t, http.MethodDelete, "/api/plugins/bundles/mcp-pack", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("uninstall: %d %s", rec.Code, rec.Body.String())
+	}
+	if len(env.mcp.removes) != 1 || env.mcp.removes[0] != "lab-server" {
+		t.Fatalf("unplug left the server declared: %v", env.mcp.removes)
+	}
+	if _, ok := env.mcp.configs["lab-server"]; ok {
+		t.Fatal("the manager still holds a server whose pack was unplugged")
+	}
+}
+
+func TestPluginInstallCannotOverwriteAnOperatorsMCPServer(t *testing.T) {
+	env := newPluginTestEnv(t, false)
+	writeMCPPack(t, env)
+	// The operator declared this server in config.yaml; it is not in the table.
+	env.mcp.configs["lab-server"] = config.ExternalMCPServerConfig{Command: "/usr/local/bin/the-operators-binary"}
+
+	rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"mcp-pack"}`)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("install over an operator-declared server returned %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "lab-server") {
+		t.Fatalf("the refusal does not name the server: %s", rec.Body.String())
+	}
+	if len(env.mcp.adds) != 0 {
+		t.Fatalf("a refused install still wrote to the manager: %v", env.mcp.adds)
+	}
+	if got := env.mcp.configs["lab-server"].Command; got != "/usr/local/bin/the-operators-binary" {
+		t.Fatalf("the operator's command was replaced by the pack: %q", got)
+	}
+	if _, ok := env.table.Unit("mcp/lab-server"); ok {
+		t.Fatal("a refused install still reached the table")
+	}
+	if _, ok := env.table.Bundle("mcp-pack"); ok {
+		t.Fatal("a refused install is recorded as installed")
+	}
+}
+
+// Forgetting the manager is not an error the endpoint can raise after the table changed, so it has
+// to be a field in the response: the pack looks installed while no server was ever declared.
+func TestPluginInstallReportsAMissingMCProvisioner(t *testing.T) {
+	env := newPluginTestEnv(t, false)
+	writeMCPPack(t, env)
+	env.plugins.mcp = nil
+
+	rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"mcp-pack"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install: %d %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	if state["mcp_declared"] == float64(1) {
+		t.Fatalf("declared a server with no manager wired: %v", state)
+	}
+	msg, _ := state["mcp_message"].(string)
+	if !strings.Contains(msg, "未接入") {
+		t.Fatalf("the response does not say the declaration was not applied: %q", msg)
+	}
+}
+
+func pluginUnitRow(t *testing.T, env *pluginTestEnv, unitID string) map[string]interface{} {
+	t.Helper()
+	rec := env.do(t, http.MethodGet, "/api/plugins", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("state: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, raw := range decodeState(t, rec)["bundles"].([]interface{}) {
+		for _, uraw := range raw.(map[string]interface{})["units"].([]interface{}) {
+			u := uraw.(map[string]interface{})
+			if u["id"] == unitID {
+				return u
+			}
+		}
+	}
+	t.Fatalf("unit %q is not in the console state", unitID)
+	return nil
+}
+
+// An MCP unit's served flag has a condition the table cannot see: the live manager still has to
+// hold the declaration. config.yaml wins a name collision, and until the console checks the manager
+// it would keep calling a shadowed declaration served while nothing connected.
+func TestPluginConsoleReportsAShadowedMCPServer(t *testing.T) {
+	env := newPluginTestEnv(t, false)
+	writeMCPPack(t, env)
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"mcp-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	if row := pluginUnitRow(t, env, "mcp/lab-server"); row["served"] != true {
+		t.Fatalf("a freshly declared server reported not served: %v", row)
+	}
+
+	// What LoadConfigs does when the operator's file grows a declaration of the same name.
+	delete(env.mcp.owners, "lab-server")
+	row := pluginUnitRow(t, env, "mcp/lab-server")
+	if row["served"] == true {
+		t.Fatalf("the console calls a shadowed declaration served: %v", row)
+	}
+	if reason, _ := row["reason"].(string); !strings.Contains(reason, "配置文件") {
+		t.Fatalf("the reason does not name the configuration file as the one holding the name: %q", reason)
+	}
+
+	// The catalogue states what installing *would* wire, so an unclaimed name is not shadowed
+	// there; making that row read as broken would hide the real conflict behind a false one.
+	rec := env.do(t, http.MethodGet, "/api/plugins/available", "")
+	for _, raw := range decodeState(t, rec)["bundles"].([]interface{}) {
+		b := raw.(map[string]interface{})
+		if b["id"] != "mcp-pack" {
+			continue
+		}
+		for _, uraw := range b["units"].([]interface{}) {
+			u := uraw.(map[string]interface{})
+			if u["id"] == "mcp/lab-server" && u["served"] != true {
+				t.Fatalf("the installable catalogue reports a pre-install shadow: %v", u)
+			}
+		}
+	}
+}
+
+// Unplug removes what the pack declared. A server the manager credits to a different pack stays
+// where it is, with the response saying who owns it.
+func TestUninstallDoesNotRemoveAnotherPacksServer(t *testing.T) {
+	env := newPluginTestEnv(t, false)
+	writeMCPPack(t, env)
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"mcp-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	env.mcp.owners["lab-server"] = "someone-elses-pack"
+
+	rec := env.do(t, http.MethodDelete, "/api/plugins/bundles/mcp-pack", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("uninstall: %d %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	if removed, ok := state["mcp_removed"]; ok && removed != float64(0) {
+		t.Fatalf("unplug deleted a server another pack owns: %v", state)
+	}
+	if len(env.mcp.removes) != 0 {
+		t.Fatalf("unplug reached the manager: %v", env.mcp.removes)
+	}
+	if _, ok := env.mcp.configs["lab-server"]; !ok {
+		t.Fatal("the other pack's server was removed")
+	}
+	msg, _ := state["mcp_message"].(string)
+	if !strings.Contains(msg, "someone-elses-pack") {
+		t.Fatalf("the response does not name the real owner: %q", msg)
+	}
+}
+
+// A capability pack is content somebody else wrote. config.yaml and the MCP page both expand
+// ${VAR} in a server declaration; doing that here would hand the pack the platform process
+// environment, and a declaration like Authorization: "Bearer ${CSAI_LLM_API_KEY}" is then a
+// credential shipped to a server the pack author chose. So the bytes stay as written.
+func TestPackMCPDeclarationDoesNotExpandEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "lab.yaml")
+	writeTestFile(t, path, "type: http\nurl: https://example.invalid/sse\n"+
+		"headers:\n  Authorization: \"Bearer ${CSAI_LLM_API_KEY}\"\n"+
+		"env:\n  TOKEN: \"${CSAI_LLM_API_KEY}\"\ntimeout: 45\n")
+	t.Setenv("CSAI_LLM_API_KEY", "sk-should-never-travel")
+
+	cfg, err := LoadMCPDeclaration(path)
+	if err != nil {
+		t.Fatalf("LoadMCPDeclaration: %v", err)
+	}
+	if cfg.Timeout != 45 {
+		t.Errorf("timeout lost: %d", cfg.Timeout)
+	}
+	for label, got := range map[string]string{
+		"header": cfg.Headers["Authorization"],
+		"env":    cfg.Env["TOKEN"],
+	} {
+		if strings.Contains(got, "sk-should-never-travel") {
+			t.Errorf("%s was expanded against the platform environment: %q", label, got)
+		}
+		if !strings.Contains(got, "${CSAI_LLM_API_KEY}") {
+			t.Errorf("%s lost its literal reference: %q", label, got)
+		}
+	}
+}
+
+// A declaration with neither half of a transport is not a server: installing it would put a row on
+// the MCP page that can never connect and gives no reason why.
+func TestLoadMCPDeclarationNeedsACommandOrURL(t *testing.T) {
+	dir := t.TempDir()
+	_, err := LoadMCPDeclaration(filepath.Join(dir, "empty.yaml"))
+	if err == nil || !strings.Contains(err.Error(), "读取 MCP 声明失败") {
+		t.Fatalf("a missing declaration file returned %v, want a readable file error", err)
+	}
+	writeTestFile(t, filepath.Join(dir, "no-transport.yaml"), "type: stdio\ndescription: 什么都没声明\n")
+	if _, err := LoadMCPDeclaration(filepath.Join(dir, "no-transport.yaml")); err == nil {
+		t.Fatal("a declaration with no command and no url was accepted")
+	}
 }

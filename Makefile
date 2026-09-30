@@ -119,6 +119,11 @@ wiring-check:
 	$(GO) test -count=1 ./internal/app/ -run 'TestRemote|TestEmptyInventory'
 	## tool 配方：表驱动与目录加载逐条一致、开关只收窄不改文件、装包立刻成为可执行工具
 	$(GO) test -count=1 -timeout 200s ./internal/handler/ -run 'TestToolLayer|TestRebuildToolLayer|TestSaveConfigDoesNot|TestEveryKindReports'
+	## MCP 声明：装包/启动都只写声明、进程一律由单元开关拉起；配置文件同名则文件优先且控制台如实标灰；
+	## 应用配置不得清空包声明，MCP 页不得改写包声明（否则会把空 servers.<name> 写进 config.yaml）
+	$(GO) test -count=1 -run 'TestBootDeclaresPackServers' ./internal/app/
+	$(GO) test -count=1 -run 'TestPackDeclaration|TestReloadKeepsPackServers|TestOperatorSideWrites' ./internal/mcp/
+	$(GO) test -count=1 -run 'TestPackMCPDeclaration|TestLoadMCPDeclaration|TestExternalMCPPageCannotMutate|TestUninstallDoesNotRemove|TestPluginConsoleReportsAShadowed' ./internal/handler/
 	## 启动扫描必须覆盖每个"运行路径读表"的 kind：漏一行，装任何一个包就会把整批内置配方换掉
 	$(GO) test -count=1 -run 'TestBuiltInCapabilityScanCoversEveryServedKind' ./internal/app/
 	## 能力包的两种视图必须同源：包自带的单元副本要与表里的状态一致（真机点验抓到的分叉）

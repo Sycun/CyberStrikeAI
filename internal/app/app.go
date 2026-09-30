@@ -544,11 +544,24 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 			log.Logger.Info("角色目录已按能力表重新发布", zap.Int("roles", published), zap.Int("bundles", installed))
 		}
 	}
+	// A pack that declares an MCP server has to re-declare it on every boot: the manager's own
+	// configuration comes from config.yaml, which a pack does not edit. Declared, never started -
+	// the same rule the install endpoint follows.
+	if n, msg := provisionDeclaredServers(externalMCPMgr, pluginTable); n > 0 || msg != "" {
+		log.Logger.Info("能力包声明的 MCP 服务器已写入管理器（默认停用）",
+			zap.Int("declared", n), zap.String("note", msg))
+	}
 	// The one-click extend surface. It is confined to <configDir>/bundles, and it drives the same
 	// table the run paths read, so an install here is live on the next request. A pack that
 	// contributes tool recipes goes through configHandler's tool-layer rebuild - the same sequence
 	// POST /config/apply runs - so the recipe becomes executable without pressing "应用配置".
-	pluginHandler := handler.NewPluginHandler(pluginTable, filepath.Join(configDir, "bundles"), roleHandler, configHandler.Tools, auditSvc, log.Logger)
+	// A nil manager has to stay a nil interface: passing the typed nil pointer would make every
+	// declaration path call methods on a nil receiver.
+	var mcpProvisioner handler.MCPProvisioner
+	if externalMCPMgr != nil {
+		mcpProvisioner = externalMCPMgr
+	}
+	pluginHandler := handler.NewPluginHandler(pluginTable, filepath.Join(configDir, "bundles"), roleHandler, configHandler.Tools, mcpProvisioner, auditSvc, log.Logger)
 	skillsHandler := handler.NewSkillsHandler(cfg, configPath, log.Logger)
 	bindAudit(skillsHandler, auditSvc)
 	fofaHandler := handler.NewFofaHandler(cfg, log.Logger)

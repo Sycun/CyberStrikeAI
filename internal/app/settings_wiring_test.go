@@ -33,8 +33,10 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 	scannedCalled := 0
 	bundlesInstalled := 0
 	bootToolRebuilds := 0
+	mcpProvisioned := 0
 	pluginCalls := 0
 	pluginWithoutToolLayer := 0
+	pluginWithoutMCPProvisioner := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -60,6 +62,11 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 						scannedCalled++
 					case "installBundlesFromDisk":
 						bundlesInstalled++
+					case "provisionDeclaredServers":
+						// A pack's MCP server is declared into the live manager, which start-up
+						// builds from config.yaml. Without this call the server is in the table and
+						// in the console after a restart while nothing connects to it.
+						mcpProvisioned++
 					}
 				}
 				return true
@@ -87,17 +94,23 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 					tableInstalled++
 				}
 			case "NewPluginHandler":
-				// The 4th argument is the tool-layer rebuilder. Passing nil is legal Go and
-				// means a bundle's tool recipe is recorded in the table but never becomes
-				// executable - the response would say "installed" while nothing serves it.
+				// Argument 4 is the tool-layer rebuilder and argument 5 the external-MCP
+				// provisioner. Both nil are legal Go: a recipe would be recorded in the table but
+				// never executable, a server declaration recorded but never written, and either
+				// response would still say "installed".
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "handler" {
 					pluginCalls++
-					if len(call.Args) < 6 {
-						t.Errorf("handler.NewPluginHandler takes %d arguments, want the tool-layer rebuilder among them", len(call.Args))
+					if len(call.Args) < 7 {
+						t.Errorf("handler.NewPluginHandler takes %d arguments, want the tool layer and the MCP provisioner among them", len(call.Args))
 					} else if sel, ok := call.Args[3].(*ast.SelectorExpr); !ok || sel.Sel.Name != "Tools" {
 						pluginWithoutToolLayer++
 					} else if id, ok := sel.X.(*ast.Ident); !ok || id.Name != "configHandler" {
 						pluginWithoutToolLayer++
+					}
+					if len(call.Args) >= 7 {
+						if id, ok := call.Args[4].(*ast.Ident); ok && id.Name == "nil" {
+							pluginWithoutMCPProvisioner++
+						}
 					}
 				}
 			case "Reload":
@@ -136,6 +149,10 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 		t.Fatalf("configHandler.Tools.Rebuild() is never called at boot: a pack that ships a recipe " +
 			"would be in the table but not on the tool surface until POST /config/apply runs")
 	}
+	if mcpProvisioned < 1 {
+		t.Fatalf("provisionDeclaredServers is never called at boot: a pack's MCP server would be in " +
+			"the table and in the console but absent from the live manager until the pack is reinstalled")
+	}
 	if published < 1 {
 		t.Fatalf("no role catalog publish in assembly: the store would be installed but empty, so "+
 			"the roles API and every run path would serve nothing (files scanned: %d)", scanned)
@@ -148,10 +165,16 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 			"recipe would be recorded in the table and reported as installed, while no run path could " +
 			"ever execute it (pass the configHandler, which owns RebuildToolLayer)")
 	}
+	if pluginWithoutMCPProvisioner != 0 {
+		t.Fatalf("the plug-in handler was assembled with a nil MCP provisioner: a pack's server " +
+			"declaration would be recorded in the table and reported as installed while the live " +
+			"external-MCP manager never held it")
+	}
 	t.Logf("assembly wiring: %d files scanned, 1 live-store install, 1 table install, "+
 		"1 remote inventory observer, %d capability scan call(s), %d bundle re-install call(s), "+
-		"%d catalog publish call(s), 1 plug-in handler with its tool-layer rebuilder",
-		scanned, scannedCalled, bundlesInstalled, published)
+		"%d MCP declaration call(s), %d catalog publish call(s), "+
+		"1 plug-in handler with its tool layer and MCP provisioner",
+		scanned, scannedCalled, bundlesInstalled, mcpProvisioned, published)
 }
 
 func moduleRootForWiringTest(t *testing.T) string {

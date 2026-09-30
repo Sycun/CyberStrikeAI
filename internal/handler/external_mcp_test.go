@@ -516,3 +516,71 @@ func TestExternalMCPHandler_UpdateExistingConfig(t *testing.T) {
 		t.Errorf("期望command为空，实际%s", response.Config.Command)
 	}
 }
+
+// A server a capability pack declared is not this page's to change.
+//
+// The concrete damage the refusal prevents: 启动 reads h.config.ExternalMCP.Servers[name], which a
+// pack never wrote, sets the enable flag on that empty value and saves it - so config.yaml gains a
+// servers.lab entry with no command and no url, and the next reload replaces a working declaration
+// with one that can never connect.
+func TestExternalMCPPageCannotMutateAPackDeclaredServer(t *testing.T) {
+	router, h, configPath := setupTestRouter()
+	defer cleanupTestConfig(configPath)
+
+	if err := h.manager.DeclarePackServer("lab", "mcp-pack", config.ExternalMCPServerConfig{
+		Type: "stdio", Command: "python3", Args: []string{"-c", "pass"}, Disabled: true,
+	}); err != nil {
+		t.Fatalf("DeclarePackServer: %v", err)
+	}
+
+	cases := []struct{ method, path, body string }{
+		{http.MethodPut, "/api/external-mcp/lab", `{"config":{"command":"/bin/echo"}}`},
+		{http.MethodDelete, "/api/external-mcp/lab", ""},
+		{http.MethodPost, "/api/external-mcp/lab/start", ""},
+		{http.MethodPost, "/api/external-mcp/lab/stop", ""},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		if tc.body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict {
+			t.Errorf("%s %s returned %d, want 409: %s", tc.method, tc.path, rec.Code, rec.Body.String())
+			continue
+		}
+		if !strings.Contains(rec.Body.String(), "mcp-pack") {
+			t.Errorf("%s %s refused without naming the owning pack: %s", tc.method, tc.path, rec.Body.String())
+		}
+	}
+
+	if got := h.manager.GetConfigs()["lab"].Command; got != "python3" {
+		t.Fatalf("a refused write changed the declaration: %q", got)
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(raw), "lab") {
+		t.Fatalf("config.yaml gained an entry for the pack's server:\n%s", raw)
+	}
+
+	// The row is still listed, with the state the pack declared: visible, not started.
+	rec := httptest.NewRequest(http.MethodGet, "/api/external-mcp", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, rec)
+	var listed struct {
+		Servers map[string]ExternalMCPResponse `json:"servers"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("list: %d %s", rr.Code, rr.Body.String())
+	}
+	got, ok := listed.Servers["lab"]
+	if !ok {
+		t.Fatalf("the pack's server is missing from the MCP page: %s", rr.Body.String())
+	}
+	if got.Status != "disabled" {
+		t.Fatalf("a declared-but-not-started server reads %q, want disabled", got.Status)
+	}
+}
