@@ -41,7 +41,10 @@ test('刷新恢复会话时先完成权威审批配置同步再允许发送', ()
     assert.match(chat, /await waitForHitlConfigReady\(hitlConversationAtSendStart\)/);
     assert.match(chat, /hitlConfigSyncConversationId = conversationId;[\s\S]{0,240}await hitlConfigSyncPromise;/);
     assert.match(chat, /await hitlConfigSyncPromise;[\s\S]{0,220}seq !== loadConversationRequestSeq/);
-    assert.match(fs.readFileSync('web/static/js/hitl.js', 'utf8'), /window\.csaiHitlDefaultReviewerReady = initHitlDefaultReviewerFromServer\(\)/);
+    // The boot wiring aliases the legacy name to one config-ready promise; both must exist or a
+    // restored conversation can send before the authoritative approval config has landed.
+    assert.match(fs.readFileSync('web/static/js/hitl.js', 'utf8'), /window\.csaiHitlDefaultConfigReady = initHitlDefaultReviewerFromServer\(\)/);
+    assert.match(fs.readFileSync('web/static/js/hitl.js', 'utf8'), /window\.csaiHitlDefaultReviewerReady = window\.csaiHitlDefaultConfigReady/);
 });
 
 test('同一会话的审批配置写入串行化以防止旧请求后到覆盖新选择', () => {
@@ -101,12 +104,16 @@ test('审批请求按浏览器、命令、文件和通用工具动态描述', ()
 });
 
 test('Agent 审查不进入人工审批弹窗、倒计时和项目计数', () => {
-    const logsHandler = fs.readFileSync('internal/handler/hitl_logs.go', 'utf8');
+    // The reviewer column migration and the human-only pending query live in the store layer
+    // (internal/store) since the handler stopped owning raw SQL; they are asserted here because
+    // the agent-review UI is only correct if the server filters pending rows by reviewer.
+    const hitlLifecycle = fs.readFileSync('internal/store/hitl_lifecycle.go', 'utf8');
+    const hitlStore = fs.readFileSync('internal/store/hitl.go', 'utf8');
     const hitlPage = fs.readFileSync('web/static/js/hitl.js', 'utf8');
     assert.match(handler, /CreatePendingInterrupt\([\s\S]{0,260}reviewer string/);
     assert.match(handler, /reviewer != "audit_agent"[\s\S]{0,120}m\.pending\[id\] = p/);
-    assert.match(logsHandler, /ADD COLUMN reviewer TEXT NOT NULL DEFAULT 'human'/);
-    assert.match(logsHandler, /status = 'pending' AND COALESCE\(reviewer,'human'\) = 'human'/);
+    assert.match(hitlLifecycle, /ADD COLUMN reviewer TEXT NOT NULL DEFAULT 'human'/);
+    assert.match(hitlStore, /status = 'pending' AND COALESCE\(reviewer,'human'\) = 'human'/);
     assert.match(monitor, /function isAgentReviewedHitl\(data\)/);
     assert.match(monitor, /if \(!data\.resolved && !isAgentReviewedHitl\(data\)\)/);
     assert.match(monitor, /if \(!isAgentReviewedHitl\(data\)\) \{[\s\S]{0,240}bindHitlApprovalCountdown/);

@@ -23,10 +23,16 @@ test('已有会话缺少本地配置时不会继承其他会话的最近审批�
 });
 
 test('服务端默认审批人只更新默认值，不覆盖最近会话选择', () => {
-    const source = functionSource(hitl, 'applyHitlDefaultReviewerFromServer', 'fetchHitlDefaultReviewer');
-
-    assert.match(source, /window\.csaiHitlDefaultReviewer = v/);
+    // The reviewer-only setter now delegates to the shared config applier, so the property has to
+    // be proven on both: the setter must do nothing but delegate, and the applier must write the
+    // default without touching the "last global choice" record a new conversation inherits.
+    const source = functionSource(hitl, 'applyHitlDefaultReviewerFromServer', 'applyHitlDefaultConfigFromServer');
+    assert.match(source, /applyHitlDefaultConfigFromServer\(\{ defaultReviewer: reviewer \}\)/);
     assert.doesNotMatch(source, /saveHitlLastGlobalConfig/);
+
+    const applier = functionSource(hitl, 'applyHitlDefaultConfigFromServer', 'fetchHitlDefaultConfig');
+    assert.match(applier, /window\.csaiHitlDefaultReviewer = reviewer/);
+    assert.doesNotMatch(applier, /saveHitlLastGlobalConfig/);
 });
 
 test('恢复会话审批配置时保留该会话自己的审批人', () => {
