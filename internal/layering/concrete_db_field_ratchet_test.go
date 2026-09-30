@@ -1,6 +1,7 @@
 package layering
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,29 +13,33 @@ import (
 // assignmentKinds reports, for one module-relative file, how each narrowed storage field is
 // assigned: "Narrow" when the value goes through database.Narrow, otherwise the offending text.
 //
+// The field names come from the caller because they are what the AST scan found in this file -
+// matching a hard-coded `db` key silently skipped every narrowed field that is not called db.
+//
 // The judgement is line-scoped on purpose. Every assignment in this codebase fits on one line, and
 // a regexp over text is the right tool for a shape rule - the AST walker would not know which
 // composite-literal key belongs to which struct without type information this package deliberately
 // does not have. It is NOT a semantic analysis: if a multi-line assignment is ever introduced here,
 // internal/handler/narrow_db_test.go (which builds each handler with a nil *DB and inspects the field
 // by reflection) is the gate that still catches the leak.
-func assignmentKinds(root, rel string) map[string][]string {
+func assignmentKinds(root, rel string, fields []string) map[string][]string {
 	out := map[string][]string{}
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 	if err != nil {
 		return out
 	}
-	keyRe := regexp.MustCompile(`(^|[\s{,])db:\s*([^,\n]+)`)
+	alternation := strings.Join(fields, "|")
+	keyRe := regexp.MustCompile(`(^|[\s{,])(` + alternation + `):\s*([^,\n]+)`)
 	// `\b([a-z]+)\.db = ` followed by a character that is not another `=`: RE2 has no negative
 	// lookahead, and without this the ten `if h.db == nil` guards in this package read as
 	// assignments whose "value" is "= nil {" - a false positive that fails the gate on a clean tree.
-	setterRe := regexp.MustCompile(`\b([a-z]+)\.db = ([^=\n][^\n]*)`)
+	setterRe := regexp.MustCompile(`\b([a-z]+)\.(` + alternation + `) = ([^=\n][^\n]*)`)
 	for _, line := range strings.Split(string(data), "\n") {
 		if m := keyRe.FindStringSubmatch(line); m != nil {
-			out[rel] = append(out[rel], classifyAssignment(m[2]))
+			out[rel] = append(out[rel], classifyAssignment(m[3]))
 		}
 		if m := setterRe.FindStringSubmatch(line); m != nil {
-			out[rel] = append(out[rel], classifyAssignment(m[2]))
+			out[rel] = append(out[rel], classifyAssignment(m[3]))
 		}
 	}
 	return out
@@ -69,18 +74,55 @@ func classifyAssignment(value string) string {
 // knowledge.go is the counter-example worth keeping: its `db` field was never read, so the honest
 // fix was deleting the field and the constructor parameter rather than inventing a store for it.
 
-// narrowedStoreFloor is how many handler structs hold a consumer-shaped store interface today
-// (measured 19). It only goes up; a drop means a domain was widened back to the god object.
+// narrowedStoreFloor is how many handler fields hold a consumer-shaped database interface today.
+// It only goes up; a drop means a domain was widened back to the god object.
+//
+// The detector used to guess "is this a narrowed surface?" from the type's *name*
+// (`database.` prefix + `Store` suffix) and from the field always being called `db`. Both guesses
+// are now replaced by facts read from source: the interface list is parsed out of
+// internal/database, and the field list comes from the AST scan. Measured with the new detector
+// the count is the same 19 - and every one of those fields is named `db` - so this is not a fix to
+// a number that was wrong. It is the removal of two assumptions that would have made the gate
+// blind without complaining: a surface renamed away from the "Store" suffix, a field named
+// anything but `db`, or a struct that *embeds* an interface (refused outright above, since an
+// embedded field has no assignment key to check).
 const narrowedStoreFloor = 19
 
 const narrowedAssignmentFloor = 19
+
+// narrowedInterfaceFloor keeps a broken interface scan from turning the floors above into a green
+// no-op: internal/database declares 22 interfaces across stores.go and surfaces.go today.
+const narrowedInterfaceFloor = 20
 
 // scannedFieldFloor keeps a broken scan from producing a green zero: the handler package declares
 // ~990 struct fields, so a walk that sees a tenth of that is not reporting the truth.
 const scannedFieldFloor = 500
 
+// narrowedHandlerFields is the one detection both gates share: which handler struct fields hold
+// an interface declared in internal/database. Kept in one place so the two cannot drift into
+// disagreeing about what "narrowed" means. A database package that parses to almost no interfaces
+// is reported as an error rather than a small count, because both gates below would otherwise go
+// green while inspecting nothing.
+func narrowedHandlerFields(root string) (map[string][]string, map[string][]string, int, error) {
+	interfaces, err := DatabaseInterfaces(root)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if len(interfaces) < narrowedInterfaceFloor {
+		return nil, nil, len(interfaces), fmt.Errorf(
+			"only %d interfaces found in internal/database (floor %d): the parser is not reading the package",
+			len(interfaces), narrowedInterfaceFloor)
+	}
+	named, embedded, err := NarrowedFieldsByFile(root, "internal/handler", interfaces)
+	if err != nil {
+		return nil, nil, len(interfaces), err
+	}
+	return named, embedded, len(interfaces), nil
+}
+
 func TestHandlerLayerHoldsNoGodObject(t *testing.T) {
-	byFile, err := FieldTypesByFile(moduleRoot(t), "internal/handler")
+	root := moduleRoot(t)
+	byFile, err := FieldTypesByFile(root, "internal/handler")
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
@@ -99,22 +141,22 @@ func TestHandlerLayerHoldsNoGodObject(t *testing.T) {
 			"a zero here would be meaningless", fields, scannedFieldFloor)
 	}
 
+	named, _, _, err := narrowedHandlerFields(root)
+	if err != nil {
+		t.Fatalf("narrowed field scan: %v", err)
+	}
 	narrowed := 0
 	var narrowedList []string
-	for file, types := range byFile {
-		for text, count := range types {
-			if strings.HasPrefix(text, "database.") && strings.HasSuffix(text, "Store") {
-				narrowed += count
-				narrowedList = append(narrowedList, file+"="+text)
-			}
-		}
+	for file, names := range named {
+		narrowed += len(names)
+		narrowedList = append(narrowedList, file+"="+strings.Join(names, ","))
 	}
 	if narrowed < narrowedStoreFloor {
-		t.Fatalf("only %d structs hold a database.*Store interface (floor %d): a handler was widened back "+
-			"to *database.DB", narrowed, narrowedStoreFloor)
+		t.Fatalf("only %d handler fields hold a narrowed database interface (floor %d): a handler was "+
+			"widened back to *database.DB", narrowed, narrowedStoreFloor)
 	}
 	sort.Strings(narrowedList)
-	t.Logf("transport layer: %d structs hold *database.DB, %d hold their own store interface, "+
+	t.Logf("transport layer: %d structs hold *database.DB, %d fields hold their own store interface, "+
 		"%d struct fields scanned (started 19/0)", len(concrete), narrowed, fields)
 
 	if len(concrete) > 0 {
@@ -134,32 +176,41 @@ func TestHandlerLayerHoldsNoGodObject(t *testing.T) {
 // where no test exercises the nil path.
 func TestNarrowedFieldsAreOnlyAssignedThroughNarrow(t *testing.T) {
 	root := moduleRoot(t)
-	byFile, err := FieldTypesByFile(root, "internal/handler")
+	named, embedded, ifaces, err := narrowedHandlerFields(root)
 	if err != nil {
-		t.Fatalf("scan: %v", err)
+		t.Fatalf("narrowed field scan: %v", err)
 	}
-	narrowedFiles := map[string]bool{}
-	for file, types := range byFile {
-		for text := range types {
-			if strings.HasPrefix(text, "database.") && strings.HasSuffix(text, "Store") {
-				narrowedFiles[file] = true
-			}
+	// Embedding is the way a field escapes a key-based assignment scan, so it is refused
+	// outright rather than counted.
+	if len(embedded) > 0 {
+		detail := make([]string, 0, len(embedded))
+		for file, types := range embedded {
+			detail = append(detail, file+": "+strings.Join(types, ", "))
 		}
+		sort.Strings(detail)
+		t.Fatalf("%d handler structs embed a database interface, which widens their method set "+
+			"past any per-field check:\n%s", len(embedded), strings.Join(detail, "\n"))
 	}
-	if len(narrowedFiles) < narrowedStoreFloor {
-		t.Fatalf("%d files declare a narrowed field, floor is %d", len(narrowedFiles), narrowedStoreFloor)
+
+	fields := 0
+	for _, names := range named {
+		fields += len(names)
+	}
+	if fields < narrowedStoreFloor {
+		t.Fatalf("only %d handler fields hold a database interface (floor %d): a domain was widened "+
+			"back to *database.DB", fields, narrowedStoreFloor)
 	}
 
 	violations := []string{}
 	seen := 0
-	for rel := range narrowedFiles {
+	for rel, names := range named {
 		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
 			// The scanner named a file it cannot open. Everything below would then inspect
 			// nothing and the gate would go green while checking nothing - which is exactly how
 			// the first version of this helper passed a probe it should have failed.
 			t.Fatalf("%s declares a narrowed storage field but cannot be read: %v", rel, err)
 		}
-		for _, kind := range assignmentKinds(root, rel)[rel] {
+		for _, kind := range assignmentKinds(root, rel, names)[rel] {
 			seen++
 			if kind != "Narrow" {
 				violations = append(violations, rel+" assigns a narrowed storage field via "+kind)
@@ -168,13 +219,13 @@ func TestNarrowedFieldsAreOnlyAssignedThroughNarrow(t *testing.T) {
 	}
 	if seen < narrowedAssignmentFloor {
 		t.Fatalf("only %d narrowed assignments inspected across the package (floor %d): the scan misses them",
-			seen, narrowedStoreFloor)
+			seen, narrowedAssignmentFloor)
 	}
 	if len(violations) > 0 {
 		sort.Strings(violations)
 		t.Fatalf("narrowed fields assigned without database.Narrow (a nil *DB becomes a non-nil interface):\n%s",
 			strings.Join(violations, "\n"))
 	}
-	t.Logf("%d files hold narrowed fields, %d assignments inspected, every one goes through database.Narrow",
-		len(narrowedFiles), seen)
+	t.Logf("%d files hold %d narrowed fields, %d assignments inspected, every one goes through "+
+		"database.Narrow (%d interfaces found in internal/database)", len(named), fields, seen, ifaces)
 }

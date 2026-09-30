@@ -276,6 +276,101 @@ func FieldTypesByFile(root, pkgDir string) (map[string]map[string]int, error) {
 	return byFile, nil
 }
 
+// DatabaseInterfaces returns every interface name declared inside internal/database, parsed from
+// source. The shape gate used to guess "is this a narrowed surface?" from the name pattern
+// `database.*Store`, which silently skipped the surfaces that are not called stores:
+// `database.RBACListAccess` (5 handler fields) and `database.VulnerabilityListFilter` (1).
+// Those six fields held a consumer interface with no gate over how it was assigned.
+// The truth source is the declaration list, so a future rename cannot hide a field from the gate.
+func DatabaseInterfaces(root string) (map[string]bool, error) {
+	names := map[string]bool{}
+	fset := token.NewFileSet()
+	dir := filepath.Join(root, "internal/database")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, parseErr)
+		}
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok {
+					continue
+				}
+				if _, isInterface := ts.Type.(*ast.InterfaceType); isInterface {
+					names[ts.Name.Name] = true
+				}
+			}
+		}
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("no interface declared in %s: the parser is not reading the package", dir)
+	}
+	return names, nil
+}
+
+// NarrowedFieldsByFile lists, per non-test file under pkgDir, the struct fields whose type is one of
+// those interfaces. Named fields come back as file -> field names (that is what an assignment key
+// matches); embedded ones come back separately because a struct that embeds a store cannot be
+// shape-checked by key and would otherwise widen its own method set in silence.
+func NarrowedFieldsByFile(root, pkgDir string, interfaces map[string]bool) (map[string][]string, map[string][]string, error) {
+	named := map[string][]string{}
+	embedded := map[string][]string{}
+	fset := token.NewFileSet()
+	err := filepath.WalkDir(filepath.Join(root, pkgDir), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return fmt.Errorf("parse %s: %w", path, parseErr)
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		rel = filepath.ToSlash(rel)
+		ast.Inspect(file, func(n ast.Node) bool {
+			structType, ok := n.(*ast.StructType)
+			if !ok || structType.Fields == nil {
+				return true
+			}
+			for _, field := range structType.Fields.List {
+				text := typesText(field.Type)
+				name, hit := strings.CutPrefix(text, "database.")
+				if !hit || !interfaces[name] {
+					continue
+				}
+				if len(field.Names) == 0 {
+					embedded[rel] = append(embedded[rel], text)
+					continue
+				}
+				for _, fieldName := range field.Names {
+					named[rel] = append(named[rel], fieldName.Name)
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return named, embedded, nil
+}
+
 func typesText(expr ast.Expr) string {
 	switch t := expr.(type) {
 	case *ast.StarExpr:

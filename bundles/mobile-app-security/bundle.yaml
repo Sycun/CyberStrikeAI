@@ -1,0 +1,11 @@
+id: mobile-app-security
+name: 移动端安全测试角色包
+version: 1.0.0
+description: 按角色打包的一键扩展示例：装上一个移动端测试角色、它的子代理与分诊技能，卸载即回到原状。
+units:
+  - kind: role
+    path: roles/移动端安全测试.yaml
+  - kind: agent
+    path: agents/mobile-app-analyst.md
+  - kind: skill
+    path: skills/mobile-package-triage
