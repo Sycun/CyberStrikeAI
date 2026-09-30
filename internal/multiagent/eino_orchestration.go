@@ -7,7 +7,7 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
-	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/project"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/planexecute"
@@ -29,7 +29,7 @@ type PlanExecuteRootArgs struct {
 	MwCfg  *config.MultiAgentEinoMiddlewareConfig
 	// ConversationID is used for transcript/isolation paths in middleware.
 	ConversationID string
-	DB             *database.DB
+	DB             project.Store
 	ProjectID      string
 	Logger         *zap.Logger
 	// ModelName is used for model input token estimation logs.

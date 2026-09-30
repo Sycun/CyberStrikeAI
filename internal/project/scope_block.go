@@ -75,7 +75,7 @@ func truncateRunes(s string, max int) string {
 }
 
 // BuildProjectBlackboardBlock 组合测试范围 + 事实黑板索引。
-func BuildProjectBlackboardBlock(db *database.DB, projectID string, cfg config.ProjectConfig) (string, error) {
+func BuildProjectBlackboardBlock(db Store, projectID string, cfg config.ProjectConfig) (string, error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return "", nil

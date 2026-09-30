@@ -54,14 +54,18 @@ vet:
 fmt:
 	gofmt -w cmd internal
 
-## fmt-check 才是门禁。`gofmt -l cmd internal` 在重构起点上有 29 个上游遗留文件（P6 窄接口那轮
-## 顺手把 internal/audit/resource_availability.go 重写规范后降到 28），全仓
+## fmt-check 才是门禁。`gofmt -l cmd internal` 在重构起点上有 29 个上游遗留文件；窄接口那一轮
+## 重写 internal/audit/resource_availability.go 时顺手把它规范掉了，实测降到 28。
+## handler 层裸句柄归零那一轮同样只留下"确实改过"的文件：实测 26。期间有 9 个文件是
+## **纯被 gofmt 重排、与改动无关**的，用 `git diff --ignore-all-space --ignore-blank-lines` 找出来
+## 并 `git checkout HEAD --` 还原了（第一次还原用错了引用点，取到的是索引里的格式化版本，
+## 所以基线一度被误报成 21）。全仓
 ## 重排会把无关改动混进解耦 diff，所以这里用 ratchet：既存债务可以留着，但不许再加，
 ## 降了要收紧。（这个数字是 `gofmt -l cmd internal | wc -l` 的输出，包含 cmd/ 两个。）
 .PHONY: fmt-check
 fmt-check:
 	@unformatted=$$(gofmt -l cmd internal | wc -l | tr -d ' '); \
-	baseline=28; \
+	baseline=26; \
 	if [ "$$unformatted" -gt "$$baseline" ]; then \
 		echo "gofmt needed (baseline $$baseline, now $$unformatted):"; gofmt -l cmd internal; exit 1; \
 	fi; \
@@ -100,7 +104,7 @@ precommit: fmt-check vet test-race lint arch-lint
 ## 数字来自 `go test -count=1 -v -run TestEinoImportsOnlyShrink ./internal/layering/` 的日志。
 .PHONY: layering-check
 layering-check:
-	$(GO) test -count=1 -run 'TestEinoImportsOnlyShrink|TestHandler|TestConcreteDBFieldsOnlyShrink' ./internal/layering/
+	$(GO) test -count=1 -run 'TestEinoImportsOnlyShrink|TestHandler|TestNarrowedFields' ./internal/layering/
 
 .PHONY: wiring-check
 wiring-check:

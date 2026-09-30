@@ -14,7 +14,6 @@ import (
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/agents"
 	"cyberstrike-ai/internal/config"
-	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/einomcp"
 	"cyberstrike-ai/internal/project"
 	"cyberstrike-ai/internal/reasoning"
@@ -66,7 +65,7 @@ func RunDeepAgent(
 	appCfg *config.Config,
 	ma *config.MultiAgentConfig,
 	ag *agent.Agent,
-	db *database.DB,
+	db project.Store,
 	logger *zap.Logger,
 	conversationID string,
 	projectID string,

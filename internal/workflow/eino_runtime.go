@@ -5,7 +5,6 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
-	"cyberstrike-ai/internal/database"
 
 	"go.uber.org/zap"
 )
@@ -40,7 +39,7 @@ func newWorkflowRuntime(args RunArgs, runID string, idx *graphIndex, inputs map[
 
 // RunArgs is the execution context for a role-bound workflow run.
 type RunArgs struct {
-	DB                 *database.DB
+	DB                 Store
 	Logger             *zap.Logger
 	Role               config.RoleConfig
 	AppCfg             *config.Config

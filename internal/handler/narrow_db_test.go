@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -37,6 +38,11 @@ var narrowedHandlers = []struct {
 		m.SetDB(db)
 		return m
 	}},
+	{"AgentHandler", func(db *database.DB) interface{} {
+		return NewAgentHandler(nil, db, &config.Config{}, zap.NewNop())
+	}},
+	{"ProjectHandler", func(db *database.DB) interface{} { return NewProjectHandler(db, zap.NewNop()) }},
+	{"WorkflowHandler", func(db *database.DB) interface{} { return NewWorkflowHandler(db, zap.NewNop()) }},
 	{"NotificationHandler", func(db *database.DB) interface{} { return NewNotificationHandler(db, nil, zap.NewNop()) }},
 	{"OpenAPIHandler", func(db *database.DB) interface{} { return NewOpenAPIHandler(db, zap.NewNop(), nil, nil) }},
 	{"RobotHandler", func(db *database.DB) interface{} { return NewRobotHandler(&config.Config{}, db, nil, zap.NewNop()) }},
@@ -74,7 +80,7 @@ func storageField(t *testing.T, built interface{}) reflect.Value {
 }
 
 func TestNarrowedStorageStaysNilWithoutADatabase(t *testing.T) {
-	if len(narrowedHandlers) < 15 {
+	if len(narrowedHandlers) < 18 {
 		t.Fatalf("only %d narrowed handlers listed, the inventory is stale", len(narrowedHandlers))
 	}
 	for _, entry := range narrowedHandlers {
@@ -88,7 +94,14 @@ func TestNarrowedStorageStaysNilWithoutADatabase(t *testing.T) {
 }
 
 func TestNarrowedStorageKeepsALiveDatabase(t *testing.T) {
-	db := &database.DB{}
+	// A real connection, not `&database.DB{}`: the zero value carries a nil *sql.DB, and
+	// NewAgentHandler eagerly loads batch queues - which segfaults on that. The repo's convention
+	// is real SQLite files over mocks, so the live path gets a database it can actually query.
+	dbPath := filepath.Join(t.TempDir(), "narrow-live.db")
+	db, err := database.NewDB(dbPath, zap.NewNop())
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
 	for _, entry := range narrowedHandlers {
 		field := storageField(t, entry.build(db))
 		if field.IsNil() {

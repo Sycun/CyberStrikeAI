@@ -8,6 +8,14 @@ import (
 	"cyberstrike-ai/internal/multiagent"
 )
 
+// Store is the persistence surface the finalizer needs: read a tool execution's recorded state, and
+// write one back when a cancelled run leaves an execution dangling.
+//
+// It used to take the 361-method *database.DB. This package is the leaf the report praises (final
+// status is decided in one place); keeping it able to reach any table would undercut that. The
+// method list lives in database.ToolExecutionLedger to avoid an import cycle.
+type Store = database.ToolExecutionLedger
+
 const (
 	StatusCompleted    = "completed"
 	StatusInProgress   = "in_progress"
@@ -57,7 +65,7 @@ type Input struct {
 	RequireExecutionEvidence bool
 }
 
-func FromRunResult(db *database.DB, result *multiagent.RunResult, in Input) Decision {
+func FromRunResult(db Store, result *multiagent.RunResult, in Input) Decision {
 	if result != nil {
 		if strings.TrimSpace(in.Response) == "" {
 			in.Response = result.Response
@@ -79,7 +87,7 @@ func FromRunResult(db *database.DB, result *multiagent.RunResult, in Input) Deci
 	return d
 }
 
-func Decide(db *database.DB, in Input) Decision {
+func Decide(db Store, in Input) Decision {
 	text := strings.TrimSpace(in.Response)
 	status := strings.TrimSpace(in.Status)
 	if status == "" {
@@ -207,7 +215,7 @@ func evidenceRefs(ids []string) []string {
 	return out
 }
 
-func pendingExecutions(db *database.DB, ids []string) []string {
+func pendingExecutions(db Store, ids []string) []string {
 	if db == nil || len(ids) == 0 {
 		return nil
 	}
@@ -234,7 +242,7 @@ func pendingExecutions(db *database.DB, ids []string) []string {
 	return out
 }
 
-func hasCompletedEvidence(db *database.DB, ids []string) bool {
+func hasCompletedEvidence(db Store, ids []string) bool {
 	if db == nil || len(ids) == 0 {
 		return false
 	}

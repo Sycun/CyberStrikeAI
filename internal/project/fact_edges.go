@@ -12,10 +12,10 @@ import (
 var PathGraphCategories = map[string]struct{}{
 	FactCategoryTarget:  {},
 	FactCategoryFinding: {},
-	FactCategoryChain:            {},
-	FactCategoryExploit:          {},
-	FactCategoryPOC:              {},
-	"vuln":                       {},
+	FactCategoryChain:   {},
+	FactCategoryExploit: {},
+	FactCategoryPOC:     {},
+	"vuln":              {},
 }
 
 // GraphNodeType 将 fact category 映射为图节点类型（供前端样式与 ELK 分层）。
@@ -85,7 +85,7 @@ func truncateGraphLabel(summary string, maxRunes int) string {
 }
 
 // BuildProjectFactGraph 构建项目事实图（nodes + edges）。
-func BuildProjectFactGraph(db *database.DB, projectID string, view string, excludeDeprecated bool) (*database.ProjectFactGraph, error) {
+func BuildProjectFactGraph(db Store, projectID string, view string, excludeDeprecated bool) (*database.ProjectFactGraph, error) {
 	if db == nil {
 		return nil, fmt.Errorf("database 未初始化")
 	}

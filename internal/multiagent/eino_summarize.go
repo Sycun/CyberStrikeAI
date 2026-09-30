@@ -9,7 +9,6 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/config"
-	"cyberstrike-ai/internal/database"
 	copenai "cyberstrike-ai/internal/openai"
 	"cyberstrike-ai/internal/project"
 
@@ -85,7 +84,7 @@ func newEinoSummarizationMiddleware(
 	appCfg *config.Config,
 	mwCfg *config.MultiAgentEinoMiddlewareConfig,
 	conversationID string,
-	db *database.DB,
+	db project.Store,
 	projectID string,
 	logger *zap.Logger,
 ) (adk.ChatModelAgentMiddleware, error) {
@@ -461,7 +460,7 @@ func buildPlaintextSummarizationInput(
 }
 
 // refreshFactIndexInMessages 在 summarization 压缩后，用 DB 最新索引替换 system 中已有的项目黑板索引段。
-func refreshFactIndexInMessages(msgs []adk.Message, db *database.DB, projectID string, cfg config.ProjectConfig, logger *zap.Logger) []adk.Message {
+func refreshFactIndexInMessages(msgs []adk.Message, db project.Store, projectID string, cfg config.ProjectConfig, logger *zap.Logger) []adk.Message {
 	if db == nil || !cfg.Enabled {
 		return msgs
 	}

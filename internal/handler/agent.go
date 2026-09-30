@@ -184,7 +184,7 @@ func discardPlanningIfEchoesToolResult(respPlan *responsePlanAgg, toolData inter
 // AgentHandler Agent处理器
 type AgentHandler struct {
 	agent *agent.Agent
-	db    *database.DB
+	db    database.AgentStore
 	// hitlStore 是 hitl_interrupts 的域存储：HTTP 层不再在这个表上裸写 SQL。
 	hitlStore *store.HITL
 	// sessions 是 messages 的域存储：异常收尾改写助手消息内容走它，不在 HTTP 层拼 SQL。
@@ -288,7 +288,7 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 	}
 	handler := &AgentHandler{
 		agent:            agent,
-		db:               db,
+		db:               database.Narrow[database.AgentStore](db),
 		hitlStore:        newHITLStore(db),
 		sessions:         newSessionStore(db),
 		logger:           logger,

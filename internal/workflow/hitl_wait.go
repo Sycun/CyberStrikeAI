@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"cyberstrike-ai/internal/database"
 )
 
 // HITLDecision is a human decision on a workflow approval node.
@@ -48,7 +46,7 @@ func NotifyHITLDecision(runID string, decision HITLDecision) bool {
 	}
 }
 
-func readHITLDecisionFromDB(db *database.DB, runID string) (HITLDecision, bool, error) {
+func readHITLDecisionFromDB(db Store, runID string) (HITLDecision, bool, error) {
 	if db == nil {
 		return HITLDecision{}, false, nil
 	}
@@ -86,13 +84,13 @@ func readHITLDecisionFromDB(db *database.DB, runID string) (HITLDecision, bool, 
 	}
 }
 
-func waitWorkflowHITLDecision(ctx context.Context, db *database.DB, runID string) (HITLDecision, error) {
+func waitWorkflowHITLDecision(ctx context.Context, db Store, runID string) (HITLDecision, error) {
 	ch := registerHITLWaiter(runID)
 	defer unregisterHITLWaiter(runID, ch)
 	return waitWorkflowHITLDecisionWithChannel(ctx, db, runID, ch)
 }
 
-func waitWorkflowHITLDecisionWithChannel(ctx context.Context, db *database.DB, runID string, ch chan HITLDecision) (HITLDecision, error) {
+func waitWorkflowHITLDecisionWithChannel(ctx context.Context, db Store, runID string, ch chan HITLDecision) (HITLDecision, error) {
 	if d, ok, err := readHITLDecisionFromDB(db, runID); err != nil {
 		return HITLDecision{}, err
 	} else if ok {

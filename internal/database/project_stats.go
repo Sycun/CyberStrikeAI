@@ -45,12 +45,17 @@ func (db *DB) GetProjectStatsCounts(projectID string) (*ProjectStats, error) {
 	return stats, nil
 }
 
-// ListProjectFactsForSparseCheck 返回用于待补全检测的事实字段（非 deprecated）。
-func (db *DB) ListProjectFactsForSparseCheck(projectID string) ([]struct {
+// ProjectFactSparseRow is one fact's sparse-check input. It used to be an anonymous struct in the
+// return type, which cannot be named in a consumer-side interface - internal/project.Store needs
+// to mention this method, so the row type has to have a name.
+type ProjectFactSparseRow struct {
 	Category string
 	FactKey  string
 	Body     string
-}, error) {
+}
+
+// ListProjectFactsForSparseCheck 返回用于待补全检测的事实字段（非 deprecated）。
+func (db *DB) ListProjectFactsForSparseCheck(projectID string) ([]ProjectFactSparseRow, error) {
 	rows, err := db.Query(
 		`SELECT category, fact_key, COALESCE(body,'') FROM project_facts WHERE project_id = ? AND confidence != 'deprecated'`,
 		projectID,
@@ -59,17 +64,9 @@ func (db *DB) ListProjectFactsForSparseCheck(projectID string) ([]struct {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []struct {
-		Category string
-		FactKey  string
-		Body     string
-	}
+	var out []ProjectFactSparseRow
 	for rows.Next() {
-		var row struct {
-			Category string
-			FactKey  string
-			Body     string
-		}
+		var row ProjectFactSparseRow
 		if err := rows.Scan(&row.Category, &row.FactKey, &row.Body); err != nil {
 			return nil, err
 		}

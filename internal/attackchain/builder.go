@@ -20,22 +20,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// Store is the persistence surface a Builder needs: the chain's own read/write side plus the
-// conversation evidence it reconstructs nodes from. Declared here because this package is the
-// consumer - handing a builder the 361-method *database.DB would let it reach any table, which is
-// the coupling the report's P6 asks to remove. internal/database/stores.go keeps AttackChainStore a
-// superset of it, so the handler can pass its own narrowed field straight in.
-type Store interface {
-	ConversationHasToolProcessDetails(conversationID string) (bool, error)
-	DeleteAttackChain(conversationID string) error
-	GetAgentTrace(conversationID string) (traceInputJSON, assistantOutput string, err error)
-	GetMessages(conversationID string) ([]database.Message, error)
-	GetProcessDetailsByConversation(conversationID string) (map[string][]database.ProcessDetail, error)
-	LoadAttackChainEdges(conversationID string) ([]database.AttackChainEdge, error)
-	LoadAttackChainNodes(conversationID string) ([]database.AttackChainNode, error)
-	SaveAttackChainEdge(conversationID, edgeID, sourceNodeID, targetNodeID, edgeType string, weight int) error
-	SaveAttackChainNode(conversationID, nodeID, nodeType, nodeName, toolExecutionID, metadata string, riskScore int) error
-}
+// Store is the persistence surface this package needs: the chain's node/edge rows, the
+// conversation evidence they are reconstructed from, and the project fact the promotion path writes
+// against. It used to take the 361-method *database.DB in every signature, which is what kept the
+// HTTP layer from narrowing its own storage field. The method list lives in
+// database.AttackChainLedger to avoid an import cycle; the alias keeps it one list to edit.
+type Store = database.AttackChainLedger
 
 // Builder 攻击链构建器
 type Builder struct {

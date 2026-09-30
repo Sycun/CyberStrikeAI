@@ -24,13 +24,11 @@ func newSessionStore(db *database.DB) *store.Session {
 	return store.NewSession(db.DB)
 }
 
-// sessionStore is the messages domain store, built on demand so a handler constructed
-// without a connection (the tests that only exercise request parsing) keeps working the way
-// it did when the SQL was inline and simply was not reached.
+// sessionStore is the messages domain store. It is built in NewAgentHandler, because
+// store.Session sits on the raw *sql.DB and the handler's own storage field is deliberately a
+// narrow interface that cannot hand one over - leaking the connection through an accessor would
+// undo the narrowing. A handler assembled as a struct literal sets the same field the same way.
 func (h *AgentHandler) sessionStore() *store.Session {
-	if h.sessions == nil {
-		h.sessions = newSessionStore(h.db)
-	}
 	return h.sessions
 }
 

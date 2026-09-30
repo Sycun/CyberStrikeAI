@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"cyberstrike-ai/internal/config"
-	"cyberstrike-ai/internal/database"
 )
 
 // AppendSystemPromptBlock 将附加块追加到 system prompt。
@@ -28,7 +27,7 @@ const (
 )
 
 // BuildFactIndexBlock 为 Agent 系统提示生成项目黑板索引（key + summary + 关系边 + 攻击路径，不含 body）。
-func BuildFactIndexBlock(db *database.DB, projectID string, cfg config.ProjectConfig) (string, error) {
+func BuildFactIndexBlock(db Store, projectID string, cfg config.ProjectConfig) (string, error) {
 	if db == nil || !cfg.Enabled {
 		return "", nil
 	}

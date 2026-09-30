@@ -216,30 +216,42 @@ table (noted in `config.go`).
   append differing by a single clause; the digest's two remaining cross-domain reads now live in
   `store.Vulnerability` and `store.Execution`, so the transport layer assembles **no SQL at all**
   (it started at 49), and the HITL/session/notification-read tables are pinned to a single writer
-  by a repository-wide ownership test; **the narrow interfaces are no longer paper contracts** -
-  fifteen domains now hold their own store interface as the field type, and `internal/handler` is down
-  from 19 structs holding `*database.DB` to 3 (per-file ceilings plus an only-up narrowed-store floor,
-  in `make layering-check`). Every one of those fields is assigned through `database.Narrow`, which is
+  by a repository-wide ownership test; **the narrow interfaces are no longer a paper contract - they
+  are this layer's hard invariant** - eighteen domains now hold their own store interface as the field
+  type, one dead field was deleted outright (`KnowledgeHandler.db`, never read: the honest fix was to
+  drop the field and its constructor parameter rather than invent a store for it), and `internal/handler`
+  went from 19 structs holding `*database.DB` to **zero** (zero `*sql.DB` fields as well). The gate
+  flipped from a ratchet to `TestHandlerLayerHoldsNoGodObject`, which fails on any single occurrence and
+  guards its own emptiness by requiring the walk to have seen ~990 struct fields, plus a shape gate
+  (`TestNarrowedFieldsAreOnlyAssignedThroughNarrow`) asserting every assignment to a narrowed field goes
+  through `database.Narrow`. Both run in `make layering-check`. Every one of those fields is assigned through `database.Narrow`, which is
   load-bearing rather than cosmetic: `var store AssetStore = (*DB)(nil)` is a *non-nil* interface, so a
   plain assignment would permanently invert all 64 `if h.db == nil` degradation guards in the transport
   layer - and that compiles, with every enabled-path test still green. This was not argued from theory:
   my first substitution matched only the single-spaced `db: db,` and missed five aligned assignments,
   and `TestRobotModeRejectsUnavailableMultiAgent` panicked on `(*DB).GetRobotSessionBinding` with a nil
-  receiver. The 3 remaining structs are blocked for a measured reason rather than queue order - their
-  `h.db` escapes into another package's signature (`multiagent.RunDeepAgent` /
-  `RunEinoSingleChatModelAgent`, `agentfinalizer.FromRunResult`, six calls into `internal/project` and
-  `internal/attackchain`, `workflowrunner.RunArgs.DB`) - so those functions need consumer interfaces
-  first. That layer has now been crossed four times: `conversation.go`'s two shared history renderers
-  needed exactly one method; `audit.go`'s single escape `audit.ApplyResourceAvailability` needed eight
-  existence lookups and now declares `audit.ResourceExistenceSource`; `monitor.go`'s four escapes were
-  two local helpers needing one method each; and `attackchain.go`'s `attackchain.NewBuilder(h.db, …)`
-  became `attackchain.Store` (nine methods), which also stops *that package* from holding the
-  361-method object. Each time the handler's own interface was widened to a superset, because a
-  generated-from-direct-calls surface always misses the escaped receiver. Two counter-examples are
-  worth as much: `batch_task_manager.go` has 22 methods on `m.db` and zero escapes, so swapping its
-  field type compiled first try - the interface had been generated from its real surface - and
-  `knowledge.go`'s field was **never read at all**, so the honest fix was to delete the field and the
-  constructor parameter rather than invent a store for a dead dependency),
+  receiver. The last three structs fell to declaring the interface at the far end of each chain rather
+  than faking one in the handler: `multiagent` turns out to call **no** database method itself and only
+  forwards the handle to `internal/project`, so the surface belongs to `project` (13 methods - the
+  project row plus the fact and fact-edge ledger); `agentfinalizer` needs two (read/save one tool
+  execution); `attackchain` needs the chain rows, the conversation evidence, and the fact ledger its
+  promotion path writes; the workflow engine needs its own run/node-run ledger plus project facts.
+  Surfaces more than one package needs are declared once in `internal/database/surfaces.go` (every
+  consumer imports database, so declaring them consumer-side would create a cycle) and aliased back as
+  `project.Store`, `agentfinalizer.Store`, `attackchain.Store` - one method list, one
+  `var _ X = (*DB)(nil)` assertion each, instead of copying thirteen signatures. `Close` is
+  deliberately absent from all of them: a consumer of the shared handle must not be able to shut it
+  down. The shape gate's own delivery story is worth keeping: its first version passed a probe it
+  should have failed, because it rebuilt a module-relative path by re-prepending `internal/handler` -
+  the file never opened, `continue` swallowed it, and an empty set read as "no violations". Every
+  branch of a text-scoped gate now has to prove it saw something
+  (`declares a narrowed storage field but no assignment to it was found`), and a second false
+  positive - `if h.db == nil` guards parsed as assignments, since RE2 has no negative lookahead -
+  had to be excluded explicitly. Two rules earned: **run both probes** (inject a violation, expect
+  red; clean tree, expect green) for every new gate, and **never let a text judgement succeed on an
+  empty set**. One counter-example argues the process worked: `batch_task_manager.go` has 22 methods on
+  `m.db` and zero escapes, so swapping its field type compiled first try - that interface had been
+  generated from its real surface all along),
   event-sourced sessions, and `AgentHandler` decomposition -
   which is now measured and gated instead of being a hunch (the provider catalog is generated and
   byte-gated: `internal/provider/publish.go` renders it into `docs/zh-CN/provider-catalog.md` plus

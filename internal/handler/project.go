@@ -27,13 +27,13 @@ func clampProjectDescription(s string) string {
 
 // ProjectHandler 项目管理处理器。
 type ProjectHandler struct {
-	db     *database.DB
+	db     database.ProjectStore
 	logger *zap.Logger
 }
 
 // NewProjectHandler 创建项目管理处理器。
 func NewProjectHandler(db *database.DB, logger *zap.Logger) *ProjectHandler {
-	return &ProjectHandler{db: db, logger: logger}
+	return &ProjectHandler{db: database.Narrow[database.ProjectStore](db), logger: logger}
 }
 
 type createProjectRequest struct {

@@ -17,7 +17,7 @@ import (
 )
 
 type WorkflowHandler struct {
-	db     *database.DB
+	db     database.WorkflowStore
 	logger *zap.Logger
 	audit  *audit.Service
 	agent  *agent.Agent
@@ -25,7 +25,7 @@ type WorkflowHandler struct {
 }
 
 func NewWorkflowHandler(db *database.DB, logger *zap.Logger) *WorkflowHandler {
-	return &WorkflowHandler{db: db, logger: logger}
+	return &WorkflowHandler{db: database.Narrow[database.WorkflowStore](db), logger: logger}
 }
 
 func (h *WorkflowHandler) SetAudit(s *audit.Service) {

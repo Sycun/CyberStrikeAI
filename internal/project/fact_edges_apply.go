@@ -5,7 +5,7 @@ import (
 )
 
 // ApplyFactOutgoingLinks 替换某事实的出边（links 为 nil 时不修改）。
-func ApplyFactOutgoingLinks(db *database.DB, projectID, sourceFactKey, sourceConversationID string, links []database.ProjectFactEdgeInput) error {
+func ApplyFactOutgoingLinks(db Store, projectID, sourceFactKey, sourceConversationID string, links []database.ProjectFactEdgeInput) error {
 	if links == nil {
 		return nil
 	}
@@ -21,7 +21,7 @@ func ResolveFactLinkInputs(links []database.ProjectFactEdgeFromInput, linksText 
 }
 
 // ApplyFactIncomingLinks 替换某事实的入边（links 为 nil 时不修改）。
-func ApplyFactIncomingLinks(db *database.DB, projectID, targetFactKey string, links []database.ProjectFactEdgeFromInput) error {
+func ApplyFactIncomingLinks(db Store, projectID, targetFactKey string, links []database.ProjectFactEdgeFromInput) error {
 	if links == nil {
 		return nil
 	}
@@ -29,7 +29,7 @@ func ApplyFactIncomingLinks(db *database.DB, projectID, targetFactKey string, li
 }
 
 // PersistFactIncomingLinks 写入入边并可选同步当前事实 body「关联」段。
-func PersistFactIncomingLinks(db *database.DB, projectID, targetFactKey string, links []database.ProjectFactEdgeFromInput, syncBody bool) error {
+func PersistFactIncomingLinks(db Store, projectID, targetFactKey string, links []database.ProjectFactEdgeFromInput, syncBody bool) error {
 	if links == nil {
 		return nil
 	}
@@ -53,7 +53,7 @@ func PersistFactIncomingLinks(db *database.DB, projectID, targetFactKey string, 
 }
 
 // PersistFactLinksFromParsed 写入解析后的 links（parsed 为 nil 表示不修改）。
-func PersistFactLinksFromParsed(db *database.DB, projectID, factKey, sourceConversationID string, parsed *ParsedFactLinks, syncBody bool) error {
+func PersistFactLinksFromParsed(db Store, projectID, factKey, sourceConversationID string, parsed *ParsedFactLinks, syncBody bool) error {
 	if parsed == nil || parsed.Incoming == nil {
 		return nil
 	}
@@ -61,7 +61,7 @@ func PersistFactLinksFromParsed(db *database.DB, projectID, factKey, sourceConve
 }
 
 // PersistFactOutgoingLinks 写入出边（图连线等低层 API；body 同步请用 PersistFactIncomingLinks）。
-func PersistFactOutgoingLinks(db *database.DB, projectID, sourceFactKey, sourceConversationID string, links []database.ProjectFactEdgeInput, syncBody bool) error {
+func PersistFactOutgoingLinks(db Store, projectID, sourceFactKey, sourceConversationID string, links []database.ProjectFactEdgeInput, syncBody bool) error {
 	if links == nil {
 		return nil
 	}
@@ -78,7 +78,7 @@ type LinkCounts struct {
 }
 
 // LoadProjectFactLinkCounts 批量加载边计数。
-func LoadProjectFactLinkCounts(db *database.DB, projectID string) (LinkCountMap, error) {
+func LoadProjectFactLinkCounts(db Store, projectID string) (LinkCountMap, error) {
 	edges, err := db.ListProjectFactEdgesByProject(projectID)
 	if err != nil {
 		return nil, err

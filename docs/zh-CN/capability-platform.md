@@ -183,16 +183,21 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   通知摘要里另外两个域（漏洞最近条目、执行失败条目）也已进 `store.Vulnerability` 与 `store.Execution`，
   **handler 裸 SQL 归零**（起点 49），
   且 HITL/会话/通知已读三张表已由全仓归属测试钉住唯一写入者。
-  **窄接口已不只是契约**：15 个域的存储字段类型换成了自己的消费者接口
-  （`AssetStore`/`AuditStore`/`ChatUploadsStore`/`ConfigStore`/`ConversationStore`/`MonitorStore`/`NotificationStore`/`OpenAPIStore`/
-  `RBACStore`/`RobotStore`/`SkillsStore`/`VulnerabilityStore`/`WebShellStore`），
-  `internal/handler` 里 `*database.DB` 结构体字段 **19 → 3**（分文件基线 + 只升的窄接口下限双门禁，
-  `make layering-check`）。构造一律走 `database.Narrow`——它把 nil 指针映射成 nil 接口，
+  **窄接口已不只是契约，而是这一层的硬不变量**：18 个域的存储字段类型换成了自己的消费者接口
+  （`AgentStore`/`AssetStore`/`AttackChainStore`/`AuditStore`/`BatchTaskStore`/`ChatUploadsStore`/
+  `ConfigStore`/`ConversationStore`/`MonitorStore`/`NotificationStore`/`OpenAPIStore`/`ProjectStore`/
+  `RBACStore`/`RobotStore`/`SkillsStore`/`VulnerabilityStore`/`WebShellStore`/`WorkflowStore`），
+  另有 1 个从没被读过的死字段直接删除（`KnowledgeHandler.db` 连构造参数一起删）。
+  `internal/handler` 里 `*database.DB` 结构体字段 **19 → 0**，判据已从"只许降"翻成
+  硬零门禁 `TestHandlerLayerHoldsNoGodObject`（配"扫到 990 个字段"的反空跑下限）+
+  形状门禁 `TestNarrowedFieldsAreOnlyAssignedThroughNarrow`，都在 `make layering-check`。
+  构造一律走 `database.Narrow`——它把 nil 指针映射成 nil 接口，
   否则 `var store AssetStore = (*DB)(nil)` 是**非 nil 接口**，传输层 64 处 `if h.db == nil`
   的降级分支会永久走错，而这一切编译通过、启用路径测试全绿；这条陷阱不是论证出来的，
   是我第一版正则漏掉 5 处对齐赋值后由 `TestRobotModeRejectsUnavailableMultiAgent` 直接 panic 抓出来的。
-  剩下 3 个域卡在自己的 `h.db` **逃逸进别包签名**（`multiagent.RunDeepAgent`、
-  `agentfinalizer.FromRunResult`、`internal/project` 的 6 处等），要先给那些函数声明接口）、
+  最后 3 个域是这样打通的：`multiagent` 自己一个 DB 方法都不调、只把句柄转发给 `internal/project`，
+  所以接口声明在链条另一端（`database.ProjectFactStore` / `ToolExecutionLedger` / `AttackChainLedger`，
+  消费包用类型别名指回去，避免把 13 个签名抄三遍；这些面里刻意不放 `Close`））、
   `AgentHandler` 分解（**水位已实测并进门禁**：130 个方法/23 个文件，
   `internal/handler` 整包 64 个 `Set*` 注入方法分布在 21 个接收者类型上，其中 `SetAudit` 有
   18 份逐字相同的副本——报告原记的"26 处 SetXxx/19 个文件"是低估。已落地：三条只降门禁

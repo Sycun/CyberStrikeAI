@@ -22,6 +22,9 @@ import (
 
 // AgentStore is the persistence surface required by AgentHandler.
 type AgentStore interface {
+	ProjectFactStore
+	ToolExecutionLedger
+	WorkflowRunLedger
 	AddMessage(conversationID, role, content string, mcpExecutionIDs []string) (*Message, error)
 	AddProcessDetail(messageID, conversationID, eventType, message string, data interface{}) error
 	AddProcessDetailWithID(messageID, conversationID, eventType, message string, data interface{}) (string, error)
@@ -78,6 +81,7 @@ var _ AssetStore = (*DB)(nil)
 
 // AttackChainStore is the persistence surface required by AttackChainHandler.
 type AttackChainStore interface {
+	AttackChainLedger
 	DeleteAttackChain(conversationID string) error
 	GetConversation(id string) (*Conversation, error)
 	// The rest reaches this surface through attackchain.NewBuilder, which declares its own Store
@@ -245,6 +249,8 @@ var _ OpenAPIStore = (*DB)(nil)
 
 // ProjectStore is the persistence surface required by ProjectHandler.
 type ProjectStore interface {
+	ProjectFactStore
+	AttackChainLedger
 	AddProjectFactEdge(projectID string, in ProjectFactEdgeInput, sourceFactKey, sourceConversationID string) (*ProjectFactEdge, error)
 	AssignResourceToUser(userID, resourceType, resourceID string) error
 	CountConversationsByProjectID(projectID string) (int, error)
@@ -385,6 +391,8 @@ var _ WebShellStore = (*DB)(nil)
 
 // WorkflowStore is the persistence surface required by WorkflowHandler.
 type WorkflowStore interface {
+	ProjectFactStore
+	WorkflowRunLedger
 	ApplyWorkflowPackageImport(ctx context.Context, req WorkflowPackageApplyRequest) (*WorkflowPackageImport, bool, error)
 	CreateWorkflowPackageInspection(v *WorkflowPackageInspection) error
 	DeleteWorkflowDefinition(id string) error

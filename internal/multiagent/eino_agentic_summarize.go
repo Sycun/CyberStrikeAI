@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"cyberstrike-ai/internal/config"
-	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/project"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/middlewares/summarization"
@@ -25,7 +25,7 @@ func newEinoAgenticSummarizationMiddleware(
 	appCfg *config.Config,
 	mwCfg *config.MultiAgentEinoMiddlewareConfig,
 	conversationID string,
-	db *database.DB,
+	db project.Store,
 	projectID string,
 	logger *zap.Logger,
 ) (adk.TypedChatModelAgentMiddleware[*schema.AgenticMessage], error) {

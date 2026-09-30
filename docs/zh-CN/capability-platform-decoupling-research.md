@@ -676,7 +676,9 @@ refactor-ratchet 的规矩先实测，**两个数字都比报告写的多**（�
 
 ```bash
 make ci                                   # gofmt ratchet + vet + go test -race ./... + lint + arch-lint + layering-check + wiring-check
-make fmt-check                            # gofmt 债务 28 / 基线 28（起点 29，P6 窄接口那轮顺带规范化一个文件后收紧）
+make fmt-check                            # gofmt 债务 26 / 基线 26（起点 29；只规范化确实改过的文件，
+                                          # 期间用 `git diff --ignore-all-space` 找回 4 个"纯被我重排"的文件还原，
+                                          # 免得无关格式混进解耦 diff）
 go test -count=1 ./internal/app/ -run 'Shipped|Declared|Catalog|Capability|Recipe|Approval'
 go test -count=1 ./internal/handler/ -run 'I18n|Route|OpenAPI|Undocumented|TwoHandlers|HITLExemption'
 go test -count=1 ./internal/handler/ -run 'RawSQLRatchet|StorePackageHoldsNoHTTPConcerns'   # 裸 SQL 双接收者基线 0/0（起点 49/17）
@@ -687,7 +689,8 @@ go run ./internal/provider/gen -root .                                          
 make layering-check                                                                                       # Eino 收敛：逐包基线，新引入包直接红
 make wiring-check                                                                                         # 审计注入完整性：18 个可注入类型必须逐个 bind
 go test -count=1 -run 'TestNarrowedStorage|TestNarrowRejects' ./internal/handler/ ./internal/database/   # typed-nil 不泄漏（窄接口字段）
-go test -count=1 -v -run TestConcreteDBFieldsOnlyShrink ./internal/layering/ 2>&1 | grep 'transport layer' # 窄接口水位：8 个具体字段 / 11 个消费者接口
+go test -count=1 -v -run TestHandlerLayerHoldsNoGodObject ./internal/layering/ 2>&1 | grep 'transport layer' # 硬零水位：0 个裸句柄字段 / 18 个消费者接口 / 990 字段扫描
+go test -count=1 -run TestNarrowedFieldsAreOnlyAssignedThroughNarrow ./internal/layering/                      # 形状门禁：窄接口字段只能经 database.Narrow 赋值
 go test -count=1 -run 'TestHandler' ./internal/layering/                                                  # AgentHandler/接收者/setter 三条只降门禁
 go test -count=1 -v -run TestEinoImportsOnlyShrink ./internal/layering/ 2>&1 | grep imported              # 当前水位打印
 go test -count=1 ./internal/handler/ -run 'TestHITL.*Endpoint'                              # HITL 5 条接口 JSON 契约
@@ -705,7 +708,7 @@ grep -l '^capability:' tools/*.yaml | wc -l                        # 90
 grep -rn go:embed --include='*.go' . | grep -v _test | wc -l       # 3（原 0）
 ```
 
-当前基线：`make fmt-check` **29/29**、`go build ./...` 干净、`go vet ./...` 干净、`go test -race -count=1 ./...` **43 个含测试包全绿 / 0 竞争**（报告基线为 32 包）；测试函数 **1196** 个，重构前（HEAD）为 989 个，即 **+207**。
+当前基线：`make fmt-check` **26/26**、`go build ./...` 干净、`go vet ./...` 干净、`go test -race -count=1 ./...` **43 个含测试包全绿 / 0 竞争**（报告基线为 32 包）；测试函数 **1205** 个，重构前（HEAD）为 989 个，即 **+216**。
 
 ### §6 社区知识库高危面 —— 完成代码层控制（非 prompt 层）
 
@@ -928,13 +931,25 @@ owner / 资源指派 / 项目 / 会话四条路径，`all` 全放行、空主体
 ### P6 数据层第五片 —— 窄接口从"纸面契约"变成真实字段类型
 
 `internal/database/stores.go` 那 19 个接口此前**只是契约**：字段类型仍是 `*database.DB`，
-所以任何 handler 依然能顺着字段摸到全部 361 个方法。这一片把 **15 个域**的字段换成各自的消费者接口，
+所以任何 handler 依然能顺着字段摸到全部 361 个方法。这一片把 **18 个域**的字段换成各自的消费者接口，
 外加删掉一个**死字段**（`KnowledgeHandler.db`：该类型只有 knowledge.go 一个文件、全文没有一处读它，
 诚实的处置是连构造参数一起删，而不是为它凭空造一个 store）：
-`AssetStore / AttackChainStore / AuditStore / BatchTaskStore / ChatUploadsStore / ConfigStore /
-ConversationStore / MonitorStore / NotificationStore / OpenAPIStore / RBACStore / RobotStore /
-SkillsStore / VulnerabilityStore / WebShellStore`
-（实测口径：`internal/handler` 非测试文件里 `*database.DB` 结构体字段 **19 → 3**，窄接口字段 0 → 15）。
+`AgentStore / AssetStore / AttackChainStore / AuditStore / BatchTaskStore / ChatUploadsStore /
+ConfigStore / ConversationStore / MonitorStore / NotificationStore / OpenAPIStore / ProjectStore /
+RBACStore / RobotStore / SkillsStore / VulnerabilityStore / WebShellStore / WorkflowStore`
+（实测口径：`internal/handler` 非测试文件里 `*database.DB` 结构体字段 **19 → 0**，窄接口字段 0 → 18；
+990 个结构体字段全扫，无一例外，`*sql.DB` 字段也是 0）。
+
+**最后三个域是靠"把接口声明在链条另一端"拿下的**，这一层的做法值得复制：
+`multiagent` 自己**一个数据库方法都不调**，它只是把 handle 转发给 `internal/project`——
+所以真正要声明接口的是 `project`（13 个方法：项目行 + 事实与事实边账本），`multiagent` 收 `project.Store`；
+`agentfinalizer` 只要 2 个方法（读/写一次工具执行）→ `database.ToolExecutionLedger`；
+`attackchain` 要链的节点边 + 会话证据 + 提升为项目时的事实账本 → `database.AttackChainLedger`；
+workflow 引擎要自己的 run/node-run 账本 + 项目事实 → `workflow.Store`（组合两者）。
+多个包共用的面**声明在 `internal/database/surfaces.go`**（消费者都 import 它，声明在消费者侧会成环），
+再由消费包用**类型别名**指回去（`project.Store` / `agentfinalizer.Store` / `attackchain.Store`）——
+一份清单、一处 `var _ X = (*DB)(nil)` 编译期断言，不把 13 个签名抄三遍。
+`Surfaces 里刻意不放 Close`：消费共享句柄的一方不该能关掉它。
 
 **`database.Narrow` 不是可有可无的包装**，它是这一片唯一的安全性来源：
 `var store AssetStore = (*DB)(nil)` 得到的是**非 nil 接口**，于是传输层里所有
@@ -956,19 +971,30 @@ SkillsStore / VulnerabilityStore / WebShellStore`
 `RobotHandler built with a nil *database.DB holds a non-nil database.RobotStore - the typed-nil leak …`；
 把某个字段改宽回 `*database.DB` → **编译失败**（比反射断言更早）。均已撤销、复验绿、`grep` 确认无残留。
 
-**分文件 ratchet**：`internal/layering/concrete_db_field_ratchet_test.go` 对剩余 3 个文件逐个封顶 1，
-另有 `narrowedStoreFloor = 11` 只升不降，新出现的持有者**硬失败**并告知去处
-（探针：在 `asset.go` 加一个 `probeDB *database.DB` 字段 →
-`new structs now hold the whole *database.DB: [internal/handler/asset.go (1)]`；在 `agent.go` 加第二个 →
-`*database.DB fields grew inside existing files`）。
+**门禁已从 ratchet 翻成硬零不变量**（`internal/layering/concrete_db_field_ratchet_test.go`，
+现名 `TestHandlerLayerHoldsNoGodObject`）：判据不再是"比昨天少"，而是**HTTP 层任何结构体都不得持有
+`*database.DB`（也不得持有 `*sql.DB`）**；配两条反空跑下限——扫到的结构体字段总数 `>= 500`（实测 990），
+窄接口字段数 `>= 18` 只升不降。新增持有者**硬失败并告知去处**
+（探针：给 `skills.go` 加一个 `probeRaw *database.DB` 字段 →
+`1 handler struct fields still hold the whole database handle: internal/handler/skills.go: 1 field(s) of type *database.DB`）。
 
-**剩下 3 个为什么还没换**（这是实测的逃逸面，不是"还没轮到"）：它们的 `h.db` 会**流进别的包的签名**——
+第二条门禁 `TestNarrowedFieldsAreOnlyAssignedThroughNarrow` 管**形状**：凡声明了窄接口的文件，
+其对 `db` 字段的每一处赋值都必须经 `database.Narrow`。它交付时**第一次探针没变红**，原因是我把
+模块相对路径又拼了一次目录前缀，读文件失败就 `continue`——于是集合为空、门禁永远绿；这正是本仓库
+"空集合等于通过"的老坑。现在每条判据都带**非空硬失败**：清单里的文件若一条赋值都没扫到就直接
+`t.Fatalf`，并且总赋值数 `< 18` 也失败。修好后探针才如期报
+`internal/handler/asset.go assigns a narrowed storage field via db`。
+同一轮还纠出一个假阳性：`setterRe` 把 10 处 `if h.db == nil` **比较**当成了赋值（RE2 没有负向先行断言，
+只能显式要求 `= ` 后一个字符不是 `=`），干净树上就红了。两条经验：
+**每条新门禁都要跑"注入违规必须红 + 干净树必须绿"两次**，缺一次它就不可信；
+**文本判据必须防"读到空"**，空集永远满足"没有违规"。
+
+**最后三个域是怎么打通的**（它们此前不是"没轮到"，而是 `h.db` 流进了别的包的签名）：
 `agent.go` → `multiagent.RunDeepAgent` / `RunEinoSingleChatModelAgent` 与 `agentfinalizer.FromRunResult`
 （另有 `batch_queue_executor.go`/`eino_single_agent.go`/`finalization_helpers.go` 四个调用点）；
 `project.go` → `internal/project` 与 `internal/attackchain` 的 6 处；
 `workflow.go` → `workflowrunner.RunArgs.DB` 结构体字面量。
-要窄化它们必须先给**别包的那些函数**声明自己的消费者接口，这是同一模式的下一层，不是新设计。
-**这一层已经走通过四次**（区别只在于要改签名的是本包共享函数还是别包入口）：
+解法就是上一段说的"接口声明在链条另一端"。**这一层一共走通过五次**（区别只在于要改签名的是本包共享函数还是别包入口）：
 `conversation.go` —— 两个共享历史渲染器 `processDetailsToJSON` /
 `enrichEmptyToolCallArgumentsFromExecution` 原本收 `*database.DB`，实测量是**它们只调一个方法**
 （`FindNearestToolExecutionArguments`），于是改成单方法接口 `toolExecutionArgumentSource`，字段随即窄化成功。
@@ -1005,11 +1031,10 @@ handler 字段随即窄化，债面 **6 → 3**（`knowledge.go` 的死字段与
 ### 明确还没做（不假装完成）
 
 - P6 剩余：数据层按域切 Store（已落地 HITL/会话(含 messages 内容写回)/通知已读/漏洞最近条目/执行失败条目
-  共 5 个面 + 共享可见性子句，handler 裸 SQL **已归零**；**窄接口已真正落成 15 个域的字段类型（另删 1 个死字段）**
-  （`*database.DB` 结构体字段 19 → 3，见 §11「P6 数据层第五片」）——剩下 3 个域要先给它们的 `h.db`
-  逃逸进去的那些函数签名（`multiagent.RunDeepAgent`/`RunEinoSingleChatModelAgent`、
-  `agentfinalizer.FromRunResult`、`internal/project` 的 6 处、workflow runner 的字面量）声明各自的
-  消费者接口；`internal/database` 那 361 个方法也按域继续切）、
+  共 5 个面 + 共享可见性子句，handler 裸 SQL **已归零**；**这一项已完成**：`internal/handler` 里
+  **没有任何结构体再持有 `*database.DB` 或 `*sql.DB`**（19 → 0；18 个域换成各自的窄接口字段，
+  另 1 个是没人读的死字段，直接删。见 §11「P6 数据层第五片」与 §12.1 表）；
+  `internal/database` 那 361 个方法本身也按域继续切）、
   `AgentHandler` 分解（**水位已实测并进门禁**：130 方法/23 文件、`internal/handler` 整包 64 个 `Set*`；
   已落地 1 处内聚塌陷 + 1 道审计注入完整性门禁，见 §11「P6 `AgentHandler` 分解」；
   报告原记的"19 个文件/26 处 SetXxx"是低估）、Eino 收口至 ≤1 包（**已进门禁并在收**：
@@ -1028,13 +1053,13 @@ handler 字段随即窄化，债面 **6 → 3**（`knowledge.go` 的死字段与
 
 | 阶段 | 状态 | 复验证据 |
 |---|---|---|
-| P0 护栏 + S1–S6 | **已落地** | `make ci`（fmt ratchet 29/29 + vet + `test-race` + lint + arch-lint + layering + wiring）；`internal/settings`（S4）、`internal/assets`+`web/embed.go`（S5）、`internal/capability`（S1/S2/S3）、`internal/provider`（S6）。**本机注意**：`golangci-lint` 与 `go-arch-lint` 二进制未安装，这两个 target 显式报错并给出安装命令（不是静默跳过），故本机验收用 `make fmt-check vet test-race layering-check wiring-check`，CI 里五条加上 lint/arch-lint 全跑 |
+| P0 护栏 + S1–S6 | **已落地** | `make ci`（fmt ratchet 26/26 + vet + `test-race` + lint + arch-lint + layering + wiring）；`internal/settings`（S4）、`internal/assets`+`web/embed.go`（S5）、`internal/capability`（S1/S2/S3）、`internal/provider`（S6）。**本机注意**：`golangci-lint` 与 `go-arch-lint` 二进制未安装，这两个 target 显式报错并给出安装命令（不是静默跳过），故本机验收用 `make fmt-check vet test-race layering-check wiring-check`，CI 里五条加上 lint/arch-lint 全跑 |
 | P1 授权/审批 | **已落地** | `go test -count=1 -run 'Approval|Capability|Declared' ./internal/app/ ./internal/capability/`；`grep -cE '^\s+case ' internal/app/mcp_authorization.go` = 6 |
 | P2 能力身份 + 一份清单出多份产物 | **已落地** | `make generate` 后 regenerate-and-diff 不报差异；`docs/zh-CN/capability-catalog.md` 149 条（150 行含表头） |
 | P3 契约与前端 | **部分：三套事件名契约已完成并双侧比对**；逐文件 ES 模块未做 | `go test -count=1 -run 'TestSSEPage|TestPersistedDetail|TestGeneratedSSEEnum|TestPageLoads' ./internal/handler/`；手拼帧基线 0 |
 | P4 进程外插件宿主 | **部分：进程外 ABI + 软出网已落**；netns/seccomp 硬边界与内嵌 CPython **未做** | `ls internal/pluginhost`；`grep -rl 'seccomp\|CLONE_NEWNET' internal/` → **无匹配**（这就是"未做"的证据） |
 | P5 审核流水线/商店 | **部分：客户端强制 + 制品签名/撤销已落**；registry 服务端、气隙离线包、沙箱引爆自动化 **未做** | `ls internal/artifact`；`ls internal/registry` → **不存在** |
-| P6 常规解耦 | **部分**：`setupRoutes` 分域、Provider 方言 + 目录代码生成、数据层 5 个 Store 面 + 15 个域窄接口字段、handler 裸 SQL 0、Eino 6 包（适配外 3 包）、`AgentHandler` 水位与审计注入门禁 | `make layering-check` + `make wiring-check`；`go test -count=1 -v -run TestConcreteDBFieldsOnlyShrink ./internal/layering/` 报 `3 structs hold *database.DB, 15 hold their own store interface` |
+| P6 常规解耦 | **部分**：`setupRoutes` 分域、Provider 方言 + 目录代码生成、数据层 5 个 Store 面、**handler 层不再持有任何数据库句柄**（18 个域用各自的窄接口 + 1 个死字段删除）、handler 裸 SQL 0、Eino 6 包（适配外 3 包）、`AgentHandler` 水位与审计注入门禁 | `make layering-check` + `make wiring-check`；`go test -count=1 -v -run TestHandlerLayerHoldsNoGodObject ./internal/layering/` 报 `0 structs hold *database.DB, 18 hold their own store interface, 990 struct fields scanned` |
 | §6.1 社区知识控制 | **代码层已落**（围栏 + 入库拒绝 + 装配点守卫）；是否按运行期不可信处理仍待裁决（决策项 4） | `go test -count=1 ./internal/contentpolicy/` |
 
 **没有做成的事**（不假装完成）：`AgentHandler` 分解本体（130 方法/23 文件仍是原样，只多了门禁与一处塌陷）、
@@ -1069,14 +1094,17 @@ origin  https://github.com/AIPentest/CyberStrikeAI.git  # 上游父仓库，只�
 
 ### 12.3 下一轮的第一件事（已排好，直接接着做）
 
-1. 做**窄接口的下一层**（任务清单 #18，剩 3 个域）：给 `multiagent.RunDeepAgent` /
-   `RunEinoSingleChatModelAgent` / `agentfinalizer.FromRunResult` / `internal/project` 那 6 处
-   声明消费者接口，再窄化对应字段并逐个下调 `concreteDBFields` 基线——每一步都由
-   `TestNarrowedStorageStaysNilWithoutADatabase`（typed-nil）与
-   `TestConcreteDBFieldsOnlyShrink`（只降）双向把关。模式已走通**三**遍：
-   `conversation.go`（1 个方法 → 单方法接口）、`audit.go`（8 个存在性查询 →
-   `audit.ResourceExistenceSource` + `AuditStore` 同步补齐，债面 8 → 7）、
-   `monitor.go`（4 处逃逸只需 1 个方法 → `conversationAccessLookup`，债面 7 → 6）、`attackchain.go`（Builder 的 9 个方法 → `attackchain.Store`，债面 6 → 3；同轮删掉 knowledge.go 的死字段）。
+1. **窄接口的下一层（原任务 #18）已完成**：handler 层持有裸句柄的结构体 **3 → 0**，
+   判据也从"只许降"翻成硬零 `TestHandlerLayerHoldsNoGodObject` + 形状门禁
+   `TestNarrowedFieldsAreOnlyAssignedThroughNarrow`。下一步换目标：
+   **`AgentHandler` 分解本体**——实测 130 个方法/23 个文件，其中 HITL 一族就占 **40 个方法/8 个文件**
+   （`hitl.go` 20、`hitl_logs.go` 9、`hitl_audit_agent.go` 5、`hitl_context.go` 3、
+   `hitl_execution.go`/`hitl_config_savers.go`/`hitl_audit_backend.go`/`batch_hitl.go` 各 1），
+   是最值得先切的内聚块。已有的三条只降门禁
+   （方法数 130、文件数 23、整包 setter 64）会把它锁住：搬走得让数字下降，塞回来会红。
+   做法沿用本轮验证过的顺序：先给被搬方法依赖的跨域调用声明消费者接口，再移方法，再降基线、复跑探针。
+2. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），
+   它决定社区制品的攻击面；其余决策项可以在 P4/P5 动工前再定。
 2. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），
    它决定社区制品的攻击面；其余决策项可以在 P4/P5 动工前再定。
 
