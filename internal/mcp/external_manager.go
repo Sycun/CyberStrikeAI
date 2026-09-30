@@ -51,17 +51,21 @@ type externalMCPServerRuntime struct {
 
 // ExternalMCPManager 外部MCP管理器
 type ExternalMCPManager struct {
-	clients            map[string]ExternalMCPClient
-	configs            map[string]config.ExternalMCPServerConfig
-	logger             *zap.Logger
-	storage            MonitorStorage                // 可选的持久化存储
-	executions         map[string]*ToolExecution     // 执行记录
-	stats              map[string]*ToolStats         // 工具统计信息
-	errors             map[string]string             // 错误信息
-	toolCounts         map[string]int                // 工具数量缓存
-	toolCountsMu       sync.RWMutex                  // 工具数量缓存的锁
-	toolCache          map[string]toolListCacheEntry // 工具列表缓存：MCP名称 -> 工具列表
-	toolCacheMu        sync.RWMutex                  // 工具列表缓存的锁
+	clients      map[string]ExternalMCPClient
+	configs      map[string]config.ExternalMCPServerConfig
+	logger       *zap.Logger
+	storage      MonitorStorage                // 可选的持久化存储
+	executions   map[string]*ToolExecution     // 执行记录
+	stats        map[string]*ToolStats         // 工具统计信息
+	errors       map[string]string             // 错误信息
+	toolCounts   map[string]int                // 工具数量缓存
+	toolCountsMu sync.RWMutex                  // 工具数量缓存的锁
+	toolCache    map[string]toolListCacheEntry // 工具列表缓存：MCP名称 -> 工具列表
+	toolCacheMu  sync.RWMutex                  // 工具列表缓存的锁
+	// inventoryObserver is held in an atomic pointer rather than a plain field: the notify
+	// happens while some callers already hold m.mu, and sync.RWMutex is not reentrant, so
+	// reading it under m.mu deadlocks a removal or a stop.
+	inventoryObserver  atomic.Pointer[toolInventoryObserver]
 	listToolsMu        sync.Mutex
 	listToolsInflight  map[string]*listToolsInflight
 	stopRefresh        chan struct{}  // 停止后台刷新的信号
@@ -302,6 +306,7 @@ func (m *ExternalMCPManager) RemoveConfig(name string) error {
 	m.toolCacheMu.Lock()
 	delete(m.toolCache, name)
 	m.toolCacheMu.Unlock()
+	m.notifyInventory(name, nil)
 
 	return nil
 }
@@ -440,6 +445,7 @@ func (m *ExternalMCPManager) StopClient(name string) error {
 	m.toolCacheMu.Lock()
 	delete(m.toolCache, name)
 	m.toolCacheMu.Unlock()
+	m.notifyInventory(name, nil)
 
 	// 更新配置为禁用
 	serverCfg.ExternalMCPEnable = false
@@ -655,8 +661,18 @@ func (m *ExternalMCPManager) InvalidateToolCache(name string) {
 // InvalidateAllToolCaches 清除所有外部 MCP 工具列表缓存
 func (m *ExternalMCPManager) InvalidateAllToolCaches() {
 	m.toolCacheMu.Lock()
+	stale := make([]string, 0, len(m.toolCache))
+	for name := range m.toolCache {
+		stale = append(stale, name)
+	}
 	m.toolCache = make(map[string]toolListCacheEntry)
 	m.toolCacheMu.Unlock()
+
+	// Empty lists, not silence: an observer that keeps stale entries live would be worse than
+	// one that never learns about a refresh at all.
+	for _, name := range stale {
+		m.notifyInventory(name, nil)
+	}
 }
 
 func (m *ExternalMCPManager) triggerToolListRefresh(name string, client ExternalMCPClient) {
@@ -666,6 +682,35 @@ func (m *ExternalMCPManager) triggerToolListRefresh(name string, client External
 		_, _ = m.listToolsDeduped(ctx, name, client)
 	}()
 }
+
+// SetToolInventoryObserver registers a callback that sees each server's tool list whenever it
+// changes: (name, tools) on (re)load, (name, nil) when the server is stopped, removed, or its
+// cache is dropped.
+//
+// The manager owns the only authoritative list of what a remote server actually exposes, so it is
+// the place a capability registry can learn about remote tools from. Without such a hook the
+// tools are name-checked by one namespace-wide policy and have no identity of their own.
+func (m *ExternalMCPManager) SetToolInventoryObserver(obs func(serverName string, tools []Tool)) {
+	if obs == nil {
+		m.inventoryObserver.Store(nil)
+		return
+	}
+	wrapped := toolInventoryObserver(obs)
+	m.inventoryObserver.Store(&wrapped)
+}
+
+// notifyInventory delivers an inventory change outside the manager locks: the observer registers
+// capabilities and may take its own locks.
+func (m *ExternalMCPManager) notifyInventory(serverName string, tools []Tool) {
+	obs := m.inventoryObserver.Load()
+	if obs == nil {
+		return
+	}
+	(*obs)(serverName, tools)
+}
+
+// toolInventoryObserver is the callback signature, named so it can live behind an atomic pointer.
+type toolInventoryObserver = func(serverName string, tools []Tool)
 
 // updateToolCache 更新工具列表缓存与工具数量
 func (m *ExternalMCPManager) updateToolCache(name string, tools []Tool) {
@@ -677,6 +722,8 @@ func (m *ExternalMCPManager) updateToolCache(name string, tools []Tool) {
 	m.toolCountsMu.Lock()
 	m.toolCounts[name] = len(stored)
 	m.toolCountsMu.Unlock()
+
+	m.notifyInventory(name, stored)
 
 	if len(stored) == 0 {
 		m.logger.Warn("外部MCP返回空工具列表",

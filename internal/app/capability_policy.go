@@ -274,15 +274,28 @@ func mcpToolAuthorizer(db *database.DB) func(context.Context, string, map[string
 	}
 }
 
+// externalMCPNamespacePermission is the floor every remote tool inherits. It stays the fallback
+// for a tool the registry has not seen yet (a server that has never connected, or an inventory
+// refresh in flight), which is a declared namespace policy rather than an unregistered pass.
+const externalMCPNamespacePermission = "mcp:external:execute"
+
 func externalMCPToolAuthorizer() func(context.Context, string, map[string]interface{}) error {
-	return func(ctx context.Context, _ string, _ map[string]interface{}) error {
+	return func(ctx context.Context, toolName string, _ map[string]interface{}) error {
 		p, ok := authctx.PrincipalFromContext(ctx)
 		if !ok {
 			return fmt.Errorf("missing authenticated principal")
 		}
 		ctx = capability.WithPrincipal(ctx, principalAdapter{p: p})
 		ctx = capability.WithRequestDeps(ctx, depsAdapter{db: nil})
-		decision := evaluatorFor().Decide(ctx, "mcp:external:execute", nil)
+
+		// Decide on the tool's own identity when it has one, so a rule can name a single remote
+		// tool; otherwise fall back to the namespace policy. Both branches are registered
+		// policies - neither is "unknown name, assume allowed".
+		target := externalMCPNamespacePermission
+		if spec, found := lookupRemoteToolSpec(toolName); found {
+			target = spec.Name
+		}
+		decision := evaluatorFor().Decide(ctx, target, nil)
 		if decision.Outcome != capability.OutcomeAllow {
 			return fmt.Errorf("%s", decision.Reason)
 		}

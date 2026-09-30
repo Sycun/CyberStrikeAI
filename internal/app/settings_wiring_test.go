@@ -28,6 +28,7 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 	installed := 0
 	published := 0
 	tableInstalled := 0
+	remoteObservers := 0
 	scanned := 0
 	scannedCalled := 0
 	for _, entry := range entries {
@@ -58,6 +59,10 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "handler" {
 					installed++
 				}
+			case "SetToolInventoryObserver":
+				// Without this line the remote capability identities are built by code nobody
+				// calls, and every external MCP tool silently falls back to the namespace policy.
+				remoteObservers++
 			case "Install":
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "plugin" {
 					tableInstalled++
@@ -67,6 +72,11 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 			}
 			return true
 		})
+	}
+	if remoteObservers != 1 {
+		t.Fatalf("SetToolInventoryObserver is called %d times in internal/app, want exactly 1: with no "+
+			"observer the per-tool remote capabilities are never registered and every external MCP call "+
+			"quietly falls back to the namespace-wide policy", remoteObservers)
 	}
 	if scanned < 10 {
 		t.Fatalf("only %d non-test files scanned in internal/app: the walker is not reading the package", scanned)
@@ -90,7 +100,8 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 			"the roles API and every run path would serve nothing (files scanned: %d)", scanned)
 	}
 	t.Logf("assembly wiring: %d files scanned, 1 live-store install, 1 table install, "+
-		"%d capability scan call(s), %d catalog publish call(s)", scanned, scannedCalled, published)
+		"1 remote inventory observer, %d capability scan call(s), %d catalog publish call(s)",
+		scanned, scannedCalled, published)
 }
 
 func moduleRootForWiringTest(t *testing.T) string {

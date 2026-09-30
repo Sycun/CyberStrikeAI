@@ -53,10 +53,13 @@ func CoreID(toolName string) string {
 // claimed by more than one layer (a recipe bound to an in-process handler)
 // survive removal of either single layer.
 type Registry struct {
-	mu     sync.RWMutex
-	byID   map[string]*Spec
-	byName map[string]*Spec
-	layers map[string]map[string]bool // layer -> claimed identities
+	mu      sync.RWMutex
+	byID    map[string]*Spec
+	byName  map[string]*Spec
+	layers  map[string]map[string]bool // layer -> claimed identities
+	subsets map[string]map[string]map[string]bool
+	// layer -> owner -> claimed identities. Owners are things like one external MCP server,
+	// so a refresh can replace exactly what it produced.
 }
 
 // Layer identifiers.
@@ -68,9 +71,10 @@ const (
 
 func NewRegistry() *Registry {
 	return &Registry{
-		byID:   map[string]*Spec{},
-		byName: map[string]*Spec{},
-		layers: map[string]map[string]bool{},
+		byID:    map[string]*Spec{},
+		byName:  map[string]*Spec{},
+		layers:  map[string]map[string]bool{},
+		subsets: map[string]map[string]map[string]bool{},
 	}
 }
 
@@ -146,6 +150,7 @@ func (r *Registry) removeLayer(layer string) {
 	defer r.mu.Unlock()
 	claimed := r.layers[layer]
 	delete(r.layers, layer)
+	delete(r.subsets, layer)
 	for id := range claimed {
 		stillClaimed := false
 		for other := range r.layers {
@@ -314,6 +319,103 @@ func IsBuiltin(toolName string) bool {
 
 // BuiltinNames returns every name owned by the binary, sorted.
 func BuiltinNames() []string { return Global().BuiltinNames() }
+
+// RegisterSubset replaces the entries one named owner contributed inside a layer, leaving every
+// other owner's entries alone.
+//
+// LayerRemote needs this: the layer holds the tools of every configured external MCP server, and
+// reconnecting one server must not drop the others'. The all-or-nothing rule is inherited from
+// RegisterAll for the same reason - a half-applied set of remote tools would leave some of a
+// server's tools unauthorized while the operator believes the refresh succeeded.
+func (r *Registry) RegisterSubset(layer, owner string, specs []*Spec) error {
+	r.mu.Lock()
+	previous := make([]*Spec, 0, len(r.subsets[layer][owner]))
+	for id := range r.subsets[layer][owner] {
+		if spec, ok := r.byID[id]; ok {
+			previous = append(previous, spec)
+		}
+	}
+	r.mu.Unlock()
+
+	r.UnregisterSubset(layer, owner)
+	for _, spec := range specs {
+		if err := r.Register(layer, spec); err != nil {
+			r.UnregisterSubset(layer, owner)
+			for _, old := range previous {
+				_ = r.Register(layer, old)
+			}
+			return err
+		}
+		r.claimSubset(layer, owner, spec.ID)
+	}
+	return nil
+}
+
+// claimSubset records that `owner` contributed `id` inside `layer`.
+func (r *Registry) claimSubset(layer, owner, id string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.subsets[layer] == nil {
+		r.subsets[layer] = map[string]map[string]bool{}
+	}
+	if r.subsets[layer][owner] == nil {
+		r.subsets[layer][owner] = map[string]bool{}
+	}
+	r.subsets[layer][owner][id] = true
+}
+
+// UnregisterSubset drops everything one owner registered inside a layer and reports how many
+// identities left the table.
+func (r *Registry) UnregisterSubset(layer, owner string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	claimed := r.subsets[layer][owner]
+	if len(claimed) == 0 {
+		return 0
+	}
+	delete(r.subsets[layer], owner)
+	if len(r.subsets[layer]) == 0 {
+		delete(r.subsets, layer)
+	}
+
+	removed := 0
+	for id := range claimed {
+		if !r.claimedElsewhereLocked(layer, id) {
+			if spec, ok := r.byID[id]; ok {
+				delete(r.byID, id)
+				delete(r.byName, spec.Name)
+				removed++
+			}
+		}
+		for other := range r.layers {
+			delete(r.layers[other], id)
+		}
+	}
+	return removed
+}
+
+// claimedElsewhereLocked reports whether some layer or owner other than `layer` still wants id.
+func (r *Registry) claimedElsewhereLocked(layer, id string) bool {
+	for name, claimed := range r.layers {
+		if name != layer && claimed[id] {
+			return true
+		}
+	}
+	for l, owners := range r.subsets {
+		if l == layer {
+			continue
+		}
+		for owner, ids := range owners {
+			for other := range ids {
+				if other == id && owner != "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
 
 // Remove drops one identity from the registry, used when a revocation lands.
 func (r *Registry) Remove(id string) bool {

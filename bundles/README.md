@@ -57,7 +57,25 @@ units:
 | skill | ✅ | ✅ `internal/einoskill` 用能力表实现 Eino 的 `skill.Backend` | ✅ |
 | agent | ✅ | ⬜ 仍按目录重扫（`agents.LoadMarkdownAgentsDir`） | ✅ 登记，但**未生效**（响应里 `served:false` + 原因） |
 | tool | ✅ | ⬜ 仅 `POST /config/apply` 生效 | ✅ 登记，但未生效（要过审批下限，见下） |
-| mcp | ⬜ 外部 MCP 本来就是热增删，缺的是逐工具授权 | — | ⬜（任务 #20） |
+| mcp | ✅ 每个远端工具一个身份（`LayerRemote`，按服务器成组装卸） | ✅ 授权按工具身份判定，判定不到再回到命名空间策略 | — |
+
+## 外部 MCP 工具也有身份
+
+远端服务器本来就支持热增删（`/api/external-mcp/*`），缺的是**身份**：所有远端工具过去一起过
+一条 `mcp:external:execute`，规则无法点名某个工具，审批与审计也只能写到"外部 MCP"这一层。
+
+现在 `ExternalMCPManager` 每次拿到某台服务器的真实工具清单，就在
+`capability.LayerRemote` 里按服务器成组登记/替换/摘除：
+
+- 身份 `remote.<server>.<tool>`，Name 就是执行器看到的线名 `<server>::<tool>`；
+- 权限、runtime 与 **global scope 下限**沿用命名空间那条策略，所以这一步**不改变谁能调用什么**，
+  只是让"某个远端工具"变成可被规则、审批与审计点名的对象；
+- 一台服务器重连或下线只动它自己那一组，别的服务器与内置策略一律不变；
+- 清单还没到位（服务器没连上、刷新在途）时判定回到命名空间策略——那是**一条登记在册的策略**，
+  不是"名字不认识就放过"。
+
+装配漏接观察者的话 `make wiring-check` 会红（`SetToolInventoryObserver` 必须恰好调用一次）——
+漏接的表现不是报错，而是所有远端工具悄悄退回命名空间判定，所以只能靠门禁。
 
 ## 接口
 

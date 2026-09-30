@@ -244,6 +244,16 @@ one identity scheme and one live table:
   identities contain a slash, so the routes split into `:kind/:name` - one escaped segment would
   be unescaped by gin before matching and would never hit. Every mutation republishes the role
   catalog, so the next request already sees the change.
+- For MCP the missing piece was **identity**, not liveness (adding, removing, starting and
+  stopping an external server was already hot). `ExternalMCPManager` now reports each server's
+  real tool inventory to `internal/app/remote_capabilities.go`, which registers, replaces and
+  drops it in `capability.LayerRemote` **one group per server** (identity
+  `remote.<server>.<tool>`; `Name` is the wire form the executor authorizes,
+  `<server>::<tool>`). The permission and the global-scope floor are inherited from the existing
+  namespace policy, so this changes nobody's reach - it makes a single remote tool nameable by a
+  rule, an approval prompt and an audit row. Tests pin both the per-tool override (a sibling tool
+  of the same server is unaffected) and the fallback (an inventory that has not arrived yet is
+  decided by the declared namespace policy, not waved through as unknown).
 - When a bundle declares a tool recipe that no run path reads from the table yet, the response
   says `served:false` with the reason instead of counting it as live. Letting "installed" read as
   "in effect" is the exact failure this layer exists to prevent.

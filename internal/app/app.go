@@ -200,6 +200,9 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	// 创建外部MCP管理器（使用与内部MCP服务器相同的存储）
 	externalMCPMgr := mcp.NewExternalMCPManagerWithStorage(log.Logger, db)
 	externalMCPMgr.SetToolAuthorizer(externalMCPToolAuthorizer())
+	// Each server's real tool list becomes a capability identity in LayerRemote, so a rule, an
+	// approval prompt or an audit row can name one remote tool instead of "external MCP".
+	externalMCPMgr.SetToolInventoryObserver(remoteToolInventoryChanged(log.Logger))
 	externalMCPMgr.SetToolGuard(toolGuard)
 	externalMCPMgr.ConfigureToolWaitTimeoutSeconds(cfg.Agent.ToolWaitTimeoutSeconds)
 	externalMCPMgr.ConfigureToolResultMaxBytes(cfg.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
