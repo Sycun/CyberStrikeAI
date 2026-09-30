@@ -1075,9 +1075,7 @@ async function clearSkillsStats() {
 // HTML转义函数
 function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
-function escapeAttr(text) {
-    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function escapeAttr(text) { return CSAI.escapeHtml(text); }
 
 // 语言切换时重新渲染当前页（技能列表与分页使用 _t，需随语言更新）
 document.addEventListener('languagechange', function () {

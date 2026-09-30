@@ -161,9 +161,7 @@ if (typeof escapeHtml === 'undefined') {
         function escapeHtml(text) { return CSAI.escapeHtml(text); }
 }
 
-function escapeAttr(text) {
-    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function escapeAttr(text) { return CSAI.escapeHtml(text); }
 
 function getFofaFormElements() {
     return {
@@ -406,11 +404,7 @@ function stabilizeInfoCollectQueryCardHeight() {
     }
 }
 
-function presetDataAttr(value) {
-    return escapeHtml(String(value == null ? '' : value))
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
+function presetDataAttr(value) { return CSAI.escapeHtml(value); }
 
 function bindInfoCollectPresetEvents() {
     if (infoCollectState.presetEventsBound) return;

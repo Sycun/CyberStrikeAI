@@ -13,9 +13,7 @@ let chatFilesPage = 1;
 let chatFilesPageSize = 20;
 let chatFilesSearchDebounceTimer = null;
 
-function chatFilesEscapeAttr(text) {
-    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function chatFilesEscapeAttr(text) { return CSAI.escapeHtml(text); }
 
 const CHAT_FILES_GROUP_STORAGE_KEY = 'csai_chat_files_group_by';
 const CHAT_FILES_BROWSE_PATH_KEY = 'csai_chat_files_browse_path';

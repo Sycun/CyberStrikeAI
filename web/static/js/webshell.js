@@ -1166,9 +1166,9 @@ function renderWebshellList() {
     }
 
     listEl.innerHTML = filtered.map(conn => {
-        const remark = (conn.remark || conn.url || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const url = (conn.url || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const urlTitle = (conn.url || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        const remark = CSAI.escapeHtml(conn.remark || conn.url || '');
+        const url = CSAI.escapeHtml(conn.url || '');
+        const urlTitle = CSAI.escapeHtml(conn.url || '');
         const active = currentWebshellId === conn.id ? ' active' : '';
         const safeId = escapeHtml(conn.id);
         const actionsLabel = wsT('common.actions') || '操作';

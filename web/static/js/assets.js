@@ -11,9 +11,7 @@ function getAssetPageSize() {
 const assetPageState = { page: 1, pageSize: getAssetPageSize(), total: 0, totalPages: 1, items: [], projects: [], projectsLoaded: false, detailIndex: -1, editIndex: -1, detailAsset: null, editAsset: null, selected: new Map(), selectionQuery: '', allMatchingSelected: false, scanMode: 'chat', scanAssets: [], editorTags: [], editorDirty: false, editorBusy: false, editorReturnFocus: null, editorInteractionsReady: false, editorParsedTarget: '', importRows: [], importFileName: '', importBusy: false, importInteractionsReady: false, importReturnFocus: null };
 let assetOverviewDays = 30;
 
-function assetEscapeAttr(text) {
-    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function assetEscapeAttr(text) { return CSAI.escapeHtml(text); }
 
 const ASSET_CUSTOM_SELECT_IDS = [
     'asset-status-filter',

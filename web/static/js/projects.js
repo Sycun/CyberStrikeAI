@@ -2513,9 +2513,7 @@ function formatProjectTime(t, fallback) {
 
 function escapeHtml(s) { return CSAI.escapeHtml(s); }
 
-function escapeAttr(s) {
-    return escapeHtml(s).replace(/'/g, '&#39;');
-}
+function escapeAttr(s) { return CSAI.escapeHtml(s); }
 
 function escapeJsString(text) {
     return JSON.stringify(String(text == null ? '' : text));

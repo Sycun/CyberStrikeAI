@@ -776,8 +776,8 @@ function renderHitlPendingList(items) {
             const mode = String(item.mode || '').trim().toLowerCase();
             const allowEdit = mode === 'review_edit';
             var escId = escapeHtml(String(item.id || ''));
-            var qId = JSON.stringify(String(item.id || '')).replace(/"/g, '&quot;');
-            var qConv = JSON.stringify(String(item.conversationId || '')).replace(/"/g, '&quot;');
+            var qId = CSAI.escapeHtml(JSON.stringify(String(item.id || '')));
+            var qConv = CSAI.escapeHtml(JSON.stringify(String(item.conversationId || '')));
             return (
                 '<div class="hitl-pending-item">' +
                 '<div class="hitl-pending-item-header">' +
@@ -822,8 +822,8 @@ function renderWorkflowHitlPendingList(runs) {
         const label = hitlWorkflowPendingLabel(run);
         const prompt = String(pendingHitl.prompt || '').trim();
         const convId = String(run.conversation_id || run.conversationId || '').trim();
-        const qRun = JSON.stringify(runId).replace(/"/g, '&quot;');
-        const qConv = JSON.stringify(convId).replace(/"/g, '&quot;');
+        const qRun = CSAI.escapeHtml(JSON.stringify(runId));
+        const qConv = CSAI.escapeHtml(JSON.stringify(convId));
         const workflowLabel = hitlT('workflowPendingTitle', 'Workflow approval');
         const openChatLabel = hitlT('openConversation', 'Open conversation');
         return (
@@ -1683,7 +1683,7 @@ function renderHitlLogsTable(items) {
             const rawId = String(item.id || '');
             const id = escapeHtml(rawId);
             const jsId = rawId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-            const qId = JSON.stringify(rawId).replace(/"/g, '&quot;');
+            const qId = CSAI.escapeHtml(JSON.stringify(rawId));
             const isSelected = hitlSelectedLogs.has(rawId);
             const payloadObj = hitlParsePayloadObject(item.payload || '');
             const decision = String(item.decision || '-');

@@ -25,9 +25,7 @@ function settingsEscapeJsString(text) {
     return JSON.stringify(String(text == null ? '' : text));
 }
 
-function settingsEscapeAttr(text) {
-    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function settingsEscapeAttr(text) { return CSAI.escapeHtml(text); }
 
 function settingsEscapeJsStringAttr(text) {
     return settingsEscapeAttr(settingsEscapeJsString(text));
@@ -2583,14 +2581,7 @@ function normalizeAIConfigProviderProfiles(ai) {
     return ai;
 }
 
-function escapeAIChannelHtml(value) {
-    return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
+function escapeAIChannelHtml(value) { return CSAI.escapeHtml(value); }
 
 function ensureAIConfigShape(cfg) {
     const ai = cfg && cfg.ai && typeof cfg.ai === 'object' ? cfg.ai : {};

@@ -633,9 +633,7 @@
 
         function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
-    function escapeAttr(text) {
-        return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    }
+    function escapeAttr(text) { return CSAI.escapeHtml(text); }
 
     /** 任务列表操作按钮（查看/取消/删除）— 事件委托 */
     function bindC2TaskActionDelegation() {

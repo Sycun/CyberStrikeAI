@@ -1532,8 +1532,10 @@ var DASHBOARD_BAR_COLORS = [
 ];
 
 function esc(s) {
-    if (typeof s !== 'string') return '';
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    // It used to hand-roll & < and " only: no > and, worse, no single quote - so a value
+    // landing in a single-quoted attribute came out whole. The quirk that non-strings render
+    // as empty is this page's own, and is kept deliberately.
+    return typeof s === 'string' ? CSAI.escapeHtml(s) : '';
 }
 
 // 漏洞处置状态 + 修复进度面板

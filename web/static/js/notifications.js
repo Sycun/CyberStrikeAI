@@ -58,12 +58,8 @@
     }
 
     function htmlEscape(value) {
-        if (typeof window.escapeHtml === 'function') {
-            return window.escapeHtml(value == null ? '' : String(value));
-        }
-        const div = document.createElement('div');
-        div.textContent = value == null ? '' : String(value);
-        return div.innerHTML;
+        return CSAI.escapeHtml(value);
+    }
     }
 
     function t(key, fallback, params) {

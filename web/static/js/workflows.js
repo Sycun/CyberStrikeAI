@@ -86,15 +86,7 @@
     const WORKFLOW_AI_HIGH_RISK_RE = /(隔离|封禁|加固|修复|执行|命令|脚本|删除|清理|阻断|封锁|攻击|利用|getshell|shell|payload|exploit|isolate|block|execute|script|delete|exploit|payload)/i;
     const WORKFLOW_AI_PROGRESS_STEPS = ['understand', 'match', 'draft', 'audit'];
 
-    function esc(text) {
-        if (typeof escapeHtml === 'function') return escapeHtml(text == null ? '' : String(text));
-        return String(text == null ? '' : text)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-    }
+    function esc(text) { return CSAI.escapeHtml(text); }
 
     const BINDING_FROM_OPTIONS = ['previous', 'inputs', 'outputs'];
 

@@ -12,13 +12,7 @@
     var status = null;
     var busy = false;
 
-    function esc(v) {
-        var s = v == null ? '' : String(v);
-        if (typeof escapeHtml === 'function') return escapeHtml(s);
-        return s.replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
-    }
+    function esc(v) { return CSAI.escapeHtml(v); }
 
     function st(key, fallback) {
         if (typeof t === 'function') {

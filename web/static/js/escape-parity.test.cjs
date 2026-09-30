@@ -36,7 +36,13 @@ function balancedBody(src, openBrace) {
 	return null;
 }
 
-const DECLARATION = /(?:function|const)\s+(escapeHtml|escapeHtmlLocal|escapeHtmlAttr)\s*(?:=\s*)?\(([^)]*)\)\s*(?:=>\s*)?\{/g;
+// The helpers this repo has unified, listed by name. A name list is deliberately narrow
+// here: matching on "anything containing esc" catches keyboard handlers (onEscape) and
+// modal closers (initProjectsModalEscape) instead of escapers, so the name rule only guards
+// the ones that were converted, while the entity-literal test below is name-independent and
+// is what actually stops a new duplicate HTML escaper from appearing.
+const UNIFIED_ESCAPERS = /^(?:esc|escapeHtml|escapeHtmlLocal|escapeHtmlAttr|escapeAttr|escapeAttrLocal|assetEscapeAttr|chatFilesEscapeAttr|presetDataAttr|escapeAIChannelHtml|settingsEscapeAttr|htmlEscape)$/;
+const DECLARATION = /(?:function|const)\s+([A-Za-z0-9_]+)\s*(?:=\s*)?\(([^)]*)\)\s*(?:=>\s*)?\{/g;
 
 test('the canonical escaper escapes everything a text node or a quoted attribute needs', () => {
 	const src = fs.readFileSync(path.join(JS_DIR, 'escape.js'), 'utf8');
@@ -67,18 +73,35 @@ test('no file keeps its own HTML escaper', () => {
 	for (const [name, src] of listSources()) {
 		if (name === 'escape.js') continue;
 		for (const match of src.matchAll(DECLARATION)) {
+			if (!UNIFIED_ESCAPERS.test(match[1])) continue;
 			const body = balancedBody(src, src.indexOf('{', match.index + match[0].length - 1));
 			assert.notStrictEqual(body, null, `${name}: unbalanced ${match[1]}`);
-			const arg = (match[2] || '').split(',')[0].trim() || 'value';
-			const canonical = new RegExp(`^\\s*return\\s+CSAI\\.(escapeHtml|escapeHtmlAttr)\\(${arg}\\);?\\s*$`);
-			if (!canonical.test(body)) offenders.push(`${name}: ${match[1]}`);
+			// A delegation may keep that page's own guard - dashboard.js renders non-strings as
+			// empty - but it must not contain any escaping logic of its own.
+			if (!/CSAI\.escapeHtml/.test(body) || /\.replace\(|&amp;|&quot;|&#39;/.test(body)) {
+				offenders.push(`${name}: ${match[1]}`);
+			}
 			delegating++;
 		}
 	}
 	// An empty scan would mean the regex stopped matching, which is how a gate like this
-	// goes green while the duplication comes back.
-	assert.ok(delegating >= 15, `expected the console to still carry its per-file escapers, found ${delegating}`);
+	// goes green while the duplication comes back. Both families together are counted, so
+	// the floor is above what either alone could produce.
+	assert.ok(delegating >= 30, `expected the console to still carry its per-file escapers, found ${delegating}`);
 	assert.deepStrictEqual(offenders, [], 'these files still implement escaping instead of delegating to CSAI.escapeHtml');
+});
+
+test('nobody chains quote-escaping on top of an escaper call', () => {
+	// Before escape.js, escapeAttr was `escapeHtml(x).replace(/"/g,'&quot;').replace(/'/g,'&#39;')`
+	// in nine files. With the union escaper those two replaces match nothing at all, and a
+	// no-op that looks like a security control is worse than no code at all: nobody dares
+	// remove it. Scoped to the chain shape on purpose - the XML escapers that emit &apos; for
+	// SVG/graph output and the helpers that pre-escape a JSON literal destined for onclick=
+	// are escaping for a different target language, and collapsing those would be wrong.
+	const chain = /escape(?:Html|Attr)[A-Za-z]*\([^)]*\)\s*\.replace\(\/["']\/g/;
+	for (const [name, src] of listSources()) {
+		assert.ok(!chain.test(src), `${name} still post-escapes quotes after an escaper call`);
+	}
 });
 
 test('every template that loads a delegating script loads escape.js first', () => {
@@ -92,9 +115,8 @@ test('every template that loads a delegating script loads escape.js first', () =
 	const loaders = {};
 	for (const [name, src] of listSources()) {
 		if (name === 'escape.js') continue;
-		DECLARATION.lastIndex = 0;
-		if (!DECLARATION.test(src)) continue;
-		DECLARATION.lastIndex = 0;
+		const escapers = [...src.matchAll(DECLARATION)].filter((m) => UNIFIED_ESCAPERS.test(m[1]));
+		if (escapers.length === 0) continue;
 		loaders[name] = templates.filter(([, html]) => html.includes(`/static/js/${name}`)).map(([f]) => f);
 		assert.ok(loaders[name].length > 0, `${name} defines an escaper but no template loads it`);
 	}
@@ -109,16 +131,37 @@ test('every template that loads a delegating script loads escape.js first', () =
 	}
 });
 
+test('only escape.js and the two XML escapers build entities by hand', () => {
+	// Name-independent, so a duplicate cannot hide behind a novel name: producing an HTML
+	// entity from a replace() is what a hand-built escaper looks like from the outside - in
+	// either quoting style, because the first version of this test matched only single quotes
+	// and a probe wrote one with double quotes straight through it. There is exactly one HTML
+	// escaper now; chat.js and fact-graph.js are allowed because they emit XML/SVG, where
+	// &apos; is what the serializer wants - a different target language, not a second
+	// implementation of this one.
+	const handBuilt = /\.replace\([^)]*,\s*['"]&(?:amp|lt|gt|quot|#39|#x27);['"]/;
+	const allowed = new Set(['escape.js', 'chat.js', 'fact-graph.js']);
+	const found = [];
+	for (const [name, src] of listSources()) {
+		if (allowed.has(name)) continue;
+		if (handBuilt.test(src)) found.push(name);
+	}
+	assert.deepStrictEqual(found, [], 'these files hand-build HTML entities instead of calling CSAI.escapeHtml');
+});
+
 test('the escapers that used to differ now behave the same', () => {
 	// projects.js and wechat-robot.js were the regex implementations; if either grows a
 	// local replace() back, the load-order bug returns with it.
 	for (const name of ['projects.js', 'wechat-robot.js']) {
 		const src = fs.readFileSync(path.join(JS_DIR, name), 'utf8');
+		let seen = 0;
 		for (const match of src.matchAll(DECLARATION)) {
+			if (!UNIFIED_ESCAPERS.test(match[1])) continue;
 			const body = balancedBody(src, src.indexOf('{', match.index + match[0].length - 1));
+			seen++;
 			assert.ok(!/\.replace\(/.test(body || ''), `${name}: ${match[1]} hand-rolls escaping again`);
 			assert.match(body || '', /CSAI\.escapeHtml/, `${name}: ${match[1]} must delegate`);
 		}
-		DECLARATION.lastIndex = 0;
+		assert.ok(seen >= 1, `${name} lost its escaper helpers, which means the scan is broken`);
 	}
 });

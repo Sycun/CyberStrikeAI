@@ -2006,9 +2006,7 @@ function escapeJsString(text) {
     return JSON.stringify(String(text == null ? '' : text));
 }
 
-function escapeAttr(text) {
-    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function escapeAttr(text) { return CSAI.escapeHtml(text); }
 
 function escapeJsStringAttr(text) {
     return escapeAttr(escapeJsString(text));
