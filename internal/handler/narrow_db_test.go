@@ -43,6 +43,7 @@ var narrowedHandlers = []struct {
 	}},
 	{"ProjectHandler", func(db *database.DB) interface{} { return NewProjectHandler(db, zap.NewNop()) }},
 	{"WorkflowHandler", func(db *database.DB) interface{} { return NewWorkflowHandler(db, zap.NewNop()) }},
+	{"runFinalizer", func(db *database.DB) interface{} { return newRunFinalizer(db, zap.NewNop(), nil, nil) }},
 	{"NotificationHandler", func(db *database.DB) interface{} { return NewNotificationHandler(db, nil, zap.NewNop()) }},
 	{"OpenAPIHandler", func(db *database.DB) interface{} { return NewOpenAPIHandler(db, zap.NewNop(), nil, nil) }},
 	{"RobotHandler", func(db *database.DB) interface{} { return NewRobotHandler(&config.Config{}, db, nil, zap.NewNop()) }},
@@ -80,7 +81,7 @@ func storageField(t *testing.T, built interface{}) reflect.Value {
 }
 
 func TestNarrowedStorageStaysNilWithoutADatabase(t *testing.T) {
-	if len(narrowedHandlers) < 18 {
+	if len(narrowedHandlers) < 19 {
 		t.Fatalf("only %d narrowed handlers listed, the inventory is stale", len(narrowedHandlers))
 	}
 	for _, entry := range narrowedHandlers {

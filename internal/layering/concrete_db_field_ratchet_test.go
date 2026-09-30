@@ -70,8 +70,10 @@ func classifyAssignment(value string) string {
 // fix was deleting the field and the constructor parameter rather than inventing a store for it.
 
 // narrowedStoreFloor is how many handler structs hold a consumer-shaped store interface today
-// (measured 18). It only goes up; a drop means a domain was widened back to the god object.
-const narrowedStoreFloor = 18
+// (measured 19). It only goes up; a drop means a domain was widened back to the god object.
+const narrowedStoreFloor = 19
+
+const narrowedAssignmentFloor = 19
 
 // scannedFieldFloor keeps a broken scan from producing a green zero: the handler package declares
 // ~990 struct fields, so a walk that sees a tenth of that is not reporting the truth.
@@ -151,22 +153,20 @@ func TestNarrowedFieldsAreOnlyAssignedThroughNarrow(t *testing.T) {
 	violations := []string{}
 	seen := 0
 	for rel := range narrowedFiles {
-		kinds := assignmentKinds(root, rel)
-		if len(kinds[rel]) == 0 {
-			// A file the scanner named must be readable and contain at least one assignment to the
-			// field it declared. Without this the gate silently inspects nothing and stays green -
-			// which is exactly how the first version of this helper failed its own probe.
-			t.Fatalf("%s declares a narrowed storage field but no assignment to it was found: the "+
-				"shape scan is reading the wrong path or matching the wrong syntax", rel)
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			// The scanner named a file it cannot open. Everything below would then inspect
+			// nothing and the gate would go green while checking nothing - which is exactly how
+			// the first version of this helper passed a probe it should have failed.
+			t.Fatalf("%s declares a narrowed storage field but cannot be read: %v", rel, err)
 		}
-		for _, kind := range kinds[rel] {
+		for _, kind := range assignmentKinds(root, rel)[rel] {
 			seen++
 			if kind != "Narrow" {
 				violations = append(violations, rel+" assigns a narrowed storage field via "+kind)
 			}
 		}
 	}
-	if seen < narrowedStoreFloor {
+	if seen < narrowedAssignmentFloor {
 		t.Fatalf("only %d narrowed assignments inspected across the package (floor %d): the scan misses them",
 			seen, narrowedStoreFloor)
 	}

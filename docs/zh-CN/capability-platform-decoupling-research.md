@@ -305,8 +305,8 @@ manifest 与已批准版本相同 → 只做自动重扫；任何**新增**能�
 
 | 项 | 报告中的现状 | 现在 |
 |---|---|---|
-| Makefile / golangci-lint / go-arch-lint | 全无 | `Makefile`（`make ci` = gofmt ratchet+vet+`-race`+lint+arch-lint）、`.golangci.yml`(v2，`new-from-rev` 只门禁改动行)、`.go-arch-lint.yml`(warn) |
-| ↑ 的自纠 | — | 原来的 `fmt` 目标直接要求 `gofmt -l cmd internal` 为空，而**重构起点上就有 29 个上游遗留文件不合格**，等于 `make ci` 从一开始就是红的。现拆成 `fmt`（真格式化）与 `fmt-check`（ratchet，基线 29，只许降），并已探针验证它会失败（插入一个未格式化函数→30>29）。教训：**新增门禁必须先在"零改动"的树上验一次绿**，否则它第一次响就是无人相信的假警报 |
+| Makefile / golangci-lint / go-arch-lint | 全无 | `Makefile`（`make ci` = gofmt 硬零+vet+`-race`+lint+arch-lint）、`.golangci.yml`(v2，`new-from-rev` 只门禁改动行)、`.go-arch-lint.yml`(warn) |
+| ↑ 的自纠 | — | 原来的 `fmt` 目标直接要求 `gofmt -l cmd internal` 为空，而**重构起点上就有 29 个上游遗留文件不合格**，等于 `make ci` 从一开始就是红的。现拆成 `fmt`（真格式化）与 `fmt-check`（ratchet，基线 29，只许降），并已探针验证它会失败（插入一个未格式化函数→30>29）。教训：**新增门禁必须先在"零改动"的树上验一次绿**，否则它第一次响就是无人相信的假警报。终态：ratchet 一路降到 26 后，剩余债务以**一个独立 `style:` 提交**清零（26 个文件逐个证过 `diff <(git show HEAD:f | gofmt) f` 为空 = 纯重排），门禁随即翻回硬零——这不再需要豁免名单，因为名单是空的 |
 | `-race` 入门禁 | 无 | `.github/workflows/ci.yml` 全量 `-race`；**并抓出两处真实竞争**（`config.ExpandConfigEnv` 就地改写与 `exec.Command` 拷贝切片共享底层数组；shell 测试自身 `cmd.Process` 与 `Run` 竞争），均已修 |
 | S4 config 竞争 | 59 处运行期写入、两把锁同一块内存 | 新增 `internal/settings`：`atomic.Pointer[Snapshot]` + 写者锁；`ConfigHandler`/`AgentHandler` 共用一个存储，HITL 全部读写改走快照（`TestTwoHandlersOneStoreIsRaceFree`） |
 | S5 CWD/venv | `go:embed` 0 次 | `go:embed` 3 处（`web/static`+`web/templates`、`internal/c2/payload_templates`）；模板/静态优先磁盘、内嵌兜底；`python3` 由代码统一解析（`CYBERSTRIKE_PYTHON`→`VIRTUAL_ENV`→`<exe>/venv`→系统）；C2 payload 输出目录改为锚定可执行文件而非 CWD。实测：从 `/tmp/…` 无 `web/` 目录启动裸二进制，`/` 返回 200 / 693,883 字节、`/static/js/i18n.js` 200 |
@@ -617,7 +617,7 @@ manifest 与已批准版本相同 → 只做自动重扫；任何**新增**能�
 refactor-ratchet 的规矩先实测，**两个数字都比报告写的多**（遍历域：`internal/handler` 全部非测试文件，
 接收者=所有带方法接收者的类型，判据来源=`go/ast` 的 `FuncDecl`，不是 grep）：
 
-- `AgentHandler`：**130 个方法 / 23 个文件**（起点；分解第一刀之后是 122/22，见下一小节）。
+- `AgentHandler`：**130 个方法 / 23 个文件**（起点；两刀之后 112/21，见下一小节）。
 - `internal/handler` 里 `Set*` 注入方法：**64 个，分布在 21 个接收者类型上**（报告记 26，低估）。
   其中 **`SetAudit` 有 18 份逐字相同的副本**——`h.audit` 引用 198 处，`if h.audit != nil` 手写守卫 **89 处**。
 - 其余大接收者：`RobotHandler` 68 方法/2 文件、`ConfigHandler` 45/3、`BatchTaskManager` 40/1、
@@ -700,17 +700,38 @@ refactor-ratchet 的规矩先实测，**两个数字都比报告写的多**（�
   `git diff` 对照本轮意图"才当场发现。**撤销注入物必须用精确编辑删掉那几行**，
   或者事先 `git diff > /tmp/patch`；对已经改过的文件执行任何 `git checkout` 都是破坏性操作。
 
-**复现**：`make layering-check`（三条只降门禁 + Eino + 裸句柄硬零）、
+- **第二刀：收尾链路 10 个方法 → `runFinalizer`（`finalization_helpers.go`）**。判定终态 / 落库 /
+  取消悬挂的工具执行 / 等待工具离开 pending，全在 `finalizeAgentRunForDeliveryWithPolicy` /
+  `decideAgentRunForDeliveryWithPolicy` / `persistFinalizationDecision` /
+  `cleanupPendingToolExecutionsAfterIteration` 等 10 个方法里，依赖只有四样：窄化的存储面、logger、
+  `agent.CancelMCPToolExecutionWithNote` 一个方法、一次消息内容写回。
+  后两样各用一个**单方法接口**接进来（`cancellableToolExecution`、`messageContentWriter`），
+  `messageContentWriter` 由 `AgentHandler` 自己满足（同包，不需要导出）——
+  于是"写回消息"这一条不需要把整个 handler 交出去。
+  **`tryAutoContinueAfterFinalization` 刻意留在 `AgentHandler`**：它拿着 `progressCallback`/
+  `curHistory`/`attempt` 驱动 Runner 续跑，是运行链路的胶水而不是收尾记账；
+  为了搬它而再造两层接口，就是把"分解"做成"搬运"。
+  水位 **122 → 112 方法、22 → 21 文件**，两条上限再收紧，探针 `113 methods > ceiling 112` 验红。
+- 这两刀让**形状门禁自己抓到过一次真问题**（值得记）：`newRunFinalizer` 最初直接把"已经窄化过的接口参数"
+  赋给字段，文本规则看不见上游有没有窄化，于是报
+  `finalization_helpers.go assigns a narrowed storage field via db`。
+  规则没错、代码不够稳：改成让构造函数**自己收 `*database.DB` 并在边界处 `Narrow`**，
+  与其余 19 个持有者同一个形状。顺带修了上一轮我自己加的一条过头条件——
+  "每个声明窄接口的文件必须扫到 ≥1 条赋值"对"只经构造参数注入"的协作对象是误报，
+  换成"文件必须读得到 + 全包赋值总数 ≥19"，两条一起保住"不许空集通过"。
+
+**复现**：`make layering-check`（三条只降门禁 + Eino + 裸句柄硬零 + 形状门禁）、
 `go test -count=1 -run 'TestRouteTableMatchesGolden' ./internal/app/`、
 `go test -count=1 -run 'TestHITL' ./internal/handler/`。
 
 ### 门禁复现命令
 
 ```bash
-make ci                                   # gofmt ratchet + vet + go test -race ./... + lint + arch-lint + layering-check + wiring-check
-make fmt-check                            # gofmt 债务 26 / 基线 26（起点 29；只规范化确实改过的文件，
-                                          # 期间用 `git diff --ignore-all-space` 找回 4 个"纯被我重排"的文件还原，
-                                          # 免得无关格式混进解耦 diff）
+make ci                                   # gofmt 硬零 + vet + go test -race ./... + lint + arch-lint + layering-check + wiring-check
+make fmt-check                            # gofmt：**硬零**（起点 29 → ratchet 26 → 0）。清零以独立
+                                          # `style:` 提交出现，26 个文件逐个用
+                                          # `diff <(git show HEAD:f | gofmt) f` 证过纯重排；
+                                          # 因此 `make fmt` 现在随时可跑且不会带出无关改动
 go test -count=1 ./internal/app/ -run 'Shipped|Declared|Catalog|Capability|Recipe|Approval'
 go test -count=1 ./internal/handler/ -run 'I18n|Route|OpenAPI|Undocumented|TwoHandlers|HITLExemption'
 go test -count=1 ./internal/handler/ -run 'RawSQLRatchet|StorePackageHoldsNoHTTPConcerns'   # 裸 SQL 双接收者基线 0/0（起点 49/17）
@@ -740,7 +761,7 @@ grep -l '^capability:' tools/*.yaml | wc -l                        # 90
 grep -rn go:embed --include='*.go' . | grep -v _test | wc -l       # 3（原 0）
 ```
 
-当前基线：`make fmt-check` **26/26**、`go build ./...` 干净、`go vet ./...` 干净、`go test -race -count=1 ./...` **43 个含测试包全绿 / 0 竞争**（报告基线为 32 包）；测试函数 **1205** 个，重构前（HEAD）为 989 个，即 **+216**。
+当前基线：`make fmt-check` **硬零（gofmt: clean）**、`go build ./...` 干净、`go vet ./...` 干净、`go test -race -count=1 ./...` **43 个含测试包全绿 / 0 竞争**（报告基线为 32 包）；测试函数 **1205** 个，重构前（HEAD）为 989 个，即 **+216**。`AgentHandler` 水位 **112 方法 / 21 文件**（起点 130 / 23）。
 
 ### §6 社区知识库高危面 —— 完成代码层控制（非 prompt 层）
 
@@ -1067,8 +1088,9 @@ handler 字段随即窄化，债面 **6 → 3**（`knowledge.go` 的死字段与
   **没有任何结构体再持有 `*database.DB` 或 `*sql.DB`**（19 → 0；18 个域换成各自的窄接口字段，
   另 1 个是没人读的死字段，直接删。见 §11「P6 数据层第五片」与 §12.1 表）；
   `internal/database` 那 361 个方法本身也按域继续切）、
-  `AgentHandler` 分解（**水位实测 + 门禁 + 第一刀已落**：起点 130 方法/23 文件，
-  现已搬到 **122 方法/22 文件**——中断队列读面 9 个方法进 `HITLQueue`，见 §11「分解第一刀」；
+  `AgentHandler` 分解（**水位实测 + 门禁 + 两刀已落**：起点 130 方法/23 文件，
+  现已搬到 **112 方法/21 文件**——中断队列读面 9 个方法进 `HITLQueue`、收尾链路 10 个方法进
+  `runFinalizer`，见 §11「分解第一刀」「第二刀」；
   `internal/handler` 整包 64 个 `Set*` 未增；
   另落地 1 处内聚塌陷 + 1 道审计注入完整性门禁，见 §11「P6 `AgentHandler` 分解」；
   报告原记的"19 个文件/26 处 SetXxx"是低估）、Eino 收口至 ≤1 包（**已进门禁并在收**：
@@ -1087,7 +1109,7 @@ handler 字段随即窄化，债面 **6 → 3**（`knowledge.go` 的死字段与
 
 | 阶段 | 状态 | 复验证据 |
 |---|---|---|
-| P0 护栏 + S1–S6 | **已落地** | `make ci`（fmt ratchet 26/26 + vet + `test-race` + lint + arch-lint + layering + wiring）；`internal/settings`（S4）、`internal/assets`+`web/embed.go`（S5）、`internal/capability`（S1/S2/S3）、`internal/provider`（S6）。**本机注意**：`golangci-lint` 与 `go-arch-lint` 二进制未安装，这两个 target 显式报错并给出安装命令（不是静默跳过），故本机验收用 `make fmt-check vet test-race layering-check wiring-check`，CI 里五条加上 lint/arch-lint 全跑 |
+| P0 护栏 + S1–S6 | **已落地** | `make ci`（fmt 硬零 + vet + `test-race` + lint + arch-lint + layering + wiring）；`internal/settings`（S4）、`internal/assets`+`web/embed.go`（S5）、`internal/capability`（S1/S2/S3）、`internal/provider`（S6）。**本机注意**：`golangci-lint` 与 `go-arch-lint` 二进制未安装，这两个 target 显式报错并给出安装命令（不是静默跳过），故本机验收用 `make fmt-check vet test-race layering-check wiring-check`，CI 里五条加上 lint/arch-lint 全跑 |
 | P1 授权/审批 | **已落地** | `go test -count=1 -run 'Approval|Capability|Declared' ./internal/app/ ./internal/capability/`；`grep -cE '^\s+case ' internal/app/mcp_authorization.go` = 6 |
 | P2 能力身份 + 一份清单出多份产物 | **已落地** | `make generate` 后 regenerate-and-diff 不报差异；`docs/zh-CN/capability-catalog.md` 149 条（150 行含表头） |
 | P3 契约与前端 | **部分：三套事件名契约已完成并双侧比对**；逐文件 ES 模块未做 | `go test -count=1 -run 'TestSSEPage|TestPersistedDetail|TestGeneratedSSEEnum|TestPageLoads' ./internal/handler/`；手拼帧基线 0 |
@@ -1096,9 +1118,11 @@ handler 字段随即窄化，债面 **6 → 3**（`knowledge.go` 的死字段与
 | P6 常规解耦 | **部分**：`setupRoutes` 分域、Provider 方言 + 目录代码生成、数据层 5 个 Store 面、**handler 层不再持有任何数据库句柄**（18 个域用各自的窄接口 + 1 个死字段删除）、handler 裸 SQL 0、Eino 6 包（适配外 3 包）、`AgentHandler` 水位与审计注入门禁 | `make layering-check` + `make wiring-check`；`go test -count=1 -v -run TestHandlerLayerHoldsNoGodObject ./internal/layering/` 报 `0 structs hold *database.DB, 18 hold their own store interface, 990 struct fields scanned` |
 | §6.1 社区知识控制 | **代码层已落**（围栏 + 入库拒绝 + 装配点守卫）；是否按运行期不可信处理仍待裁决（决策项 4） | `go test -count=1 ./internal/contentpolicy/` |
 
-**没有做成的事**（不假装完成）：`AgentHandler` 分解本体（122 方法/22 文件，仍是全仓最大的类型；
-只搬出了中断队列读面那一族，见 §11「分解第一刀」）、
-剩余 3 个域的窄接口（阻塞理由 = `h.db` 逃逸进别包签名，已逐个列出）、Eino 收到 ≤1 包、
+**没有做成的事**（不假装完成）：`AgentHandler` 分解本体（112 方法/21 文件，仍是全仓最大的类型；
+只搬出了中断队列读面与收尾链路两族，见 §11「分解第一刀」「第二刀」）、
+~~剩余 3 个域的窄接口~~（**已在第五片做完**：阻塞点是 `h.db` 逃逸进别包签名，解法是给那些函数
+声明消费者接口——`project.Store`/`agentfinalizer.Store`/`attackchain.Store`/`workflow.Store`，
+19 → 0）、Eino 收到 ≤1 包、
 session 事件溯源、逐文件 ES 模块、`internal/database` 361 个方法继续按域切、
 P4 硬网络边界、P4 内嵌 CPython、P5 registry / 气隙包 / 引爆自动化、
 以及 **§10 的 9 个决策项一个都没有被裁决**（其中 1、4、5、6 直接决定 P4/P5 的形态）。
@@ -1131,17 +1155,17 @@ origin  https://github.com/AIPentest/CyberStrikeAI.git  # 上游父仓库，只�
 
 1. **窄接口的下一层（原任务 #18）已完成**：handler 层持有裸句柄的结构体 **3 → 0**，
    判据也从"只许降"翻成硬零 `TestHandlerLayerHoldsNoGodObject` + 形状门禁
-   `TestNarrowedFieldsAreOnlyAssignedThroughNarrow`。**`AgentHandler` 分解第一刀也已落**：
-   中断队列读面 9 个方法进 `HITLQueue`，水位 **130 → 122 方法、23 → 22 文件**，
-   两条上限已收紧并探针验红（见 §11「分解第一刀」）。
-   下一刀继续这一族：HITL 剩下的 **32 个方法/7 个文件**（`hitl.go` 20、`hitl_audit_agent.go` 5、
+   `TestNarrowedFieldsAreOnlyAssignedThroughNarrow`。**`AgentHandler` 分解两刀已落**：
+   中断队列读面 9 个方法进 `HITLQueue`、收尾链路 10 个方法进 `runFinalizer`，
+   水位 **130 → 112 方法、23 → 21 文件**，上限已收紧并逐刀探针验红（见 §11「分解第一刀」「第二刀」）。
+   下一刀继续 HITL 这一族：剩下的 **32 个方法/7 个文件**（`hitl.go` 20、`hitl_audit_agent.go` 5、
    `hitl_context.go` 3，`hitl_execution.go`/`hitl_config_savers.go`/`hitl_audit_backend.go`/
    `batch_hitl.go` 各 1），它们与 agent run loop 共享任务/会话/SSE 状态，
    切之前要先决定"运行链路"和"审批链路"的边界在哪；
    做法沿用本轮验证过的顺序：先给被搬方法依赖的跨域调用声明消费者接口，再移方法，再降基线、复跑探针。
-   三条只降门禁（方法数 122、文件数 22、整包 setter 64）会把它锁住：搬走得让数字下降，塞回来会红。
-2. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），
-   它决定社区制品的攻击面；其余决策项可以在 P4/P5 动工前再定。
+   第二刀已经示范过一次"该留就留"：`tryAutoContinueAfterFinalization` 驱动 Runner 续跑、
+   拿着 `progressCallback`/`curHistory`，为了搬它再造两层接口就是把分解做成搬运。
+   三条只降门禁（方法数 112、文件数 21、整包 setter 64）会把它锁住：搬走得让数字下降，塞回来会红。
 2. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），
    它决定社区制品的攻击面；其余决策项可以在 P4/P5 动工前再定。
 

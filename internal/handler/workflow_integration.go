@@ -158,7 +158,7 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 		return true
 	}
-	decision := h.finalizeCandidateForDeliveryWithPolicy(
+	decision := h.finalizer.finalizeCandidateForDeliveryWithPolicy(
 		prep.ConversationID,
 		prep.AssistantMessageID,
 		"workflow",
@@ -280,7 +280,7 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 		respond(http.StatusInternalServerError, gin.H{"error": errMsg, "conversationId": conversationID})
 		return true
 	}
-	decision := h.finalizeCandidateForDeliveryWithPolicy(
+	decision := h.finalizer.finalizeCandidateForDeliveryWithPolicy(
 		prep.ConversationID,
 		prep.AssistantMessageID,
 		"workflow",

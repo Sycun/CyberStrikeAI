@@ -198,7 +198,8 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   最后 3 个域是这样打通的：`multiagent` 自己一个 DB 方法都不调、只把句柄转发给 `internal/project`，
   所以接口声明在链条另一端（`database.ProjectFactStore` / `ToolExecutionLedger` / `AttackChainLedger`，
   消费包用类型别名指回去，避免把 13 个签名抄三遍；这些面里刻意不放 `Close`））、
-  `AgentHandler` 分解（**水位已实测并进门禁**：130 个方法/23 个文件，
+  `AgentHandler` 分解（**水位已实测并进门禁，且已落下两刀**：起点 130 个方法/23 个文件 →
+  中断队列读面 9 个方法进 `HITLQueue`、收尾链路 10 个方法进 `runFinalizer`，现 **112 个方法/21 个文件**；
   `internal/handler` 整包 64 个 `Set*` 注入方法分布在 21 个接收者类型上，其中 `SetAudit` 有
   18 份逐字相同的副本——报告原记的"26 处 SetXxx/19 个文件"是低估。已落地：三条只降门禁
   （`make layering-check`）+ 一处内聚塌陷（三个 HITL 配置保存器收成一个构件）+

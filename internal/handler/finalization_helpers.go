@@ -5,12 +5,49 @@ import (
 	"strings"
 
 	"cyberstrike-ai/internal/agentfinalizer"
+	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/multiagent"
 
 	"go.uber.org/zap"
 )
 
-func (h *AgentHandler) finalizeAgentRunForDelivery(
+// runFinalizer owns what happens to a finished agent run: decide the terminal status, persist it,
+// cancel tool executions left dangling by a cancelled run, and the auto-continue step that gives a
+// run one more turn when it stopped on an unfinished tool call.
+//
+// It came out of AgentHandler because its whole dependency set is four narrow things - the storage
+// surface, a logger, one cancel call on the agent, and one message-content write - while the
+// methods that stayed in AgentHandler are the run loop itself (tasks, sessions, SSE, HITL resume).
+// content is the AgentHandler that owns the messages store, taken through the one method this
+// needs rather than as the whole handler.
+type runFinalizer struct {
+	db      database.AgentStore
+	logger  *zap.Logger
+	agent   cancellableToolExecution
+	content messageContentWriter
+}
+
+type cancellableToolExecution interface {
+	CancelMCPToolExecutionWithNote(executionID, note string) bool
+}
+
+type messageContentWriter interface {
+	setMessageContent(messageID, content string) error
+}
+
+// newRunFinalizer takes the concrete handle and narrows it here, at the boundary, like every other
+// collaborator in this package: a caller that happens to hold a nil *database.DB then cannot turn
+// the field into a non-nil interface wrapping nil.
+func newRunFinalizer(db *database.DB, logger *zap.Logger, agent cancellableToolExecution, content messageContentWriter) *runFinalizer {
+	return &runFinalizer{
+		db:      database.Narrow[database.AgentStore](db),
+		logger:  logger,
+		agent:   agent,
+		content: content,
+	}
+}
+
+func (f *runFinalizer) finalizeAgentRunForDelivery(
 	conversationID string,
 	assistantMessageID string,
 	agentMode string,
@@ -18,10 +55,10 @@ func (h *AgentHandler) finalizeAgentRunForDelivery(
 	mcpExecutionIDs []string,
 	reasoningContent string,
 ) agentfinalizer.Decision {
-	return h.finalizeAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, agentMode, result, mcpExecutionIDs, reasoningContent, false)
+	return f.finalizeAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, agentMode, result, mcpExecutionIDs, reasoningContent, false)
 }
 
-func (h *AgentHandler) finalizeAgentRunForDeliveryWithPolicy(
+func (f *runFinalizer) finalizeAgentRunForDeliveryWithPolicy(
 	conversationID string,
 	assistantMessageID string,
 	agentMode string,
@@ -30,18 +67,18 @@ func (h *AgentHandler) finalizeAgentRunForDeliveryWithPolicy(
 	reasoningContent string,
 	requireExecutionEvidence bool,
 ) agentfinalizer.Decision {
-	decision := agentfinalizer.FromRunResult(h.db, result, agentfinalizer.Input{
+	decision := agentfinalizer.FromRunResult(f.db, result, agentfinalizer.Input{
 		ConversationID:           conversationID,
 		AssistantMessageID:       assistantMessageID,
 		AgentMode:                agentMode,
 		MCPExecutionIDs:          mcpExecutionIDs,
 		RequireExecutionEvidence: requireExecutionEvidence,
 	})
-	h.persistFinalizationDecision(conversationID, assistantMessageID, agentMode, mcpExecutionIDs, reasoningContent, decision)
+	f.persistFinalizationDecision(conversationID, assistantMessageID, agentMode, mcpExecutionIDs, reasoningContent, decision)
 	return decision
 }
 
-func (h *AgentHandler) decideAgentRunForDeliveryWithPolicy(
+func (f *runFinalizer) decideAgentRunForDeliveryWithPolicy(
 	conversationID string,
 	assistantMessageID string,
 	agentMode string,
@@ -49,7 +86,7 @@ func (h *AgentHandler) decideAgentRunForDeliveryWithPolicy(
 	mcpExecutionIDs []string,
 	requireExecutionEvidence bool,
 ) agentfinalizer.Decision {
-	return agentfinalizer.FromRunResult(h.db, result, agentfinalizer.Input{
+	return agentfinalizer.FromRunResult(f.db, result, agentfinalizer.Input{
 		ConversationID:           conversationID,
 		AssistantMessageID:       assistantMessageID,
 		AgentMode:                agentMode,
@@ -58,14 +95,14 @@ func (h *AgentHandler) decideAgentRunForDeliveryWithPolicy(
 	})
 }
 
-func (h *AgentHandler) decideAgentRunForDelivery(
+func (f *runFinalizer) decideAgentRunForDelivery(
 	conversationID string,
 	assistantMessageID string,
 	agentMode string,
 	result *multiagent.RunResult,
 	mcpExecutionIDs []string,
 ) agentfinalizer.Decision {
-	return agentfinalizer.FromRunResult(h.db, result, agentfinalizer.Input{
+	return agentfinalizer.FromRunResult(f.db, result, agentfinalizer.Input{
 		ConversationID:           conversationID,
 		AssistantMessageID:       assistantMessageID,
 		AgentMode:                agentMode,
@@ -74,7 +111,7 @@ func (h *AgentHandler) decideAgentRunForDelivery(
 	})
 }
 
-func (h *AgentHandler) persistFinalizationDecision(
+func (f *runFinalizer) persistFinalizationDecision(
 	conversationID string,
 	assistantMessageID string,
 	agentMode string,
@@ -82,20 +119,20 @@ func (h *AgentHandler) persistFinalizationDecision(
 	reasoningContent string,
 	decision agentfinalizer.Decision,
 ) {
-	if assistantMessageID == "" || h.db == nil {
+	if assistantMessageID == "" || f.db == nil {
 		return
 	}
-	_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "finalization_check", finalizationCheckMessage(decision), decision)
+	_ = f.db.AddProcessDetail(assistantMessageID, conversationID, "finalization_check", finalizationCheckMessage(decision), decision)
 	if decision.Finalizable {
-		if err := h.db.UpdateAssistantMessageFinalize(assistantMessageID, decision.FinalText, mcpExecutionIDs, reasoningContent); err != nil && h.logger != nil {
-			h.logger.Warn("更新最终助手消息失败", zap.Error(err), zap.String("conversationId", conversationID), zap.String("agentMode", agentMode))
+		if err := f.db.UpdateAssistantMessageFinalize(assistantMessageID, decision.FinalText, mcpExecutionIDs, reasoningContent); err != nil && f.logger != nil {
+			f.logger.Warn("更新最终助手消息失败", zap.Error(err), zap.String("conversationId", conversationID), zap.String("agentMode", agentMode))
 		}
 		return
 	}
-	_ = h.setMessageContent(assistantMessageID, finalizationBlockedMessage(decision))
+	_ = f.content.setMessageContent(assistantMessageID, finalizationBlockedMessage(decision))
 }
 
-func (h *AgentHandler) finalizeCandidateForDelivery(
+func (f *runFinalizer) finalizeCandidateForDelivery(
 	conversationID string,
 	assistantMessageID string,
 	agentMode string,
@@ -104,10 +141,10 @@ func (h *AgentHandler) finalizeCandidateForDelivery(
 	awaitingHITL bool,
 	reasoningContent string,
 ) agentfinalizer.Decision {
-	return h.finalizeCandidateForDeliveryWithPolicy(conversationID, assistantMessageID, agentMode, response, mcpExecutionIDs, awaitingHITL, reasoningContent, false)
+	return f.finalizeCandidateForDeliveryWithPolicy(conversationID, assistantMessageID, agentMode, response, mcpExecutionIDs, awaitingHITL, reasoningContent, false)
 }
 
-func (h *AgentHandler) finalizeCandidateForDeliveryWithPolicy(
+func (f *runFinalizer) finalizeCandidateForDeliveryWithPolicy(
 	conversationID string,
 	assistantMessageID string,
 	agentMode string,
@@ -117,7 +154,7 @@ func (h *AgentHandler) finalizeCandidateForDeliveryWithPolicy(
 	reasoningContent string,
 	requireExecutionEvidence bool,
 ) agentfinalizer.Decision {
-	decision := agentfinalizer.Decide(h.db, agentfinalizer.Input{
+	decision := agentfinalizer.Decide(f.db, agentfinalizer.Input{
 		Response:                 response,
 		ConversationID:           conversationID,
 		AssistantMessageID:       assistantMessageID,
@@ -126,17 +163,17 @@ func (h *AgentHandler) finalizeCandidateForDeliveryWithPolicy(
 		AwaitingHITL:             awaitingHITL,
 		RequireExecutionEvidence: requireExecutionEvidence,
 	})
-	if assistantMessageID == "" || h.db == nil {
+	if assistantMessageID == "" || f.db == nil {
 		return decision
 	}
-	_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "finalization_check", finalizationCheckMessage(decision), decision)
+	_ = f.db.AddProcessDetail(assistantMessageID, conversationID, "finalization_check", finalizationCheckMessage(decision), decision)
 	if decision.Finalizable {
-		if err := h.db.UpdateAssistantMessageFinalize(assistantMessageID, decision.FinalText, mcpExecutionIDs, reasoningContent); err != nil && h.logger != nil {
-			h.logger.Warn("更新最终助手消息失败", zap.Error(err), zap.String("conversationId", conversationID), zap.String("agentMode", agentMode))
+		if err := f.db.UpdateAssistantMessageFinalize(assistantMessageID, decision.FinalText, mcpExecutionIDs, reasoningContent); err != nil && f.logger != nil {
+			f.logger.Warn("更新最终助手消息失败", zap.Error(err), zap.String("conversationId", conversationID), zap.String("agentMode", agentMode))
 		}
 		return decision
 	}
-	_ = h.setMessageContent(assistantMessageID, finalizationBlockedMessage(decision))
+	_ = f.content.setMessageContent(assistantMessageID, finalizationBlockedMessage(decision))
 	return decision
 }
 

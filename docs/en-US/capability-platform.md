@@ -256,8 +256,10 @@ table (noted in `config.go`).
   which is now measured and gated instead of being a hunch (the provider catalog is generated and
   byte-gated: `internal/provider/publish.go` renders it into `docs/zh-CN/provider-catalog.md` plus
   `internal/provider/testdata/provider-catalog.golden.json`, and CI fails on drift):
-  `AgentHandler` holds **130 methods
-  across 23 files**, and `internal/handler` as a whole declares **64 `Set*` injection methods over
+  `AgentHandler` started at **130 methods
+  across 23 files**; two cuts have since landed - 9 interrupt-queue read methods into `HITLQueue` and
+  10 finalization methods into `runFinalizer` - so the ceiling is now **112 methods / 21 files**, and
+  `internal/handler` as a whole declares **64 `Set*` injection methods over
   21 receiver types**, 18 of which are byte-identical copies of `SetAudit` (the report's "26 SetXxx
   / 19 files" underestimated both). Three only-down gates cover it (`make layering-check`: per-type
   method ceilings, a file ceiling, and a whole-package setter ceiling), one cohesion collapse has

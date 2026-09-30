@@ -83,6 +83,9 @@ func TestCleanupPendingToolExecutionsAfterIterationAllowsFinalization(t *testing
 	})
 	ag := agentpkg.NewAgent(&config.OpenAIConfig{}, &config.AgentConfig{}, server, nil, logger, 10)
 	h := &AgentHandler{agent: ag, db: db, logger: logger}
+	// Same wiring as NewAgentHandler: the finalizer is its own collaborator now, so a hand-built
+	// handler has to build it the way production does rather than lean on a lazy accessor.
+	h.finalizer = newRunFinalizer(db, logger, ag, h)
 
 	callCtx := mcp.WithMCPConversationID(context.Background(), "conv-cleanup")
 	result, execID, err := server.CallTool(callCtx, "block", nil)
@@ -102,7 +105,7 @@ func TestCleanupPendingToolExecutionsAfterIterationAllowsFinalization(t *testing
 	}
 
 	var eventType string
-	cancelled := h.cleanupPendingToolExecutionsAfterIteration(context.Background(), "conv-cleanup", decision, func(et, _ string, _ interface{}) {
+	cancelled := h.finalizer.cleanupPendingToolExecutionsAfterIteration(context.Background(), "conv-cleanup", decision, func(et, _ string, _ interface{}) {
 		eventType = et
 	})
 	if len(cancelled) != 1 || cancelled[0] != execID {

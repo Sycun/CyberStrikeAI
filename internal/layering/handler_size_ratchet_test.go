@@ -16,11 +16,12 @@ import (
 //	Set* methods in internal/handler: 64 across 21 receiver types,
 //	18 of which are the same SetAudit repeated handler by handler
 //
-// Those became the ceilings. The first real cut moved the HITL interrupt read surface (nine
-// methods: the log endpoints, the queue query, the permission checks, the retention setting) onto
-// its own collaborator in hitl_queue.go, which is why the numbers below are 122/22 rather than
-// 130/23 - and why the setter ceiling did not move: the collaborator takes the audit service as a
-// field assigned by AgentHandler.SetAudit instead of declaring a nineteenth Set* method.
+// Those became the ceilings. Two cuts have landed since: the HITL interrupt read surface (nine
+// methods, hitl_queue.go) and the finalization service (ten methods, runFinalizer in
+// finalization_helpers.go), which is why the numbers below are 112/21 rather than 130/23 - and why
+// the setter ceiling did not move: neither collaborator declares a Set* method. The finalizer takes
+// four things and nothing else (narrowed storage, logger, one cancel call, one message-content
+// write), and AgentHandler hands itself in for the single write it needs.
 //
 // A decomposition is only real if the number goes down and stays
 // down, and "stays down" needs a gate - otherwise the next feature that needs a handle on
@@ -28,8 +29,8 @@ import (
 // resistance, and the doc's diagnosis quietly becomes worse.
 
 const (
-	agentHandlerMethodCeiling = 122
-	agentHandlerFileCeiling   = 22
+	agentHandlerMethodCeiling = 112
+	agentHandlerFileCeiling   = 21
 	setterCeiling             = 64
 )
 

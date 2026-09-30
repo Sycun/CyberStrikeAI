@@ -81,13 +81,13 @@ func finalizationAutoContinueBackoff(attempt int) time.Duration {
 	return time.Duration(attempt) * time.Second
 }
 
-func (h *AgentHandler) cleanupPendingToolExecutionsAfterIteration(
+func (f *runFinalizer) cleanupPendingToolExecutionsAfterIteration(
 	taskCtx context.Context,
 	conversationID string,
 	decision agentfinalizer.Decision,
 	progressCallback func(eventType, message string, data interface{}),
 ) []string {
-	if h == nil || h.agent == nil || decision.CompletionReason != agentfinalizer.ReasonPendingTools {
+	if f == nil || f.agent == nil || decision.CompletionReason != agentfinalizer.ReasonPendingTools {
 		return nil
 	}
 	pending := uniqueNonEmptyStrings(decision.PendingExecutionIDs)
@@ -96,10 +96,10 @@ func (h *AgentHandler) cleanupPendingToolExecutionsAfterIteration(
 	}
 	cancelled := make([]string, 0, len(pending))
 	for _, executionID := range pending {
-		if h.agent.CancelMCPToolExecutionWithNote(executionID, finalizationPendingToolCancelNote) {
+		if f.agent.CancelMCPToolExecutionWithNote(executionID, finalizationPendingToolCancelNote) {
 			cancelled = append(cancelled, executionID)
-		} else if h.logger != nil {
-			h.logger.Warn("finalization pending tool cleanup could not cancel execution",
+		} else if f.logger != nil {
+			f.logger.Warn("finalization pending tool cleanup could not cancel execution",
 				zap.String("conversationId", conversationID),
 				zap.String("executionId", executionID))
 		}
@@ -116,12 +116,12 @@ func (h *AgentHandler) cleanupPendingToolExecutionsAfterIteration(
 			"reason":                           agentfinalizer.ReasonPendingTools,
 		})
 	}
-	h.waitForToolExecutionsToLeavePending(taskCtx, cancelled, finalizationPendingToolCancelWait)
+	f.waitForToolExecutionsToLeavePending(taskCtx, cancelled, finalizationPendingToolCancelWait)
 	return cancelled
 }
 
-func (h *AgentHandler) waitForToolExecutionsToLeavePending(ctx context.Context, executionIDs []string, wait time.Duration) {
-	if h == nil || h.db == nil || len(executionIDs) == 0 || wait <= 0 {
+func (f *runFinalizer) waitForToolExecutionsToLeavePending(ctx context.Context, executionIDs []string, wait time.Duration) {
+	if f == nil || f.db == nil || len(executionIDs) == 0 || wait <= 0 {
 		return
 	}
 	timer := time.NewTimer(wait)
@@ -129,7 +129,7 @@ func (h *AgentHandler) waitForToolExecutionsToLeavePending(ctx context.Context, 
 	ticker := time.NewTicker(finalizationPendingToolCancelPoll)
 	defer ticker.Stop()
 	for {
-		if !h.hasPendingToolExecutions(executionIDs) {
+		if !f.hasPendingToolExecutions(executionIDs) {
 			return
 		}
 		select {
@@ -142,12 +142,12 @@ func (h *AgentHandler) waitForToolExecutionsToLeavePending(ctx context.Context, 
 	}
 }
 
-func (h *AgentHandler) hasPendingToolExecutions(executionIDs []string) bool {
-	if h == nil || h.db == nil {
+func (f *runFinalizer) hasPendingToolExecutions(executionIDs []string) bool {
+	if f == nil || f.db == nil {
 		return false
 	}
 	for _, executionID := range uniqueNonEmptyStrings(executionIDs) {
-		exec, err := h.db.GetToolExecution(executionID)
+		exec, err := f.db.GetToolExecution(executionID)
 		if err != nil || exec == nil {
 			continue
 		}

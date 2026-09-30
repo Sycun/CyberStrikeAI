@@ -190,6 +190,9 @@ type AgentHandler struct {
 	// hitlQueue 是中断队列的读取/权限/审计日志面，从本 handler 里搬出去的 9 个方法住在
 	// hitl_queue.go：它只需要域存储、会话可见性判断、保留期配置和审计服务四样东西。
 	hitlQueue *HITLQueue
+	// finalizer 是"跑完的一轮怎么收尾"：判定终态、落库、取消悬挂的工具执行、以及自动续跑。
+	// 搬出去的第二族，见 finalization_helpers.go 顶部的说明。
+	finalizer *runFinalizer
 	// sessions 是 messages 的域存储：异常收尾改写助手消息内容走它，不在 HTTP 层拼 SQL。
 	sessions *store.Session
 	// settings 发布运行期配置快照；与 ConfigHandler 共用同一个存储，
@@ -317,6 +320,10 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 		auditLLM:         openai.NewClient(llmCfg, llmHTTP, logger),
 	}
 	tm.SetToolCanceler(handler.cancelRunningMCPToolsForConversation)
+	// The finalizer writes message content back through the handler, so it is wired after the
+	// literal rather than inside it; it takes the narrowed storage and the agent's one cancel
+	// method, not the handler as a whole.
+	handler.finalizer = newRunFinalizer(db, logger, agent, handler)
 	if err := handler.hitlManager.EnsureSchema(); err != nil {
 		logger.Warn("初始化 HITL 表失败", zap.Error(err))
 	}
@@ -739,11 +746,11 @@ func (h *AgentHandler) finalizeRobotAgentError(ctx context.Context, assistantMes
 
 func (h *AgentHandler) finalizeRobotAgentSuccess(taskCtx context.Context, assistantMessageID, conversationID string, resultMA *multiagent.RunResult) (string, string, error) {
 	reasoningContent := multiagent.AggregatedReasoningFromTraceJSON(resultMA.LastAgentTraceInput)
-	decision := h.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, true)
-	if cancelled := h.cleanupPendingToolExecutionsAfterIteration(taskCtx, conversationID, decision, nil); len(cancelled) > 0 {
-		decision = h.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, true)
+	decision := h.finalizer.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, true)
+	if cancelled := h.finalizer.cleanupPendingToolExecutionsAfterIteration(taskCtx, conversationID, decision, nil); len(cancelled) > 0 {
+		decision = h.finalizer.decideAgentRunForDeliveryWithPolicy(conversationID, assistantMessageID, "robot", resultMA, resultMA.MCPExecutionIDs, true)
 	}
-	h.persistFinalizationDecision(conversationID, assistantMessageID, "robot", resultMA.MCPExecutionIDs, reasoningContent, decision)
+	h.finalizer.persistFinalizationDecision(conversationID, assistantMessageID, "robot", resultMA.MCPExecutionIDs, reasoningContent, decision)
 	responseText := decision.FinalText
 	if !decision.Finalizable {
 		responseText = finalizationBlockedMessage(decision)
