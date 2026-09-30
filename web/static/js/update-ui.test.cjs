@@ -1,0 +1,907 @@
+const fs = require('node:fs');
+const vm = require('node:vm');
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const source = fs.readFileSync('web/static/js/update.js', 'utf8');
+const template = fs.readFileSync('web/templates/index.html', 'utf8');
+const router = fs.readFileSync('web/static/js/router.js', 'utf8');
+const sheet = fs.readFileSync('web/static/css/style.css', 'utf8');
+const zh = JSON.parse(fs.readFileSync('web/static/i18n/zh-CN.json', 'utf8'));
+const en = JSON.parse(fs.readFileSync('web/static/i18n/en-US.json', 'utf8'));
+
+// The only handlers this console is allowed to wire into markup.
+const HANDLES = ['startUpdateApply', 'checkForUpdates', 'rollbackUpdate',
+    'updateRestartChoiceChanged', 'loadUpdateConsole'];
+
+function flatKeys(obj, prefix, out) {
+    Object.keys(obj).forEach(k => {
+        const v = obj[k];
+        const path = prefix ? prefix + '.' + k : k;
+        if (v && typeof v === 'object') flatKeys(v, path, out);
+        else out.add(path);
+    });
+    return out;
+}
+
+function resolve(dict, dotted) {
+    let node = dict;
+    for (const part of dotted.split('.')) {
+        if (!node || typeof node !== 'object') return undefined;
+        node = node[part];
+    }
+    return typeof node === 'string' ? node : undefined;
+}
+
+const baseStatus = {
+    root: '/srv/csai',
+    installed: true,
+    branch: 'main',
+    remote: 'mine',
+    commit: 'a1b2c3d',
+    subject: 'fix: 修好一个东西',
+    committedAt: '2026-09-30 18:04:11 +0800',
+    behind: 3,
+    ahead: 0,
+    diverged: false,
+    updateAvailable: true,
+    remoteCommit: 'f9e8d7c',
+    remoteSubject: 'feat: 新东西',
+    incoming: [{ commit: 'f9e8d7c', subject: 'feat: 新东西' }],
+    incomingTotal: 3,
+    localChanges: [],
+    blockingChanges: [],
+    goToolchain: 'go1.23.4',
+    canBuild: true,
+    hasBinary: true,
+    hasRollback: true,
+    rollbackTo: 'a1b2c3d',
+    checkError: '',
+};
+
+function statusOf(patch) {
+    return Object.assign({}, baseStatus, patch || {});
+}
+
+// The shape is the endpoint's own: {status, job, canRestart}. job is null until an update ran.
+function envelope(status, job, canRestart) {
+    return { status: status || statusOf(), job: job === undefined ? null : job, canRestart: canRestart !== false };
+}
+
+const runningJob = {
+    id: 'upd-1',
+    state: 'running',
+    started: '2026-10-01T04:00:00+08:00',
+    steps: [{ phase: 'fetch', message: '开始拉取 mine/main', at: '2026-10-01T04:00:01+08:00' }],
+    restartRequested: false,
+};
+
+const succeededJob = {
+    id: 'upd-1',
+    state: 'succeeded',
+    started: '2026-10-01T04:00:00+08:00',
+    finished: '2026-10-01T04:03:12+08:00',
+    steps: [
+        { phase: 'fetch', message: 'mine/main 有 3 个新提交：a1b2c3d → f9e8d7c', at: '04:00:01' },
+        { phase: 'protect', message: '已暂存 2 个本地内容文件', at: '04:00:05' },
+        { phase: 'build', message: '开始编译二进制', at: '04:00:09' },
+        { phase: 'done', message: '已更新 3 个提交并换好二进制', at: '04:03:10' },
+    ],
+    result: {
+        fromCommit: 'a1b2c3d',
+        toCommit: 'f9e8d7c',
+        commits: 3,
+        filesTouched: 27,
+        keptContent: ['roles/我的角色.md', 'tools/semgrep.yaml'],
+        binaryPath: '/srv/csai/cyberstrike-ai',
+        binaryBuilt: true,
+        prevBinary: '/srv/csai/cyberstrike-ai.prev',
+        backupDir: '/srv/csai/.update-backup/20261001_040005',
+        needsRestart: true,
+        duration: '3m12s',
+    },
+    restartRequested: true,
+};
+
+const failedJob = {
+    id: 'upd-2',
+    state: 'failed',
+    started: '2026-10-01T05:00:00+08:00',
+    finished: '2026-10-01T05:00:40+08:00',
+    steps: [{ phase: 'build', message: '开始编译二进制（首次会下载依赖，可能需要几分钟）', at: '05:00:20' }],
+    failure: {
+        reason: 'build_failed',
+        message: '编译失败，二进制保持原版本:\ninternal/foo.go:12: undefined: bar',
+        items: ['roles/我的角色.md', 'internal/foo.go'],
+    },
+    restartRequested: false,
+};
+
+// harness() loads the page for real (loadUpdateConsole) before handing it back, so every test
+// starts from the markup that would be on screen and can execute the handlers that markup emits.
+function harness(options) {
+    const opts = options || {};
+    const nodes = new Map();
+    const calls = [];
+    const toasts = [];
+    const confirms = [];
+    const timers = [];
+    let active = true;
+    let confirmAnswer = opts.confirm === false ? false : true;
+    let nextTimerId = 1;
+
+    function makeEl(id) {
+        const el = {
+            id,
+            innerHTML: '',
+            checked: false,
+            insertAdjacentHTML(_pos, html) { this.innerHTML = html + this.innerHTML; },
+        };
+        el.classList = {
+            _set: new Set(id === 'page-system-update' && active ? ['page', 'active'] : ['page']),
+            contains(c) { return this._set.has(c); },
+            add(c) { this._set.add(c); },
+            remove(c) { this._set.delete(c); },
+        };
+        return el;
+    }
+
+    const responses = Object.assign({
+        'GET /api/system/update': [{ status: 200, body: envelope(opts.status, opts.job, opts.canRestart) }],
+        'POST /api/system/update/check': [{ status: 200, body: { status: statusOf(opts.checkedStatus) } }],
+        'POST /api/system/update/apply': [{ status: 202, body: { job_id: 'upd-1', state: 'running' } }],
+        'GET /api/system/update/job': [{ status: 200, body: { job: opts.job || runningJob } }],
+        'POST /api/system/update/rollback': [{ status: 200, body: { result: { fromCommit: 'f9e8d7c', toCommit: 'a1b2c3d' } } }],
+    }, opts.responses || {});
+
+    const sandbox = {
+        document: {
+            getElementById(id) {
+                if (!nodes.has(id)) nodes.set(id, makeEl(id));
+                return nodes.get(id);
+            },
+            createElement() {
+                const el = { textContent: '', innerHTML: '' };
+                Object.defineProperty(el, 'textContent', {
+                    set(v) {
+                        el._t = String(v == null ? '' : v);
+                        // The browser's textContent -> innerHTML leaves quotes alone; a harness that
+                        // escaped them would make the attribute-injection assertions test nothing.
+                        el.innerHTML = el._t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    },
+                    get() { return el._t; },
+                });
+                return el;
+            },
+            querySelectorAll() { return []; },
+        },
+        console,
+        Promise,
+        JSON,
+        Set,
+        Object,
+        String,
+        Date,
+        Math,
+        escapeHtml(text) {
+            const div = sandbox.document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        },
+        escapeAttr(text) {
+            return sandbox.escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        },
+        showNotification(msg, type) { toasts.push({ msg, type }); },
+        setInterval(fn, ms) {
+            const t = { id: nextTimerId++, fn, ms, cleared: false };
+            timers.push(t);
+            return t.id;
+        },
+        clearInterval(id) {
+            const t = timers.find(x => x.id === id);
+            if (t) t.cleared = true;
+        },
+        window: {
+            // Resolved against the same zh-CN.json the browser loads, with {{var}} interpolated the
+            // way i18next does. A key the dictionary does not carry comes back as the raw key, so a
+            // missing translation fails the copy assertions instead of quietly painting a key name.
+            t(key, o) {
+                const found = resolve(zh, key);
+                if (found === undefined) return key;
+                return found.replace(/\{\{(\w+)\}\}/g, (m, name) => (o && name in o ? String(o[name]) : m));
+            },
+            showNotification(msg, type) { toasts.push({ msg, type }); },
+            confirm(message) { confirms.push(message); return confirmAnswer; },
+            applyRBACToUI() {},
+        },
+        apiFetch(url, reqOpts = {}) {
+            const method = reqOpts.method || 'GET';
+            calls.push({ url, method, body: reqOpts.body });
+            if ((opts.rejects || []).includes(method + ' ' + url)) {
+                // Not a status code: the request itself dies (401 handling, a dropped socket),
+                // which is the path that leaves a page stuck on a spinner if it is not unwound.
+                return Promise.reject(new Error('network unreachable'));
+            }
+            const queue = responses[method + ' ' + url];
+            const entry = queue && queue.length ? (queue.length > 1 ? queue.shift() : queue[0]) : null;
+            if (!entry) {
+                return Promise.resolve({
+                    ok: false, status: 500,
+                    json: () => Promise.resolve({ error: 'no fixture for ' + method + ' ' + url }),
+                });
+            }
+            const status = entry.status === undefined ? 200 : entry.status;
+            return Promise.resolve({
+                ok: status >= 200 && status < 300,
+                status,
+                json: () => Promise.resolve(entry.body),
+            });
+        },
+    };
+    sandbox.window.document = sandbox.document;
+    vm.createContext(sandbox);
+    vm.runInContext(source, sandbox);
+    vm.runInContext(`
+        this.api = {
+            loadUpdateConsole, checkForUpdates, startUpdateApply, rollbackUpdate,
+            updateRestartChoiceChanged, pollUpdateJob, renderUpdateConsole, stopUpdatePolling
+        };
+        this.vars = {
+            setBusy(v) { updateBusy = v; },
+            getRestartChoice() { return updateRestartChoice; },
+            getPollTimer() { return updatePollTimer; },
+            getCheckDone() { return updateCheck.done; }
+        };
+    `, sandbox);
+
+    const flush = async () => { for (let i = 0; i < 14; i++) await new Promise(r => setImmediate(r)); };
+
+    // Running the attribute text inside the page's own context is the point of this harness: a
+    // handler wired to the wrong function, or reading the wrong element, still looks perfectly
+    // fine when the attribute is only ever inspected as a string.
+    function runHandler(text, thisArg) {
+        const fn = vm.runInContext('(function(){' + text + '})', sandbox);
+        return fn.call(thisArg || {});
+    }
+
+    function extractHandlers(html) {
+        const found = { onclick: [], onchange: [] };
+        const re = /on(click|change)="([^"]*)"/g;
+        let m;
+        while ((m = re.exec(html)) !== null) found['on' + m[1]].push(m[2]);
+        return found;
+    }
+
+    const h = {
+        sandbox, nodes, calls, toasts, confirms, timers, flush, runHandler, extractHandlers, responses,
+        api: sandbox.api,
+        vars: sandbox.vars,
+        html() { return nodes.get('update-console').innerHTML; },
+        fire(name, thisArg) {
+            const all = extractHandlers(h.html());
+            const text = all.onclick.concat(all.onchange).find(v => v.startsWith(name + '('));
+            if (!text) throw new Error('handler ' + name + ' is not present in the rendered markup');
+            return runHandler(text, thisArg);
+        },
+        // Flipping the router's page-active class is all that leaving a page means for this console.
+        setActive(v) {
+            active = v;
+            const node = nodes.get('page-system-update');
+            if (v) node.classList.add('active'); else node.classList.remove('active');
+        },
+        setConfirm(v) { confirmAnswer = v; },
+        liveTimers() { return timers.filter(t => !t.cleared); },
+        tick() {
+            const live = h.liveTimers();
+            if (!live.length) throw new Error('no poll timer is armed');
+            return live[live.length - 1].fn();
+        },
+    };
+
+    return Promise.resolve(sandbox.api.loadUpdateConsole()).then(flush).then(() => h);
+}
+
+test('the page is wired in everywhere a page has to be registered', () => {
+    assert.match(template, /<div class="nav-item" data-page="system-update">/);
+    assert.match(template, /<div id="page-system-update" class="page">/);
+    assert.match(template, /id="update-console"/);
+    assert.match(template, /<script src="\/static\/js\/update\.js\?v=\{\{\.Version\}\}"><\/script>/);
+
+    const group = template.indexOf('<span data-i18n="navGroups.administration">平台管理</span>');
+    const plugins = template.indexOf('<div class="nav-item" data-page="plugins-management">');
+    const update = template.indexOf('<div class="nav-item" data-page="system-update">');
+    const rbac = template.indexOf('<div class="nav-item" data-page="platform-rbac">');
+    assert.ok(group > -1 && plugins > group && update > plugins && rbac > update,
+        'the nav item must sit in 平台管理 right after the capability bundles');
+    assert.match(template, /data-page="system-update"[\s\S]{0,400}?onclick="switchPage\('system-update'\)"/);
+    assert.match(template, /<div class="nav-item-content" data-title="一键更新" onclick="switchPage\('system-update'\)" data-i18n="nav\.systemUpdate" data-i18n-attr="data-title"/);
+    assert.match(template, /<div class="page-header">\s*\n\s*<h2 data-i18n="update\.title">/);
+
+    // Registered in the router twice on purpose: the hash whitelist on boot, and the one used when
+    // a page builds its own hash. A page missing from either is silently unreachable.
+    const lists = router.split('\n').filter(l => l.includes("['dashboard'") && l.includes("'system-update'"));
+    assert.equal(lists.length, 2, 'system-update must appear in both router page lists');
+    assert.match(router, /case 'system-update':\s*\n\s*if \(typeof loadUpdateConsole === 'function'\) loadUpdateConsole\(\);/);
+    // And the leave-page cleanup: the router only calls initPage on entry, so the progress poller
+    // has to be stopped from the same tail that already does this for the tasks page.
+    assert.match(router, /if \(pageId !== 'system-update' && typeof stopUpdatePolling === 'function'\)/);
+});
+
+test('the update console has its own stylesheet section', () => {
+    const block = sheet.slice(sheet.indexOf('.plugin-drift-list'));
+    assert.ok(block.includes('.update-console'), 'the .update-* section must come after the plugins one');
+    ['.update-console', '.update-section-title', '.update-facts', '.update-chip-ok', '.update-chip-warn',
+        '.update-chip-danger', '.update-error', '.update-check-failed', '.update-step-list', '.update-table',
+        '.update-restart-choice', '.update-blocker-list', '.update-apply-btn:disabled'].forEach(sel => {
+        assert.ok(sheet.includes(sel), sel + ' must be defined');
+    });
+    // Every class the console emits has to be styled or be an existing shared one: a hook name
+    // that appears only in JS is a button nobody can see the state of.
+    const emitted = [...new Set(source.match(/update-[a-z][a-z-]*/g) || [])]
+        .filter(t => /^update-[a-z-]+$/.test(t));
+    emitted.forEach(cls => {
+        assert.ok(sheet.includes('.' + cls), cls + ' is emitted by the console but style.css never mentions it');
+    });
+    assert.ok(emitted.length >= 25, 'the class scan found too little to be a gate: ' + emitted.length);
+});
+
+test('both locales carry the same update keys, and everything the page asks for exists', () => {
+    const zhKeys = flatKeys(zh.update, '', new Set());
+    const enKeys = flatKeys(en.update, '', new Set());
+    assert.deepEqual([...zhKeys].filter(k => !enKeys.has(k)), [], 'keys missing from en-US');
+    assert.deepEqual([...enKeys].filter(k => !zhKeys.has(k)), [], 'keys missing from zh-CN');
+    assert.ok(zhKeys.size >= 60, 'the update namespace has gone thin: ' + zhKeys.size);
+    assert.ok(zh.nav.systemUpdate && en.nav.systemUpdate, 'nav.systemUpdate must exist in both locales');
+    assert.equal(zh.nav.systemUpdate, '一键更新');
+    assert.equal(en.nav.systemUpdate, 'One-Click Update');
+
+    // The English dictionary must not be holding Chinese text.
+    [...enKeys].forEach(k => {
+        const value = resolve(en.update, k) || '';
+        assert.ok(!/[一-龥]/.test(value), 'en-US still has Chinese in update.' + k + ': ' + value);
+        assert.ok(value !== zh.update[k], 'en-US still has the Chinese string for update.' + k);
+    });
+
+    const htmlKeys = [...template.matchAll(/data-i18n="([^"]+)"/g)].map(m => m[1])
+        .filter(k => k.startsWith('update.') || k === 'nav.systemUpdate');
+    assert.ok(htmlKeys.length >= 3, 'the page must carry its own translated titles: ' + htmlKeys);
+    htmlKeys.forEach(k => {
+        assert.ok(resolve(zh, k), 'zh-CN missing ' + k);
+        assert.ok(resolve(en, k), 'en-US missing ' + k);
+    });
+
+    const jsKeys = [...source.matchAll(/updateT\('([^']+)'/g)].map(m => m[1]);
+    assert.ok(jsKeys.length >= 40, 'the console should be fully translated, got ' + jsKeys.length);
+    jsKeys.forEach(k => {
+        assert.ok(resolve(zh, 'update.' + k), 'zh-CN missing update.' + k);
+        assert.ok(resolve(en, 'update.' + k), 'en-US missing update.' + k);
+    });
+
+    // withUpdateBusy picks its error prefix out of a map, so those keys are referenced dynamically
+    // and a typo would survive as a painted key name instead of failing here.
+    const mapBody = (source.match(/const UPDATE_FAILURE_KEYS = \{([\s\S]*?)\n\};/) || [])[1] || '';
+    const mapped = [...mapBody.matchAll(/'([a-zA-Z]+)'/g)].map(m => m[1]);
+    assert.ok(mapped.length >= 4, 'the failure-key map was not found in update.js');
+    mapped.forEach(k => {
+        assert.ok(resolve(zh, 'update.' + k), 'zh-CN missing update.' + k);
+        assert.ok(resolve(en, 'update.' + k), 'en-US missing update.' + k);
+    });
+
+    // No key may be dead weight: every entry has to be reachable from the page or the console.
+    [...zhKeys].forEach(k => {
+        const used = source.includes("'" + k.split('.').pop() + "'") || template.includes('update.' + k);
+        assert.ok(used, 'update.' + k + ' is defined but nothing asks for it');
+    });
+});
+
+test('opening the page reads the install tree and claims nothing about the remote', async () => {
+    const h = await harness({ status: statusOf({ updateAvailable: false, behind: 0, incoming: [], incomingTotal: 0 }) });
+    assert.deepEqual(h.calls.map(c => c.method + ' ' + c.url), ['GET /api/system/update'],
+        'opening the page must not fetch the remote and must not start polling');
+
+    const html = h.html();
+    assert.match(html, /\/srv\/csai/);
+    assert.match(html, /main/);
+    assert.match(html, /a1b2c3d/);
+    assert.match(html, /2026-09-30 18:04:11/);
+    assert.match(html, /git 工作树/);
+    assert.match(html, /go1\.23\.4/);
+    assert.match(html, /有可回滚点/);
+    assert.match(html, /待并入|本机安装/, 'the console must be laid out in labelled sections');
+    // behind is 0 only because nobody looked yet: that is "not checked", never "up to date".
+    assert.match(html, /还没查过远端/);
+    assert.doesNotMatch(html, /已是最新/, 'a page that did not check must not say 已是最新');
+    assert.doesNotMatch(html, /update\.[a-zA-Z]/, 'a raw i18n key leaked into the markup');
+    assert.doesNotMatch(html, /\{\{/, 'an un-interpolated placeholder leaked into the markup');
+});
+
+test('a check that could not run is reported as a failure, never as "already up to date"', async () => {
+    const h = await harness({
+        status: statusOf({ updateAvailable: false, behind: 0, incoming: [], incomingTotal: 0 }),
+        responses: {
+            'POST /api/system/update/check': [{
+                status: 200,
+                body: {
+                    status: statusOf({
+                        checkError: 'fatal: unable to access github: Could not resolve host',
+                        updateAvailable: false, behind: 0, incoming: [], incomingTotal: 0,
+                    }),
+                },
+            }],
+        },
+    });
+    h.calls.length = 0;
+    h.toasts.length = 0;
+    await h.api.checkForUpdates();
+    await h.flush();
+
+    assert.deepEqual(h.calls.map(c => c.method + ' ' + c.url), ['POST /api/system/update/check'],
+        'a check must not re-read the tree and must not start a poller');
+    const html = h.html();
+    assert.match(html, /检查失败：/, 'the reason must be stated as a check failure');
+    assert.match(html, /Could not resolve host/);
+    assert.doesNotMatch(html, /已是最新/, 'a failed check must never be painted as up to date');
+    assert.equal(h.toasts.length, 1);
+    assert.match(h.toasts[0].msg, /检查失败：/);
+    assert.equal(h.toasts[0].type, 'error', 'a check that failed must not toast success');
+    assert.equal(h.liveTimers().length, 0, 'a check is not a job: nothing may be polling');
+});
+
+test('a transport failure of the check endpoint is still "查不了"', async () => {
+    const h = await harness({
+        responses: { 'POST /api/system/update/check': [{ status: 500, body: { error: 'git exited 128' } }] },
+    });
+    h.toasts.length = 0;
+    await h.api.checkForUpdates();
+    await h.flush();
+    const html = h.html();
+    assert.match(html, /检查失败：/);
+    assert.match(html, /git exited 128/);
+    assert.doesNotMatch(html, /已是最新/);
+    assert.match(h.toasts[h.toasts.length - 1].msg, /检查失败：git exited 128/);
+    assert.equal(h.toasts[h.toasts.length - 1].type, 'error');
+});
+
+test('a check whose request dies mid-flight releases the button and says so', async () => {
+    const h = await harness({ rejects: ['POST /api/system/update/check'] });
+    h.toasts.length = 0;
+    await h.api.checkForUpdates();
+    await h.flush();
+    const html = h.html();
+    assert.match(html, /检查失败：/, 'a dead request is a failure, and it has to be called one');
+    assert.match(html, /network unreachable/);
+    assert.doesNotMatch(html, /正在检查远端/, 'the button must not stay frozen on "checking"');
+    assert.doesNotMatch(html, /update-check-btn" disabled/, 'and it must be clickable again');
+    assert.doesNotMatch(html, /已是最新/, 'a request that went nowhere is not an answer about the remote');
+    assert.match(html, /还没查过远端/, 'the page falls back to the honest "nobody looked yet"');
+    assert.equal(h.toasts.length, 1);
+    assert.equal(h.toasts[0].type, 'error');
+    assert.equal(h.liveTimers().length, 0);
+});
+
+test('behind is counted from incomingTotal and a truncated list says so', async () => {
+    const many = [];
+    for (let i = 0; i < 20; i++) many.push({ commit: 'c' + i, subject: '提交 ' + i });
+    const h = await harness({
+        status: statusOf({ updateAvailable: false, behind: 0, incoming: [], incomingTotal: 0 }),
+        responses: {
+            'POST /api/system/update/check': [{
+                status: 200,
+                body: { status: statusOf({ updateAvailable: true, behind: 42, incomingTotal: 42, incoming: many }) },
+            }],
+        },
+    });
+    await h.api.checkForUpdates();
+    await h.flush();
+    const html = h.html();
+    assert.match(html, /落后 42 个提交/, 'the headline number is the total, not the length of the page');
+    assert.match(html, /共 42 个新提交/);
+    assert.match(html, /只列出前 20 个/);
+    assert.match(html, /提交 19/);
+});
+
+test('local edits, a diverged tree and a clean-but-unchecked tree each block the button', async () => {
+    const cases = [
+        {
+            patch: { blockingChanges: [{ path: 'internal/foo.go', status: 'modified', protected: false }] },
+            copy: /有 1 个产品源码文件被本地改过/,
+            path: /internal\/foo\.go/,
+        },
+        {
+            patch: { diverged: true, ahead: 4, behind: 2, blockingChanges: [] },
+            copy: /本地领先 4 个提交/,
+            path: null,
+        },
+        {
+            patch: { updateAvailable: false, behind: 0, blockingChanges: [] },
+            copy: /远端没有比本机更新的提交/,
+            path: null,
+        },
+    ];
+    for (const c of cases) {
+        const h = await harness({ status: statusOf(c.patch) });
+        const html = h.html();
+        assert.match(html, /<button class="btn-primary update-apply-btn" disabled[^>]*onclick="startUpdateApply\(\)">/,
+            'the apply button must be disabled for: ' + c.copy);
+        assert.match(html, c.copy, 'a disabled button must say why');
+        assert.match(html, /data-require-permission="update:apply"/);
+        if (c.path) assert.match(html, c.path, 'the blocking file names must be listed, not just counted');
+        // Disabled in the markup and refused in code: the two must agree.
+        h.calls.length = 0;
+        h.toasts.length = 0;
+        h.fire('startUpdateApply');
+        await h.flush();
+        assert.deepEqual(h.calls, [], 'a blocked apply must never reach the server: ' + c.copy);
+        assert.equal(h.toasts.length, 1, 'the refusal must be said out loud instead of failing silent');
+        assert.equal(h.toasts[0].type, 'error');
+    }
+
+    const busy = await harness({ status: statusOf(), job: runningJob });
+    assert.match(busy.html(), /<button class="btn-primary update-apply-btn" disabled/);
+    assert.match(busy.html(), /已有更新在进行中/);
+    assert.match(busy.html(), /<button class="btn-secondary update-rollback-btn" disabled/);
+    assert.deepEqual(busy.calls.map(c => c.method + ' ' + c.url), ['GET /api/system/update']);
+    assert.equal(busy.liveTimers().length, 1, 'opening onto a running job resumes the progress read');
+});
+
+test('applying posts {"restart":false} and then reads the job every 1.5 seconds', async () => {
+    const h = await harness({
+        responses: {
+            'POST /api/system/update/apply': [{ status: 202, body: { job_id: 'upd-1', state: 'running' } }],
+            'GET /api/system/update/job': [
+                { status: 200, body: { job: runningJob } },
+                { status: 200, body: { job: runningJob } },
+                { status: 200, body: { job: succeededJob } },
+            ],
+            'GET /api/system/update': [
+                { status: 200, body: envelope(statusOf(), null, true) },
+                {
+                    status: 200,
+                    body: envelope(statusOf({
+                        updateAvailable: false, behind: 0, incoming: [], incomingTotal: 0,
+                        commit: 'f9e8d7c',
+                    }), succeededJob, true),
+                },
+            ],
+        },
+    });
+    assert.match(h.html(), /<button class="btn-primary update-apply-btn" data-require-permission="update:apply" onclick="startUpdateApply\(\)">/,
+        'a clean tree that is behind must offer the button, undimmed');
+
+    h.calls.length = 0;
+    h.fire('startUpdateApply');
+    await h.flush();
+
+    const apply = h.calls.find(c => c.method === 'POST' && c.url === '/api/system/update/apply');
+    assert.ok(apply, 'no apply was posted: ' + h.calls.map(c => c.method + ' ' + c.url));
+    assert.deepEqual(JSON.parse(apply.body), { restart: false },
+        'the body is one object carrying a restart boolean, not a positional bag');
+    assert.equal(h.liveTimers().length, 1, 'exactly one poller: ' + JSON.stringify(h.timers.map(t => t.ms)));
+    assert.equal(h.liveTimers()[0].ms, 1500, 'progress must be read every 1.5 seconds');
+
+    // In the browser the poller runs off the timer; here the test drives the armed callback so the
+    // whole progress path is exercised without waiting on wall-clock time.
+    h.calls.length = 0;
+    await h.tick();
+    await h.flush();
+    assert.deepEqual(h.calls.map(c => c.method + ' ' + c.url), ['GET /api/system/update/job']);
+    assert.match(h.html(), /开始拉取 mine\/main/, 'each step line must be rendered as it arrives');
+    assert.match(h.html(), /进行中/);
+    assert.equal(h.liveTimers().length, 1);
+
+    h.calls.length = 0;
+    await h.tick();
+    await h.flush();
+    assert.equal(h.liveTimers().length, 0, 'the timer must be cleared once the job reaches a final state');
+    assert.equal(h.vars.getPollTimer(), null);
+    assert.deepEqual(h.calls.map(c => c.method + ' ' + c.url),
+        ['GET /api/system/update/job', 'GET /api/system/update'],
+        'once the job ends the install tree is re-read: the binary on disk has changed');
+
+    const html = h.html();
+    assert.match(html, /a1b2c3d/);
+    assert.match(html, /f9e8d7c/);
+    assert.match(html, /并入提交数[\s\S]{0,160}?>3</);
+    assert.match(html, /改动文件数[\s\S]{0,160}?>27</);
+    assert.match(html, /roles\/我的角色\.md/, 'keptContent must be listed by name');
+    assert.match(html, /tools\/semgrep\.yaml/);
+    assert.match(html, /二进制已换新/);
+    assert.match(html, /需要重启才会运行新版本/);
+    assert.match(html, /3m12s/);
+    assert.match(html, /已要求在完成后退出/);
+    const success = h.toasts.filter(t => t.type === 'success' && /更新完成/.test(t.msg)).pop();
+    assert.ok(success, 'a finished update must be announced: ' + JSON.stringify(h.toasts));
+    assert.match(success.msg, /f9e8d7c/, 'the toast names the commit the tree is on now');
+});
+
+test('a failing job shows the server message with its item list, and never claims success', async () => {
+    const h = await harness({
+        responses: {
+            'GET /api/system/update/job': [{ status: 200, body: { job: failedJob } }],
+            // GET /api/system/update also carries h.latest(), so the re-read after the job ends
+            // still has the finished job in it: the console must not lose the failure.
+            'GET /api/system/update': [
+                { status: 200, body: envelope(statusOf(), null, true) },
+                { status: 200, body: envelope(statusOf({ updateAvailable: false, behind: 0, incoming: [], incomingTotal: 0 }), failedJob, true) },
+            ],
+        },
+    });
+    await h.api.startUpdateApply();
+    await h.flush();
+
+    const html = h.html();
+    assert.match(html, /编译失败，二进制保持原版本/);
+    assert.match(html, /build_failed/);
+    assert.match(html, /internal\/foo\.go/, 'the failure item list must be shown');
+    assert.equal(h.liveTimers().length, 0, 'a finished job must not keep polling');
+    assert.deepEqual(h.toasts.filter(t => t.type === 'success' && /更新完成/.test(t.msg)), [],
+        'a failed update must not be announced as finished: ' + JSON.stringify(h.toasts));
+    assert.match(h.toasts[h.toasts.length - 1].msg, /编译失败/);
+    assert.equal(h.toasts[h.toasts.length - 1].type, 'error');
+});
+
+test('the restart tick only appears when the process can actually be restarted', async () => {
+    const off = await harness({ canRestart: false });
+    assert.doesNotMatch(off.html(), /id="update-restart-choice"/,
+        'offering a promise the platform cannot keep is a lie');
+    assert.match(off.html(), /本次启动没有提供重启钩子/);
+
+    const on = await harness({
+        canRestart: true,
+        // No job to adopt: a running job would (correctly) block the second click, and this test
+        // is about what the checkbox does to the body, not about the block.
+        responses: { 'GET /api/system/update/job': [{ status: 200, body: { job: null } }] },
+    });
+    assert.match(on.html(), /<input type="checkbox" id="update-restart-choice"[^>]*onchange="updateRestartChoiceChanged\(this\.checked\)">/);
+    assert.ok(!/id="update-restart-choice" checked/.test(on.html()), 'the restart tick must default to off');
+
+    on.calls.length = 0;
+    on.fire('startUpdateApply');
+    await on.flush();
+    assert.deepEqual(JSON.parse(on.calls.find(c => c.url === '/api/system/update/apply').body), { restart: false });
+
+    // Tick it through the rendered onchange, exactly as a browser does (the element is already
+    // checked when change fires), then apply again.
+    on.vars.setBusy(false);
+    on.nodes.get('update-restart-choice').checked = true;
+    on.fire('updateRestartChoiceChanged', { checked: true });
+    assert.equal(on.vars.getRestartChoice(), true);
+    assert.match(on.html(), /id="update-restart-choice" checked/, 'the tick must survive the repaint');
+
+    on.calls.length = 0;
+    on.vars.setBusy(false);
+    on.fire('startUpdateApply');
+    await on.flush();
+    assert.deepEqual(JSON.parse(on.calls.find(c => c.url === '/api/system/update/apply').body), { restart: true },
+        'the restart flag that goes out is the checkbox, not a guess');
+});
+
+test('the confirm dialog says what the update will do, and cancelling posts nothing', async () => {
+    const h = await harness();
+    h.setConfirm(false);
+    h.calls.length = 0;
+    h.toasts.length = 0;
+    h.fire('startUpdateApply');
+    await h.flush();
+    assert.equal(h.confirms.length, 1, 'the operator must be asked before the tree moves');
+    assert.match(h.confirms[0], /重新编译/, 'the confirm must say the binary gets rebuilt: ' + h.confirms[0]);
+    assert.match(h.confirms[0], /二进制/);
+    assert.match(h.confirms[0], /mine\/main/, 'the confirm must name the remote and branch being merged');
+    assert.match(h.confirms[0], /a1b2c3d/, 'the confirm must name where this machine is now');
+    assert.doesNotMatch(h.confirms[0], /\{\{/, 'the confirm went out un-interpolated: ' + h.confirms[0]);
+    assert.deepEqual(h.calls.map(c => c.method + ' ' + c.url), [], 'a cancelled update must not POST');
+    assert.deepEqual(h.toasts, [], 'a cancelled update must not be reported as anything');
+});
+
+test('a second apply is refused with 409 and the running job is adopted', async () => {
+    const h = await harness({
+        responses: {
+            'POST /api/system/update/apply': [{
+                status: 409,
+                body: {
+                    error: '已有一次更新在进行中',
+                    job: { id: 'upd-7', state: 'running', started: 'now', steps: [{ phase: 'build', message: '正在编译二进制', at: 'now' }] },
+                },
+            }],
+        },
+    });
+    await h.api.startUpdateApply();
+    await h.flush();
+    const apply = h.calls.find(c => c.url === '/api/system/update/apply');
+    assert.equal(apply.method, 'POST');
+    assert.deepEqual(JSON.parse(apply.body), { restart: false });
+    assert.match(h.html(), /正在编译二进制/, 'the job the server named must be shown, not swallowed');
+    assert.match(h.html(), /upd-7/);
+    assert.match(h.toasts[h.toasts.length - 1].msg, /已有一次更新在进行中/);
+    assert.equal(h.toasts[h.toasts.length - 1].type, 'error');
+    assert.deepEqual(h.toasts.filter(t => t.type === 'success'), [], 'a refusal must not toast success');
+    assert.equal(h.liveTimers().length, 1, 'the adopted job must be watched');
+});
+
+test('rollback only shows with a rollback point, asks first, and re-reads the tree', async () => {
+    const none = await harness({ status: statusOf({ hasRollback: false, rollbackTo: '' }) });
+    assert.doesNotMatch(none.html(), /update-rollback-btn/);
+    assert.match(none.html(), /没有可回滚点/);
+
+    const h = await harness({ status: statusOf() });
+    assert.match(h.html(), /<button class="btn-secondary update-rollback-btn" data-require-permission="update:apply" onclick="rollbackUpdate\(\)">/);
+    assert.match(h.html(), /回滚目标：a1b2c3d/);
+
+    h.calls.length = 0;
+    h.toasts.length = 0;
+    h.setConfirm(false);
+    h.fire('rollbackUpdate');
+    await h.flush();
+    assert.deepEqual(h.calls, [], 'a cancelled rollback must not POST');
+    assert.equal(h.confirms.length, 1);
+    assert.match(h.confirms[0], /a1b2c3d/);
+
+    h.setConfirm(true);
+    h.calls.length = 0;
+    h.vars.setBusy(false);
+    h.fire('rollbackUpdate');
+    await h.flush();
+    assert.deepEqual(h.calls.map(c => c.method + ' ' + c.url),
+        ['POST /api/system/update/rollback', 'GET /api/system/update'],
+        'a rollback must be followed by a fresh read of the install tree');
+    assert.equal(h.calls[0].body, undefined, 'rollback takes no body');
+    assert.match(h.toasts[h.toasts.length - 1].msg, /已回滚到 a1b2c3d/);
+    assert.equal(h.toasts[h.toasts.length - 1].type, 'success');
+    assert.doesNotMatch(h.html(), /已是最新/, 'after a rollback the page has not looked at the remote');
+});
+
+test('a refused rollback repeats the server reason and its file list', async () => {
+    const h = await harness({
+        responses: {
+            'POST /api/system/update/rollback': [{
+                status: 409,
+                body: { error: 'HEAD 已经移动，不是那次更新留下的位置', reason: 'moved_since_update', items: ['roles/我的角色.md'] },
+            }],
+        },
+    });
+    await h.api.rollbackUpdate();
+    await h.flush();
+    assert.match(h.html(), /回滚失败/);
+    assert.match(h.html(), /HEAD 已经移动/);
+    assert.match(h.html(), /roles\/我的角色\.md/);
+    assert.equal(h.toasts[h.toasts.length - 1].type, 'error');
+    assert.match(h.toasts[h.toasts.length - 1].msg, /HEAD 已经移动/);
+    assert.deepEqual(h.toasts.filter(t => t.type === 'success'), []);
+});
+
+test('a 202 that carries an error is not mistaken for success', async () => {
+    // The handler answers "the source went back but the binary could not be rebuilt" with HTTP
+    // 202 plus an error body (statusForError maps no_toolchain onto 202). Trusting resp.ok alone
+    // toasts 已回滚 over a rollback that only half happened.
+    const h = await harness({
+        responses: {
+            'POST /api/system/update/rollback': [{
+                status: 202,
+                body: { error: '源码已回到更新前，但本机没有 Go 工具链，二进制没换', reason: 'no_toolchain' },
+            }],
+        },
+    });
+    h.toasts.length = 0;
+    h.calls.length = 0;
+    await h.api.rollbackUpdate();
+    await h.flush();
+    assert.match(h.html(), /回滚失败/);
+    assert.match(h.html(), /二进制没换/);
+    assert.deepEqual(h.toasts.filter(t => t.type === 'success'), [],
+        'a 2xx carrying an error must never be toasted as success: ' + JSON.stringify(h.toasts));
+    assert.equal(h.toasts[h.toasts.length - 1].type, 'error');
+    assert.match(h.toasts[h.toasts.length - 1].msg, /二进制没换/);
+    assert.deepEqual(h.calls.map(c => c.method + ' ' + c.url), ['POST /api/system/update/rollback'],
+        'a half-finished rollback must not be followed by a victory lap through the status endpoint');
+});
+
+test('leaving the page kills the poller, and reopening arms exactly one', async () => {
+    const h = await harness();
+    h.fire('startUpdateApply');
+    await h.flush();
+    assert.equal(h.liveTimers().length, 1);
+
+    h.calls.length = 0;
+    h.setActive(false);
+    await h.tick();
+    await h.flush();
+    assert.equal(h.liveTimers().length, 0, 'switching pages must clear the interval');
+    assert.deepEqual(h.calls, [], 'a page that is not on screen must not keep asking');
+    assert.equal(h.vars.getPollTimer(), null);
+
+    h.setActive(true);
+    await h.api.loadUpdateConsole();
+    assert.equal(h.liveTimers().length, 0, 'a clean open arms nothing');
+
+    const busy = await harness({ job: { id: 'upd-3', state: 'running', started: 'x', steps: [] } });
+    assert.equal(busy.liveTimers().length, 1, 'opening onto a running job arms the poller');
+    await busy.api.loadUpdateConsole();
+    assert.equal(busy.liveTimers().length, 1, 'reopening must not stack a second poller');
+    assert.equal(busy.timers.length, 2, 'the old timer was cleared rather than leaked: ' + JSON.stringify(busy.timers.map(t => t.cleared)));
+});
+
+test('nothing invented: the only toast channel this page may use is showNotification', () => {
+    assert.doesNotMatch(source, /showToast/, 'window.showToast does not exist on this page');
+    assert.match(source, /typeof showNotification === 'function'/);
+    assert.match(source, /window\.applyRBACToUI === 'function'/,
+        'optional globals must be probed before they are called');
+});
+
+test('server strings cannot become markup, in text or in an attribute', async () => {
+    const hostile = '危险 <script>alert(1)</script> "quoted" &more';
+    const h = await harness({
+        status: statusOf({
+            root: '/srv/"><img src=x onerror=alert(1)>/x',
+            subject: hostile,
+            remoteSubject: hostile,
+            blockingChanges: [{ path: 'a"><script>steal()</script>.go', status: 'modified "m"', protected: false }],
+            localChanges: [{ path: 'roles/"><svg onload=alert(1)>.md', status: 'modified', protected: true }],
+            incoming: [{ commit: 'c"><i>', subject: hostile }],
+            incomingTotal: 1,
+            checkError: 'fetch failed on <b>remote</b> "origin"',
+        }),
+    });
+    const html = h.html();
+    assert.doesNotMatch(html, /<script/, 'a commit subject became a script tag');
+    assert.doesNotMatch(html, /<img\b|<svg\b|<b>/, 'markup from server data reached the DOM');
+    assert.match(html, /危险 &lt;script&gt;alert\(1\)&lt;\/script&gt; "quoted"/,
+        'escapeHtml leaves quotes alone inside text, which is correct and must not be double escaped');
+    assert.match(html, /&amp;more/, 'the ampersand must be escaped exactly once');
+
+    // Attribute integrity: one raw double quote inside a value would close it early and let the
+    // rest of the string become attributes of the element.
+    ['title', 'class', 'onclick', 'onchange', 'data-require-permission'].forEach(attr => {
+        const opened = (html.match(new RegExp(attr + '="', 'g')) || []).length;
+        const closed = (html.match(new RegExp(attr + '="[^"]*"', 'g')) || []).length;
+        assert.equal(opened, closed, 'a ' + attr + ' attribute was closed by an unescaped quote');
+    });
+    // Counting matched attribute pairs is not enough on its own: a value that ends early still
+    // leaves the open and close counts equal. Two hostile strings have to appear fully escaped
+    // inside their title attribute - that is the proof escapeAttr, not just escapeHtml, guarded it.
+    assert.match(html, /title="a&quot;&gt;&lt;script&gt;steal\(\)&lt;\/script&gt;\.go"/,
+        'the blocking file path went into an attribute without quote escaping');
+    assert.match(html, /title="\/srv\/&quot;&gt;&lt;img src=x onerror=alert\(1\)&gt;\/x"/,
+        'the install root went into an attribute without quote escaping');
+    assert.doesNotMatch(html, /title="[^"]*"[^ >]/, 'a title attribute was closed early by server data');
+    const titles = html.match(/title="[^"]*"/g) || [];
+    assert.ok(titles.length >= 8, 'these assertions rely on title attributes being emitted: ' + titles.length);
+    titles.forEach(t => assert.ok(!/<|>/.test(t), 'a title value still contains markup: ' + t));
+
+    // Every emitted handler must still be executable as written: an injection into an attribute
+    // would break the statement instead.
+    const found = h.extractHandlers(html);
+    assert.ok(found.onclick.length && found.onchange.length, 'handlers must still render under hostile data');
+    found.onclick.concat(found.onchange).forEach(text => {
+        assert.doesNotMatch(text, /"/, 'handler text carries a raw quote: ' + text);
+        assert.equal(typeof vm.runInContext('(function(){' + text + '})', h.sandbox), 'function',
+            'the emitted handler is not valid JS: ' + text);
+    });
+    ['startUpdateApply', 'checkForUpdates', 'rollbackUpdate', 'updateRestartChoiceChanged']
+        .forEach(name => assert.ok(found.onclick.concat(found.onchange).some(t => t.startsWith(name + '(')),
+            name + ' must stay wired'));
+});
+
+test('the rendered handlers are executed, and they only hit the documented endpoints', async () => {
+    const h = await harness();
+    const found = h.extractHandlers(h.html());
+    const texts = found.onchange.concat(found.onclick);
+    assert.ok(texts.length >= 4, 'expected the console to emit handlers, got ' + texts.length);
+    texts.forEach(t => assert.ok(HANDLES.includes(t.split('(')[0]), 'unknown handler wired into the page: ' + t));
+
+    h.calls.length = 0;
+    h.fire('checkForUpdates');
+    await h.flush();
+    assert.equal(h.calls[0].method, 'POST');
+    assert.equal(h.calls[0].url, '/api/system/update/check');
+    assert.equal(h.calls[0].body, undefined, 'the check endpoint takes no body');
+
+    h.vars.setBusy(false);
+    h.calls.length = 0;
+    h.fire('startUpdateApply');
+    await h.flush();
+    assert.deepEqual(h.calls.map(c => c.url),
+        ['/api/system/update/apply', '/api/system/update/job'],
+        'apply posts once, then the progress read goes to the job endpoint');
+    assert.equal(h.calls[0].method, 'POST');
+    assert.equal(h.calls[1].method, 'GET');
+});

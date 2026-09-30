@@ -299,8 +299,10 @@ func errMessage(err error) string {
 }
 
 // statusForError keeps a refusal distinguishable from an accident: the precondition
-// failures are the ones the page can act on (409/400), while anything else is a genuine
-// server-side problem.
+// failures are the ones the page can act on (409), while anything else is a bad request it
+// can show. No case maps a refusal onto a 2xx - a status that reads as accepted would
+// contradict the failure the same response carries, and an asynchronous update never asks
+// this function (the job's own state says whether it worked).
 func statusForError(err error) int {
 	ue, ok := asUpdateError(err)
 	if !ok {
@@ -309,8 +311,6 @@ func statusForError(err error) int {
 	switch ue.Reason {
 	case "local_source_edits", "diverged", "no_state", "moved_since_update", "no_binary":
 		return http.StatusConflict
-	case "no_toolchain":
-		return http.StatusAccepted
 	default:
 		return http.StatusBadRequest
 	}

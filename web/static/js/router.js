@@ -110,7 +110,7 @@ function initRouter() {
         const hashParts = hash.split('?');
         let pageId = hashParts[0];
         if (pageId === 'c2') pageId = 'c2-listeners';
-        if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'workflows', 'skills-monitor', 'skills-management', 'agents-management', 'plugins-management', 'settings', 'tasks', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
+        if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'workflows', 'skills-monitor', 'skills-management', 'agents-management', 'plugins-management', 'system-update', 'settings', 'tasks', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
             if (pageId === 'chat') {
                 scheduleChatConversationFromHash(0);
@@ -448,6 +448,9 @@ async function initPage(pageId) {
         case 'plugins-management':
             if (typeof loadPluginConsole === 'function') loadPluginConsole();
             break;
+        case 'system-update':
+            if (typeof loadUpdateConsole === 'function') loadUpdateConsole();
+            break;
         case 'tasks':
             // 初始化任务管理页面
             if (typeof initTasksPage === 'function') {
@@ -608,6 +611,10 @@ async function initPage(pageId) {
     if (pageId !== 'tasks' && typeof cleanupTasksPage === 'function') {
         cleanupTasksPage();
     }
+    // 一键更新的进度轮询同理：离开那一页就没必要每 1.5 秒读一次任务了。
+    if (pageId !== 'system-update' && typeof stopUpdatePolling === 'function') {
+        stopUpdatePolling();
+    }
 }
 
 // 页面加载完成后初始化路由
@@ -624,7 +631,7 @@ document.addEventListener('DOMContentLoaded', function() {
         let pageId = hashParts[0];
         
         if (pageId === 'c2') pageId = 'c2-listeners';
-        if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'tasks', 'workflows', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'skills-monitor', 'skills-management', 'agents-management', 'plugins-management', 'settings', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
+        if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'tasks', 'workflows', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'skills-monitor', 'skills-management', 'agents-management', 'plugins-management', 'system-update', 'settings', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
             if (pageId === 'chat') {
                 scheduleChatConversationFromHash(0);

@@ -37,6 +37,7 @@
     <link rel="stylesheet" href="/static/css/c2.css">
     <link rel="stylesheet" href="/static/vendor/xterm.css">
     <script src="/static/js/router.js?v=20260907-1"></script>
+    <script src="/static/js/escape.js?v=20261001-1"></script>
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -434,6 +435,16 @@
                                 <path d="M12 22V12"></path>
                             </svg>
                             <span data-i18n="nav.plugins">能力包</span>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="system-update">
+                        <div class="nav-item-content" data-title="一键更新" onclick="switchPage('system-update')" data-i18n="nav.systemUpdate" data-i18n-attr="data-title" data-i18n-skip-text="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"></path>
+                                <path d="M12 12v9"></path>
+                                <path d="m8 17 4 4 4-4"></path>
+                            </svg>
+                            <span data-i18n="nav.systemUpdate">一键更新</span>
                         </div>
                     </div>
                     <div class="nav-item" data-page="platform-rbac">
@@ -3408,6 +3419,18 @@
                     <div class="page-content">
                         <p class="plugin-intro" data-i18n="plugins.intro">装一个角色包即刻生效，摘掉即刻回到原状：这里显示的与运行路径读的是同一张能力表。</p>
                         <div id="plugin-console" class="plugin-console"></div>
+                    </div>
+                </div>
+                <div id="page-system-update" class="page">
+                    <div class="page-header">
+                        <h2 data-i18n="update.title">一键更新</h2>
+                        <div class="page-header-actions">
+                            <button class="btn-secondary" onclick="loadUpdateConsole()" data-i18n="common.refresh">刷新</button>
+                        </div>
+                    </div>
+                    <div class="page-content">
+                        <p class="update-intro" data-i18n="update.intro">这一页改的就是当前正在应答请求的这套安装：拉它自己跟踪的远端、重编译、换二进制。你的 roles/skills/tools 与配置不会被覆盖。</p>
+                        <div id="update-console" class="update-console"></div>
                     </div>
                 </div>
                 <div id="page-roles-management" class="page">
@@ -6960,6 +6983,7 @@
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>
     <script src="/static/js/plugins.js"></script>
+    <script src="/static/js/update.js?v={{.Version}}"></script>
     <script src="/static/js/roles.js"></script>
     <script src="/static/js/rbac.js"></script>
     <script src="/static/js/c2.js"></script>
