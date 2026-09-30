@@ -3,8 +3,11 @@ package handler
 import "testing"
 
 func TestHITLBuiltInWhitelistExemptsWriteFile(t *testing.T) {
-	h := &AgentHandler{}
-	req := h.hitlRequestWithMergedConfigWhitelist(&HITLRequest{
+	// The merge rule lives on the approval policy, so the test builds exactly that and nothing
+	// else: no agent, no configuration - which is the case where only the platform's built-in
+	// exemptions can be what makes write_file run without approval.
+	policy := NewHitlPolicy(nil, nil, nil, nil, nil)
+	req := policy.hitlRequestWithMergedConfigWhitelist(&HITLRequest{
 		Enabled: true,
 		Mode:    "approval",
 	})

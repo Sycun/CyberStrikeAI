@@ -225,7 +225,17 @@ type AgentHandler struct {
 // HitlPolicy hands the approval-configuration endpoints to the route table. Paths and the
 // names callers see are unchanged by this split; only the object answering them moved off
 // AgentHandler, which is why the golden route table does not move either.
-func (h *AgentHandler) HitlPolicy() *HitlPolicy { return h.hitlPolicy }
+//
+// A missing policy is a wiring bug, so it says so instead of answering with the built-in
+// defaults: a test that built an AgentHandler by literal once "passed" a backend assertion
+// while the model it asked for came back empty, and a silent default is exactly how that
+// happens. Production always attaches it in NewAgentHandler.
+func (h *AgentHandler) HitlPolicy() *HitlPolicy {
+	if h == nil || h.hitlPolicy == nil {
+		panic("handler: hitl policy not attached; build the handler with NewAgentHandler (tests: attachHitlPolicy)")
+	}
+	return h.hitlPolicy
+}
 
 func (h *AgentHandler) SetAudit(s *audit.Service) {
 	h.audit = s
@@ -236,7 +246,7 @@ func (h *AgentHandler) SetAudit(s *audit.Service) {
 		h.hitlQueue.audit = s
 	}
 	if h.hitlPolicy != nil {
-		h.hitlPolicy.setAudit(s)
+		h.HitlPolicy().setAudit(s)
 	}
 }
 
@@ -336,7 +346,7 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 	// literal rather than inside it; it takes the narrowed storage and the agent's one cancel
 	// method, not the handler as a whole.
 	handler.finalizer = newRunFinalizer(db, logger, agent, handler)
-	handler.hitlPolicy = NewHitlPolicy(handler, handler.hitlManager, handler.hitlQueue, logger)
+	handler.hitlPolicy = NewHitlPolicy(cfg, handler.settings, handler.hitlManager, handler.hitlQueue, logger)
 
 	if err := handler.hitlManager.EnsureSchema(); err != nil {
 		logger.Warn("初始化 HITL 表失败", zap.Error(err))
@@ -355,42 +365,6 @@ func (h *AgentHandler) SetKnowledgeManager(manager interface {
 // SetAgentsMarkdownDir 设置 agents/*.md 子代理目录（绝对路径）；空表示仅使用 config.yaml 中的 sub_agents。
 func (h *AgentHandler) SetAgentsMarkdownDir(absDir string) {
 	h.agentsMarkdownDir = strings.TrimSpace(absDir)
-}
-
-func (h *AgentHandler) hitlEffectiveDefaultReviewer() string {
-	if h != nil && h.config != nil {
-		return normalizeHitlReviewer(h.hitlSnapshot().EffectiveDefaultReviewer())
-	}
-	return "human"
-}
-
-func (h *AgentHandler) hitlEffectiveDefaultMode() string {
-	if h != nil && h.config != nil {
-		return normalizeHitlDefaultMode(h.hitlSnapshot().EffectiveDefaultMode())
-	}
-	return "off"
-}
-
-func (h *AgentHandler) hitlEffectiveDefaultTimeoutSeconds() int {
-	if h != nil && h.config != nil {
-		timeout := h.hitlSnapshot().EffectiveDefaultTimeoutSeconds()
-		if timeout < 0 {
-			return 0
-		}
-		return timeout
-	}
-	return 300
-}
-
-func (h *AgentHandler) hitlEffectiveDefaultRequest() *HITLRequest {
-	mode := h.hitlEffectiveDefaultMode()
-	return &HITLRequest{
-		Enabled:        mode != "off",
-		Mode:           mode,
-		Reviewer:       h.hitlEffectiveDefaultReviewer(),
-		SensitiveTools: []string{},
-		TimeoutSeconds: h.hitlEffectiveDefaultTimeoutSeconds(),
-	}
 }
 
 // HITLNeedsToolApproval 供 C2 危险任务门控：与会话侧人机协同及免审批白名单判定一致。

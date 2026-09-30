@@ -7,19 +7,6 @@ import (
 	"cyberstrike-ai/internal/config"
 )
 
-func (h *AgentHandler) hitlAuditEngineInfo() (backend, model string) {
-	backend = config.HitlAuditBackendOpenAI
-	if h == nil || h.config == nil {
-		return backend, ""
-	}
-	backend = h.config.Hitl.EffectiveAuditBackend()
-	if backend == config.HitlAuditBackendTypeSafe {
-		_, _, model = h.config.Hitl.TypeSafeConfigEffective()
-		return backend, model
-	}
-	return backend, strings.TrimSpace(h.config.Hitl.AuditModelEffective(h.config.OpenAI).Model)
-}
-
 func stringifyHitlJSON(v any) string {
 	if v == nil {
 		return ""

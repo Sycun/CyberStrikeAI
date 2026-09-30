@@ -7,11 +7,11 @@ import (
 )
 
 func TestHitlAuditEngineInfoTypeSafe(t *testing.T) {
-	h := &AgentHandler{config: &config.Config{
+	h := attachHitlPolicy(t, &AgentHandler{config: &config.Config{
 		OpenAI: config.OpenAIConfig{Model: "gpt-4o"},
 		Hitl:   config.HitlConfig{AuditBackend: "typesafe"},
-	}}
-	backend, model := h.hitlAuditEngineInfo()
+	}})
+	backend, model := h.HitlPolicy().hitlAuditEngineInfo()
 	if backend != config.HitlAuditBackendTypeSafe {
 		t.Fatalf("backend=%q", backend)
 	}
@@ -21,11 +21,11 @@ func TestHitlAuditEngineInfoTypeSafe(t *testing.T) {
 }
 
 func TestHitlAuditEngineInfoOpenAIInheritsMainModel(t *testing.T) {
-	h := &AgentHandler{config: &config.Config{
+	h := attachHitlPolicy(t, &AgentHandler{config: &config.Config{
 		OpenAI: config.OpenAIConfig{Model: "gpt-4o-mini"},
 		Hitl:   config.HitlConfig{AuditBackend: "openai"},
-	}}
-	backend, model := h.hitlAuditEngineInfo()
+	}})
+	backend, model := h.HitlPolicy().hitlAuditEngineInfo()
 	if backend != config.HitlAuditBackendOpenAI {
 		t.Fatalf("backend=%q", backend)
 	}

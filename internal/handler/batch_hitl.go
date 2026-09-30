@@ -13,7 +13,7 @@ func validateBatchHITLPolicy(policy string) error {
 }
 
 func (h *AgentHandler) batchHITLRequest(policy string) *HITLRequest {
-	req := h.hitlEffectiveDefaultRequest()
+	req := h.HitlPolicy().hitlEffectiveDefaultRequest()
 	switch policy {
 	case "off":
 		req.Enabled, req.Mode = false, "off"

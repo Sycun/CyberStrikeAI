@@ -47,6 +47,6 @@ func (h *AgentHandler) SetHitlConfigSaver(s HitlConfigSaver) {
 		// Forwarded, not copied at construction: the policy answers "persistence unavailable"
 		// from the same value the run path uses, so the two cannot disagree about whether a
 		// write channel exists.
-		h.hitlPolicy.setSavers(h.hitlSavers)
+		h.HitlPolicy().setSavers(h.hitlSavers)
 	}
 }

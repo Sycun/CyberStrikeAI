@@ -40,7 +40,7 @@ import (
 // the map below - it has no ambition to be a handler; if it grows into one, it gets a ceiling then.
 
 const (
-	agentHandlerMethodCeiling = 102
+	agentHandlerMethodCeiling = 91
 	agentHandlerFileCeiling   = 21
 	setterCeiling             = 64
 )
@@ -129,8 +129,12 @@ func TestHandlerLayerScanIsSane(t *testing.T) {
 	if len(files) < 50 {
 		t.Fatalf("the scan only saw %d handler files; it is reading a subset", len(files))
 	}
-	if perType["AgentHandler"] < 100 {
-		t.Fatalf("the scan counted %d AgentHandler methods; expected at least 100 (measured 130)", perType["AgentHandler"])
+	// The floor is a sanity check on the scan, not an ambition: 130 methods at the start of the
+	// decomposition, 91 after three collaborators took pieces of it. If the scan ever reads a
+	// subset it will report a small number and this fails - which is the only way a shrinking
+	// ceiling stays honest.
+	if perType["AgentHandler"] < 85 {
+		t.Fatalf("the scan counted %d AgentHandler methods; expected at least 85 (measured 130 before the split)", perType["AgentHandler"])
 	}
 	t.Logf("scan covers %d files, %d receiver types", len(files), len(perType))
 }

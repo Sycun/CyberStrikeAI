@@ -23,41 +23,25 @@ import (
 //   - this type - what a decision rule *is*, which is edited while nothing is running.
 //
 // Before this split those eleven endpoints were methods on AgentHandler and read whatever
-// they liked out of its forty fields. Now the state they need from the running agent is
-// named (hitlPolicyState), so adding an endpoint that quietly reaches into the loop's state
-// stops being something nobody notices.
+// they liked out of its forty fields. Owning cfg and settings here is the point: adding an
+// endpoint that quietly reaches into the loop's state is now something a reader of this file
+// has to do on purpose.
 type HitlPolicy struct {
-	state   hitlPolicyState
-	manager *HITLManager
-	queue   *HITLQueue
-	savers  hitlConfigSavers
-	logger  *zap.Logger
-	audit   *audit.Service
+	// cfg and settings are the two halves of "what the rules currently are": config.yaml as
+	// loaded, and the runtime snapshot published on top of it. They used to live only on
+	// AgentHandler, which forced every read through a ten-method interface back into the god
+	// object; owning them is what makes this a type rather than a bag of endpoints.
+	cfg      *config.Config
+	settings *SettingsStore
+	manager  *HITLManager
+	queue    *HITLQueue
+	savers   hitlConfigSavers
+	logger   *zap.Logger
+	audit    *audit.Service
 }
 
-// hitlPolicyState is the part of the live configuration the policy reads but does not own:
-// the effective defaults are a merge of config.yaml and the published runtime snapshot, and
-// the run loop consumes the same merge, so it stays on the agent that owns both.
-type hitlPolicyState interface {
-	hitlEffectiveDefaultMode() string
-	hitlEffectiveDefaultReviewer() string
-	hitlEffectiveDefaultTimeoutSeconds() int
-	hitlConfigGlobalToolWhitelist() []string
-	hitlAuditEngineInfo() (backend, model string)
-	hitlRequestWithMergedConfigWhitelist(req *HITLRequest) *HITLRequest
-	loadHITLConversationConfig(conversationID string) (*HITLRequest, error)
-	publishHitl(mutate func(hitl *config.HitlConfig))
-	hitlSnapshot() config.HitlConfig
-	settingsConfigured() bool
-}
-
-// NewHitlPolicy takes the state, the manager and the queue: everything the approval
-// configuration endpoints act on. The audit service and the persistence channels are
-// injected afterwards by the assembly, and AgentHandler forwards both here rather than
-// keeping a second copy - a stale copy is how an endpoint starts writing an audit record
-// that no longer exists.
-func NewHitlPolicy(state hitlPolicyState, manager *HITLManager, queue *HITLQueue, logger *zap.Logger) *HitlPolicy {
-	return &HitlPolicy{state: state, manager: manager, queue: queue, logger: logger}
+func NewHitlPolicy(cfg *config.Config, settings *SettingsStore, manager *HITLManager, queue *HITLQueue, logger *zap.Logger) *HitlPolicy {
+	return &HitlPolicy{cfg: cfg, settings: settings, manager: manager, queue: queue, logger: logger}
 }
 
 func (p *HitlPolicy) setAudit(svc *audit.Service) {
@@ -88,12 +72,12 @@ func (p *HitlPolicy) record(c *gin.Context, action, message, resourceID string) 
 // defaultConfigResponse is the body every default-config endpoint answers with, so the
 // sidebar cannot be told one default while another endpoint reports something else.
 func (p *HitlPolicy) defaultConfigResponse() gin.H {
-	backend, model := p.state.hitlAuditEngineInfo()
+	backend, model := p.hitlAuditEngineInfo()
 	return gin.H{
-		"defaultMode":             p.state.hitlEffectiveDefaultMode(),
-		"defaultReviewer":         p.state.hitlEffectiveDefaultReviewer(),
-		"defaultTimeoutSeconds":   p.state.hitlEffectiveDefaultTimeoutSeconds(),
-		"hitlGlobalToolWhitelist": p.state.hitlConfigGlobalToolWhitelist(),
+		"defaultMode":             p.hitlEffectiveDefaultMode(),
+		"defaultReviewer":         p.hitlEffectiveDefaultReviewer(),
+		"defaultTimeoutSeconds":   p.hitlEffectiveDefaultTimeoutSeconds(),
+		"hitlGlobalToolWhitelist": p.hitlConfigGlobalToolWhitelist(),
 		"auditBackend":            backend,
 		"auditModel":              model,
 	}
@@ -110,7 +94,7 @@ func (p *HitlPolicy) GetConversationConfig(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
-	cfg, err := p.state.loadHITLConversationConfig(conversationID)
+	cfg, err := p.loadHITLConversationConfig(conversationID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -129,10 +113,10 @@ func (p *HitlPolicy) GetConversationConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"conversationId":          conversationID,
 		"hitl":                    cfg,
-		"defaultMode":             p.state.hitlEffectiveDefaultMode(),
-		"defaultReviewer":         p.state.hitlEffectiveDefaultReviewer(),
-		"defaultTimeoutSeconds":   p.state.hitlEffectiveDefaultTimeoutSeconds(),
-		"hitlGlobalToolWhitelist": p.state.hitlConfigGlobalToolWhitelist(),
+		"defaultMode":             p.hitlEffectiveDefaultMode(),
+		"defaultReviewer":         p.hitlEffectiveDefaultReviewer(),
+		"defaultTimeoutSeconds":   p.hitlEffectiveDefaultTimeoutSeconds(),
+		"hitlGlobalToolWhitelist": p.hitlConfigGlobalToolWhitelist(),
 	})
 }
 
@@ -152,7 +136,7 @@ func (p *HitlPolicy) UpsertConversationConfig(c *gin.Context) {
 	req.Mode = normalizeHitlMode(req.Mode)
 	req.Reviewer = normalizeHitlReviewer(req.Reviewer)
 	if strings.TrimSpace(req.Reviewer) == "" {
-		req.Reviewer = p.state.hitlEffectiveDefaultReviewer()
+		req.Reviewer = p.hitlEffectiveDefaultReviewer()
 	}
 	if err := p.manager.SaveConversationConfig(req.ConversationID, &req.HITLRequest); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -167,15 +151,15 @@ func (p *HitlPolicy) UpsertConversationConfig(c *gin.Context) {
 			return
 		}
 	}
-	p.manager.ActivateConversation(req.ConversationID, p.state.hitlRequestWithMergedConfigWhitelist(&req.HITLRequest))
+	p.manager.ActivateConversation(req.ConversationID, p.hitlRequestWithMergedConfigWhitelist(&req.HITLRequest))
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
 // GetGlobalToolWhitelist answers GET /hitl/tool-whitelist.
 func (p *HitlPolicy) GetGlobalToolWhitelist(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"toolWhitelist":   p.state.hitlConfigGlobalToolWhitelist(),
-		"defaultReviewer": p.state.hitlEffectiveDefaultReviewer(),
+		"toolWhitelist":   p.hitlConfigGlobalToolWhitelist(),
+		"defaultReviewer": p.hitlEffectiveDefaultReviewer(),
 	})
 }
 
@@ -198,8 +182,8 @@ func (p *HitlPolicy) SetGlobalToolWhitelist(c *gin.Context) {
 	p.record(c, "tool_whitelist_update", "HITL 全局白名单更新", "tool_whitelist")
 	c.JSON(http.StatusOK, gin.H{
 		"ok":                        true,
-		"toolWhitelist":             p.state.hitlConfigGlobalToolWhitelist(),
-		"hitlGlobalToolWhitelist":   p.state.hitlConfigGlobalToolWhitelist(),
+		"toolWhitelist":             p.hitlConfigGlobalToolWhitelist(),
+		"hitlGlobalToolWhitelist":   p.hitlConfigGlobalToolWhitelist(),
 		"hitlGlobalWhitelistMerged": false,
 	})
 }
@@ -220,7 +204,7 @@ func (p *HitlPolicy) MergeGlobalToolWhitelist(c *gin.Context) {
 	if len(req.SensitiveTools) == 0 {
 		c.JSON(http.StatusOK, gin.H{
 			"ok":                      true,
-			"hitlGlobalToolWhitelist": p.state.hitlConfigGlobalToolWhitelist(),
+			"hitlGlobalToolWhitelist": p.hitlConfigGlobalToolWhitelist(),
 		})
 		return
 	}
@@ -231,7 +215,7 @@ func (p *HitlPolicy) MergeGlobalToolWhitelist(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"ok":                        true,
-		"hitlGlobalToolWhitelist":   p.state.hitlConfigGlobalToolWhitelist(),
+		"hitlGlobalToolWhitelist":   p.hitlConfigGlobalToolWhitelist(),
 		"hitlGlobalWhitelistMerged": true,
 	})
 }
@@ -266,7 +250,7 @@ func (p *HitlPolicy) UpdateDefaultConfig(c *gin.Context) {
 		return
 	}
 	publishedTimeout := timeoutSeconds
-	p.state.publishHitl(func(hitl *config.HitlConfig) {
+	p.publishHitl(func(hitl *config.HitlConfig) {
 		hitl.DefaultMode = mode
 		hitl.DefaultReviewer = reviewer
 		hitl.DefaultTimeoutSeconds = &publishedTimeout
@@ -300,7 +284,7 @@ func (p *HitlPolicy) UpdateDefaultReviewer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	p.state.publishHitl(func(hitl *config.HitlConfig) {
+	p.publishHitl(func(hitl *config.HitlConfig) {
 		hitl.DefaultReviewer = reviewer
 	})
 	p.record(c, "default_reviewer_update", "HITL 全局默认审批方更新", "default_reviewer")
@@ -316,8 +300,8 @@ func (p *HitlPolicy) GetAuditStrategy(c *gin.Context) {
 	reviewEditPrompt := config.DefaultHitlAuditAgentPromptReviewEdit()
 	approvalCustom := false
 	reviewEditCustom := false
-	if p.state.settingsConfigured() {
-		snapshot := p.state.hitlSnapshot()
+	if p.settingsConfigured() {
+		snapshot := p.hitlSnapshot()
 		approvalPrompt = snapshot.EffectiveAuditAgentPromptForMode("approval")
 		reviewEditPrompt = snapshot.EffectiveAuditAgentPromptForMode("review_edit")
 		approvalCustom = strings.TrimSpace(snapshot.AuditAgentPrompt) != ""
@@ -352,7 +336,7 @@ func (p *HitlPolicy) UpdateAuditStrategy(c *gin.Context) {
 		return
 	}
 	p.record(c, "audit_strategy_update", "HITL 审计策略更新", "audit_agent_prompt")
-	p.state.publishHitl(func(hitl *config.HitlConfig) {
+	p.publishHitl(func(hitl *config.HitlConfig) {
 		hitl.AuditAgentPrompt = approvalPrompt
 		hitl.AuditAgentPromptReviewEdit = reviewEditPrompt
 	})

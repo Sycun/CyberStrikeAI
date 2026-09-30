@@ -26,7 +26,7 @@ func TestTwoHandlersOneStoreIsRaceFree(t *testing.T) {
 	store := settings.New(cfg)
 
 	configHandler := &ConfigHandler{config: cfg, logger: zap.NewNop()}
-	agentHandler := &AgentHandler{config: cfg, logger: zap.NewNop()}
+	agentHandler := attachHitlPolicy(t, &AgentHandler{config: cfg, logger: zap.NewNop()})
 	configHandler.SetSettings(store)
 	agentHandler.SetSettings(store)
 
@@ -48,7 +48,7 @@ func TestTwoHandlersOneStoreIsRaceFree(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 150; j++ {
 				timeout := j
-				agentHandler.publishHitl(func(hitl *config.HitlConfig) {
+				agentHandler.HitlPolicy().publishHitl(func(hitl *config.HitlConfig) {
 					hitl.DefaultMode = "review_edit"
 					hitl.DefaultTimeoutSeconds = &timeout
 					hitl.AuditAgentPrompt = "agent-" + strconv.Itoa(n)
@@ -60,7 +60,7 @@ func TestTwoHandlersOneStoreIsRaceFree(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 300; j++ {
-				if got := agentHandler.hitlSnapshot(); len(got.ToolWhitelist) == 0 {
+				if got := agentHandler.HitlPolicy().hitlSnapshot(); len(got.ToolWhitelist) == 0 {
 					t.Error("reader observed an emptied whitelist")
 					return
 				}
@@ -70,10 +70,14 @@ func TestTwoHandlersOneStoreIsRaceFree(t *testing.T) {
 	}
 	wg.Wait()
 
-	// The legacy fallback must still work for handlers constructed without a store.
+	// The legacy fallback must still work for handlers constructed without a store. The policy
+	// is attached explicitly rather than created on first use: a lazily built collaborator is
+	// a data race waiting for the next concurrent read, and a missing one is a panic worth
+	// seeing in the test that caused it.
 	legacy := &AgentHandler{config: &config.Config{}, logger: zap.NewNop()}
-	legacy.publishHitl(func(hitl *config.HitlConfig) { hitl.DefaultMode = "off" })
-	if legacy.hitlSnapshot().DefaultMode != "off" {
+	legacy.hitlPolicy = NewHitlPolicy(legacy.config, nil, nil, nil, legacy.logger)
+	legacy.HitlPolicy().publishHitl(func(hitl *config.HitlConfig) { hitl.DefaultMode = "off" })
+	if legacy.HitlPolicy().hitlSnapshot().DefaultMode != "off" {
 		t.Fatal("store-less handler lost its write path")
 	}
 }

@@ -69,7 +69,7 @@ func TestParseAuditAgentLLMContentWithEditedArguments(t *testing.T) {
 }
 
 func TestAuditAgentReviewTypeSafeMissingAPIKey(t *testing.T) {
-	h := &AgentHandler{config: &config.Config{Hitl: config.HitlConfig{AuditBackend: "typesafe"}}}
+	h := attachHitlPolicy(t, &AgentHandler{config: &config.Config{Hitl: config.HitlConfig{AuditBackend: "typesafe"}}})
 	d := h.auditAgentReview(context.Background(), "approval", "exec", nil)
 	if d.Decision != "reject" {
 		t.Fatalf("decision=%s", d.Decision)

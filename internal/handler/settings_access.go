@@ -27,22 +27,16 @@ func (h *AgentHandler) SetSettings(store *SettingsStore) {
 		return
 	}
 	h.settings = store
+	if h.hitlPolicy != nil {
+		// Forwarded: the assembly builds the agent, then attaches the shared settings store. A
+		// policy that captured the store at construction would keep reading config.yaml after
+		// that, and an operator changing a default would watch it land in the file but not in
+		// the running rules - the exact defect the live snapshot exists to prevent.
+		h.HitlPolicy().settings = store
+	}
 }
 
 func (h *ConfigHandler) hitl() config.HitlConfig {
-	if h == nil {
-		return config.HitlConfig{}
-	}
-	if h.settings != nil {
-		return h.settings.Hitl()
-	}
-	return h.config.Hitl
-}
-
-// hitlSnapshot is the live HITL configuration: the published runtime snapshot when the
-// settings store is attached, config.yaml's own value otherwise. Named so the approval
-// policy can read it through an interface instead of reaching into the handler.
-func (h *AgentHandler) hitlSnapshot() config.HitlConfig {
 	if h == nil {
 		return config.HitlConfig{}
 	}
@@ -64,18 +58,3 @@ func (h *ConfigHandler) publishHitl(mutate func(hitl *config.HitlConfig)) {
 	}
 	mutate(&h.config.Hitl)
 }
-
-func (h *AgentHandler) publishHitl(mutate func(hitl *config.HitlConfig)) {
-	if h == nil {
-		return
-	}
-	if h.settings != nil {
-		h.settings.UpdateHitl(mutate)
-		return
-	}
-	mutate(&h.config.Hitl)
-}
-
-// settingsConfigured reports whether a configuration was loaded at all. An endpoint that
-// reads defaults must be able to say "not configured" rather than inventing one.
-func (h *AgentHandler) settingsConfigured() bool { return h != nil && h.config != nil }

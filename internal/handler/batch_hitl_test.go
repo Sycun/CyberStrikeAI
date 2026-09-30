@@ -60,13 +60,13 @@ func TestBatchHITLActivation(t *testing.T) {
 	}
 	defer db.Close()
 	timeout := 60
-	h := &AgentHandler{
+	h := attachHitlPolicy(t, &AgentHandler{
 		config: &config.Config{Hitl: config.HitlConfig{
 			DefaultMode: "review_edit", DefaultReviewer: "audit_agent",
 			DefaultTimeoutSeconds: &timeout, ToolWhitelist: []string{"safe_tool"},
 		}},
 		hitlManager: NewHITLManager(db, zap.NewNop()),
-	}
+	})
 	if err := h.hitlManager.EnsureSchema(); err != nil {
 		t.Fatal(err)
 	}

@@ -245,57 +245,6 @@ func (m *HITLManager) DeactivateConversation(conversationID string) {
 	m.mu.Unlock()
 }
 
-// hitlConfigGlobalToolWhitelist 来自 config.yaml hitl.tool_whitelist（去重、去空），并合并内置元工具免审批项。
-func (h *AgentHandler) hitlConfigGlobalToolWhitelist() []string {
-	if h == nil || h.config == nil {
-		return multiagent.MergeHitlExemptMetaTools(nil)
-	}
-	raw := h.hitlSnapshot().ToolWhitelist
-	seen := make(map[string]struct{})
-	out := make([]string, 0, len(raw)+len(multiagent.HitlExemptMetaTools))
-	for _, t := range raw {
-		n := strings.ToLower(strings.TrimSpace(t))
-		if n == "" {
-			continue
-		}
-		if _, ok := seen[n]; ok {
-			continue
-		}
-		seen[n] = struct{}{}
-		out = append(out, strings.TrimSpace(t))
-	}
-	return multiagent.MergeHitlExemptMetaTools(out)
-}
-
-// hitlRequestWithMergedConfigWhitelist 将会话/API 中的白名单与 config.yaml 全局白名单及内置元工具免审批项合并（并集），仅用于运行时 Activate；不写入数据库。
-func (h *AgentHandler) hitlRequestWithMergedConfigWhitelist(req *HITLRequest) *HITLRequest {
-	if req == nil {
-		return nil
-	}
-	seen := make(map[string]struct{})
-	union := make([]string, 0, len(req.SensitiveTools)+16)
-	add := func(t string) {
-		n := strings.ToLower(strings.TrimSpace(t))
-		if n == "" {
-			return
-		}
-		if _, ok := seen[n]; ok {
-			return
-		}
-		seen[n] = struct{}{}
-		union = append(union, strings.TrimSpace(t))
-	}
-	for _, t := range h.hitlConfigGlobalToolWhitelist() {
-		add(t)
-	}
-	for _, t := range req.SensitiveTools {
-		add(t)
-	}
-	out := *req
-	out.SensitiveTools = multiagent.MergeHitlExemptMetaTools(union)
-	return &out
-}
-
 func (m *HITLManager) shouldInterrupt(conversationID, toolName string) (hitlRuntimeConfig, bool) {
 	m.mu.RLock()
 	cfg, ok := m.runtime[conversationID]
@@ -565,32 +514,17 @@ func (h *AgentHandler) activateHITLForConversation(conversationID string, req *H
 	if h.hitlManager == nil {
 		return
 	}
-	h.hitlManager.SetGlobalWhitelist(h.hitlConfigGlobalToolWhitelist())
+	h.hitlManager.SetGlobalWhitelist(h.HitlPolicy().hitlConfigGlobalToolWhitelist())
 	if req == nil {
-		cfg, err := h.loadHITLConversationConfig(conversationID)
+		cfg, err := h.HitlPolicy().loadHITLConversationConfig(conversationID)
 		if err == nil {
 			req = cfg
 		}
 	}
 	if req != nil && strings.TrimSpace(req.Reviewer) == "" {
-		req.Reviewer = h.hitlEffectiveDefaultReviewer()
+		req.Reviewer = h.HitlPolicy().hitlEffectiveDefaultReviewer()
 	}
-	h.hitlManager.ActivateConversation(conversationID, h.hitlRequestWithMergedConfigWhitelist(req))
-}
-
-func (h *AgentHandler) loadHITLConversationConfig(conversationID string) (*HITLRequest, error) {
-	cfg, err := h.hitlManager.LoadConversationConfig(conversationID)
-	if err != nil {
-		return nil, err
-	}
-	has, err := h.hitlManager.HasConversationConfig(conversationID)
-	if err != nil {
-		return nil, err
-	}
-	if !has {
-		return h.hitlEffectiveDefaultRequest(), nil
-	}
-	return cfg, nil
+	h.hitlManager.ActivateConversation(conversationID, h.HitlPolicy().hitlRequestWithMergedConfigWhitelist(req))
 }
 
 func (h *AgentHandler) waitHITLApproval(runCtx context.Context, cancelRun context.CancelCauseFunc, conversationID, assistantMessageID, toolName, toolCallID string, payload map[string]interface{}, sendEventFunc func(eventType, message string, data interface{})) (*hitlDecision, error) {
@@ -606,7 +540,7 @@ func (h *AgentHandler) waitHITLApproval(runCtx context.Context, cancelRun contex
 		expiresAt := approvalStartedAt.Add(cfg.Timeout)
 		approvalExpiresAt = &expiresAt
 	}
-	auditBackend, auditModel := h.hitlAuditEngineInfo()
+	auditBackend, auditModel := h.HitlPolicy().hitlAuditEngineInfo()
 	payload["hitlApproval"] = map[string]interface{}{
 		"createdAt":      approvalStartedAt,
 		"timeoutSeconds": timeoutSeconds,

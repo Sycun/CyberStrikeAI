@@ -23,12 +23,12 @@ func (h *AgentHandler) auditAgentReview(ctx context.Context, hitlMode, toolName 
 		return hitlDecision{Decision: "reject", Comment: "audit agent: handler unavailable"}
 	}
 	mode := normalizeHitlMode(hitlMode)
-	if h.config != nil && h.hitlSnapshot().EffectiveAuditBackend() == config.HitlAuditBackendTypeSafe {
+	if h.config != nil && h.HitlPolicy().hitlSnapshot().EffectiveAuditBackend() == config.HitlAuditBackendTypeSafe {
 		return h.auditAgentReviewTypeSafe(ctx, mode, toolName, payload)
 	}
 	prompt := config.DefaultHitlAuditAgentPrompt()
 	if h.config != nil {
-		prompt = h.hitlSnapshot().EffectiveAuditAgentPromptForMode(mode)
+		prompt = h.HitlPolicy().hitlSnapshot().EffectiveAuditAgentPromptForMode(mode)
 	}
 	llmCfg := h.auditLLMConfig()
 	if strings.TrimSpace(llmCfg.APIKey) == "" || strings.TrimSpace(llmCfg.Model) == "" {
@@ -107,7 +107,7 @@ func (h *AgentHandler) auditAgentReview(ctx context.Context, hitlMode, toolName 
 
 func (h *AgentHandler) auditLLMConfig() config.OpenAIConfig {
 	if h != nil && h.config != nil {
-		return h.hitlSnapshot().AuditModelEffective(h.config.OpenAI)
+		return h.HitlPolicy().hitlSnapshot().AuditModelEffective(h.config.OpenAI)
 	}
 	return config.OpenAIConfig{}
 }
@@ -116,7 +116,7 @@ func (h *AgentHandler) auditAgentReviewTypeSafe(ctx context.Context, hitlMode, t
 	if h == nil || h.config == nil {
 		return hitlDecision{Decision: "reject", Comment: "audit agent: TypeSafe 未配置"}
 	}
-	baseURL, apiKey, model := h.hitlSnapshot().TypeSafeConfigEffective()
+	baseURL, apiKey, model := h.HitlPolicy().hitlSnapshot().TypeSafeConfigEffective()
 	if apiKey == "" {
 		return hitlDecision{Decision: "reject", Comment: "audit agent: TypeSafe API Key 未配置"}
 	}
@@ -127,7 +127,7 @@ func (h *AgentHandler) auditAgentReviewTypeSafe(ctx context.Context, hitlMode, t
 	defer cancel()
 
 	client := typesafe.NewClient(baseURL, apiKey, model, nil)
-	policy := h.hitlSnapshot().JevOperatorPolicy(hitlMode)
+	policy := h.HitlPolicy().hitlSnapshot().JevOperatorPolicy(hitlMode)
 	result, err := client.SystemOne(callCtx, hitl.BuildJevState(hitlMode, toolName, payload, policy), hitl.JevAuditQuestions(policy))
 	if err != nil {
 		h.logger.Warn("审计 Agent TypeSafe 调用失败", zap.Error(err), zap.String("tool", toolName))
