@@ -31,6 +31,25 @@ units:
 清单里没有、也不允许有 `dest` 之类的目标路径：能力落在哪儿由 `kind` 决定，
 所以一个包不可能通过写清单去覆盖它管不着的文件。
 
+## 随仓库提供的角色包
+
+四个包对应四个内置角色目录里**没有**的角色。装任何一个都只加东西，不改内置文件：
+
+| 包 | 角色 | 交付的单元 |
+|---|---|---|
+| `mobile-app-security` | 移动端安全测试 | role + agent `mobile-app-analyst` + skill `mobile-package-triage` |
+| `ai-app-redteam` | AI 应用红队测试 | role + agent `llm-tool-surface` + skill `llm-output-boundaries` |
+| `source-code-audit` | 源码与供应链审计 | role + agent `sast-finding-triage` + skill `sink-driven-audit` + tool `semgrep` |
+| `wireless-hardware` | 无线与硬件安全测试 | role + agent `firmware-triage` + skill `rf-protocol-recon` |
+
+`source-code-audit` 带一份真配方，是为了让"表驱动的工具面"这条路径有**随仓库发布的内容**在跑，
+而不只在测试夹具里成立。它的 `capability.id` 用的是 `community.semgrep` 而不是保留的
+`core.*` 命名空间 —— 包不能声称自己是内置能力。
+
+每个包里的每一项都会被既有加载器读回来验一遍：角色走 `config.LoadRoleFromFile`、
+agent 走 `agents.LoadMarkdownAgentPaths`、配方走 `RecipeSpecs`（缺能力清单就是内容 bug，
+不该等到执行时才 fail-closed）。见 `internal/app/bundles_test.go`。
+
 ## 身份与冲突
 
 单元身份是 `<kind>/<name>`，全局唯一。安装时的规则是**拒绝并指名道姓**，不是覆盖：

@@ -1,0 +1,11 @@
+id: wireless-hardware
+name: 无线与硬件安全角色包
+version: 1.0.0
+description: 按角色打包的一键扩展：装上"无线与硬件安全测试"角色、固件分诊子代理与射频协议侦察方法。装完即生效，卸载即回到原状。
+units:
+  - kind: role
+    path: roles/无线与硬件安全测试.yaml
+  - kind: agent
+    path: agents/firmware-triage.md
+  - kind: skill
+    path: skills/rf-protocol-recon

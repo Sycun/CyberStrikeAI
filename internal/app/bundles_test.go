@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"cyberstrike-ai/internal/agents"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/plugin"
 )
@@ -87,6 +88,7 @@ func TestExampleBundlesInstallAlongsideShippedCapabilities(t *testing.T) {
 	genAfterScan := table.Generation()
 
 	added := map[string]bool{}
+	var addedUnits []plugin.Unit
 	dirs := exampleBundleDirs(t, root)
 	for _, dir := range dirs {
 		m, err := plugin.LoadManifestDir(dir)
@@ -105,6 +107,7 @@ func TestExampleBundlesInstallAlongsideShippedCapabilities(t *testing.T) {
 				t.Fatalf("bundle %s would collide with shipped %s; the example packs must be additive", b.ID, u.ID)
 			}
 			added[u.ID] = true
+			addedUnits = append(addedUnits, u)
 		}
 		if err := table.InstallBundle(b); err != nil {
 			t.Fatalf("InstallBundle %s: %v", b.ID, err)
@@ -141,6 +144,54 @@ func TestExampleBundlesInstallAlongsideShippedCapabilities(t *testing.T) {
 		}
 		if !role.Enabled {
 			t.Errorf("bundle role %s is not enabled, so it would install invisibly", u.Name)
+		}
+	}
+
+	// Every other delivered unit has to be readable by the loader that actually serves it, not
+	// just present in the table: a pack whose agent does not parse, or whose tool recipe has no
+	// enforceable capability manifest, is a content bug that only shows up as a silent absence
+	// (or a fail-closed execution) long after the install said "ok".
+	var agentPaths, toolPaths []string
+	for _, u := range addedUnits {
+		switch u.Kind {
+		case plugin.KindAgent:
+			agentPaths = append(agentPaths, u.Path)
+		case plugin.KindTool:
+			toolPaths = append(toolPaths, u.Path)
+		}
+	}
+	if len(agentPaths) > 0 {
+		load, err := agents.LoadMarkdownAgentPaths(agentPaths)
+		if err != nil {
+			t.Fatalf("the shipped markdown loader cannot read the example packs' agents: %v", err)
+		}
+		if got := len(load.FileEntries); got != len(agentPaths) {
+			t.Errorf("loaded %d agent definitions from %d delivered agent files", got, len(agentPaths))
+		}
+	}
+	if len(agentPaths) < 4 {
+		t.Fatalf("example packs deliver only %d agents: the sample content has gone thin, and the "+
+			"agent assertions below would be running on an empty set", len(agentPaths))
+	}
+	if len(toolPaths) < 1 {
+		t.Fatalf("no example pack ships a tool recipe, so the table-driven recipe path has no shipped " +
+			"content proving it")
+	}
+	if len(toolPaths) > 0 {
+		recipes := make([]config.ToolConfig, 0, len(toolPaths))
+		for _, p := range toolPaths {
+			tool, err := config.LoadToolFromFile(p)
+			if err != nil {
+				t.Fatalf("the shipped recipe loader cannot read %s: %v", p, err)
+			}
+			recipes = append(recipes, *tool)
+		}
+		specs, rejections := RecipeSpecs(recipes)
+		if len(rejections) != 0 {
+			t.Errorf("an example pack ships a recipe with no enforceable manifest: %v", rejections)
+		}
+		if len(specs) != len(recipes) {
+			t.Errorf("%d bundled recipes yielded %d capability specs", len(recipes), len(specs))
 		}
 	}
 

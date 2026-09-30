@@ -1,0 +1,62 @@
+name: "semgrep"
+command: "semgrep"
+enabled: true
+short_description: "多语言语义规则扫描（SAST），用于源码审计的候选集生成"
+description: |
+  Semgrep 用语义模式在多语言源码里找缺陷模式，产出的是**候选集**，不是结论：每条命中都要回到
+  source→sink 的可达性判定。
+
+  **常用参数：**
+  - `--config`：规则集（`auto`、`p/<language>`、`p/security-audit`、或本地规则文件/目录）
+  - `--lang` / `--include` / `--exclude`：限定语言与路径
+  - `--json`：机器可读输出，便于按规则与文件聚类去重
+  - `--error`：把命中当作非零退出（CI 里用；本工具默认不启用）
+
+  **注意事项：**
+  - 只读扫描被审计目录；不使用 `--autofix`，不改写源码。
+  - 规则里的自定义 `patterns` 可能执行脚本类语言求值，只加载可信规则源。
+parameters:
+  - name: "target"
+    type: "string"
+    description: "要扫描的文件或目录（相对会话工作区）"
+    required: true
+    format: "positional"
+  - name: "config"
+    type: "string"
+    description: "规则集，如 p/security-audit、p/default、auto，或本地规则路径"
+    required: false
+    flag: "--config"
+    format: "flag"
+    default: "p/security-audit"
+  - name: "lang"
+    type: "string"
+    description: "限定语言（python、go、java、js、php 等）"
+    required: false
+    flag: "--lang"
+    format: "flag"
+  - name: "json_output"
+    type: "boolean"
+    description: "以 JSON 输出结果，便于去重与聚类"
+    required: false
+    flag: "--json"
+    format: "flag"
+  - name: "exclude"
+    type: "string"
+    description: "排除路径或文件名（如 vendor、test fixtures）"
+    required: false
+    flag: "--exclude"
+    format: "flag"
+# Capability manifest: identity, authorization, approval and egress
+# ceiling. The registry is fail-closed - a recipe without this
+# block cannot be executed. This recipe comes from a bundle, so it uses the
+# pack's own publisher namespace instead of the reserved core.* one.
+capability:
+  id: "community.semgrep"
+  version: "1.0.0"
+  class: "readonly"
+  permission: "agent:execute"
+  approval: "never"
+  runtime: "recipe:exec"
+  grants:
+    - "process.exec(semgrep)"
+    - "fs.read(workspace)"

@@ -186,7 +186,11 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   已安装的包；同 id 再装是升级（只回收自己上一版声明的单元）；卸载只摘表、**不删文件**。
 - `bundles/<id>/bundle.yaml` 是**按角色打包**的形状（角色 + 子代理 + 技能 + 工具），路径被
   `skillpackage.SafeRelPath` 关在包目录内，`version` 强制（没有版本就没有升级与回滚）。
-  格式与冲突规则见 `bundles/README.md`，示例包 `bundles/mobile-app-security`。
+  格式与冲突规则见 `bundles/README.md`；随仓库提供四个按角色打包的示例包 ——
+  `mobile-app-security`（移动端）、`ai-app-redteam`（AI 应用红队）、
+  `source-code-audit`（源码与供应链审计，含一份 semgrep 配方）、`wireless-hardware`（无线与硬件）。
+  每个包的每一项交付都由 `TestExampleBundlesInstallAlongsideShippedCapabilities` 拿**既有加载器**验一遍
+  （角色 yaml、markdown agent、配方的能力清单），而不是只跟能力表自比。
 - **内置能力也走同一张表**：`roles/ agents/ skills/ tools/ 由 ScanDir 扫成单元，身份与既有加载器
   逐项一致（实测 142 个：roles 13 / agents 16 / skills 23 / tools 90），由
   `internal/app/plugin_parity_test.go` 钉住——真相源是既有加载器本身，不是手写清单。

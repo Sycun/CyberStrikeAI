@@ -224,7 +224,12 @@ one identity scheme and one live table:
 - `bundles/<id>/bundle.yaml` is the shape of **packaging by role** (role + sub-agent + skills +
   tools); paths are confined to the bundle directory by `skillpackage.SafeRelPath` and `version` is
   mandatory, because a pack without one cannot be upgraded or rolled back. Format and ownership
-  rules: `bundles/README.md`; worked example: `bundles/mobile-app-security`.
+  rules: `bundles/README.md`. Four role-shaped packs ship with the repository -
+  `mobile-app-security`, `ai-app-redteam`, `source-code-audit` (which carries a semgrep recipe, so the
+  tool path has shipped content proving it) and `wireless-hardware`. Every unit of every pack is read
+  back through the **existing loader** (role YAML, markdown agent, recipe capability manifest) by
+  `TestExampleBundlesInstallAlongsideShippedCapabilities`, rather than compared against the table that
+  derived it.
 - **Shipped capabilities go through the same table**: `roles/ agents/ skills/ tools/` are scanned
   into units whose identities match the existing loaders entry for entry (measured 142: 13 roles /
   16 agents / 23 skills / 90 tools), pinned by `internal/app/plugin_parity_test.go` - the truth
