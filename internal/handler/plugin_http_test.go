@@ -46,8 +46,10 @@ func newPluginTestEnv(t *testing.T, withBuiltInBundle bool) *pluginTestEnv {
 			"---\nname: finding-writeup\ndescription: 漏洞报告撰写\n---\n\n## Format\n")
 		writeTestFile(t, filepath.Join(bundlesDir, "reporting-pack", "tools", "pandoc.yaml"),
 			"name: pandoc\ncommand: /bin/true\n")
+		writeTestFile(t, filepath.Join(bundlesDir, "reporting-pack", "agents", "report-analyst.md"),
+			"---\ndescription: 报告分析子代理\n---\n\n# 报告分析\n\n汇总发现并成稿。\n")
 		writeTestFile(t, filepath.Join(bundlesDir, "reporting-pack", plugin.ManifestFileName),
-			"id: reporting-pack\nname: 报告角色包\nversion: 1.0.0\ndescription: role+skill+tool\nunits:\n  - kind: role\n    path: roles/报告撰写.yaml\n  - kind: skill\n    path: skills/finding-writeup\n  - kind: tool\n    path: tools/pandoc.yaml\n")
+			"id: reporting-pack\nname: 报告角色包\nversion: 1.0.0\ndescription: role+agent+skill+tool\nunits:\n  - kind: role\n    path: roles/报告撰写.yaml\n  - kind: agent\n    path: agents/report-analyst.md\n  - kind: skill\n    path: skills/finding-writeup\n  - kind: tool\n    path: tools/pandoc.yaml\n")
 	}
 	return env
 }
@@ -114,6 +116,11 @@ func TestPluginInstallServesTheBundleImmediately(t *testing.T) {
 	if _, ok := lookupRole(env.roles.config, "内置角色"); !ok {
 		t.Fatalf("installing a pack removed a shipped role")
 	}
+	// Asserted here as present so the same id asserted as absent after the uninstall below
+	// cannot be satisfied by an agent unit that was never registered in the first place.
+	if _, ok := env.table.Unit("agent/report-analyst"); !ok {
+		t.Fatalf("install did not register the bundled agent unit: %v", env.table.Units(plugin.KindAgent))
+	}
 
 	rec = env.do(t, http.MethodGet, "/api/plugins", "")
 	state = decodeState(t, rec)
@@ -126,8 +133,8 @@ func TestPluginInstallServesTheBundleImmediately(t *testing.T) {
 		t.Fatalf("bundle view wrong: %v", bundle)
 	}
 	units := bundle["units"].([]interface{})
-	if len(units) != 3 {
-		t.Fatalf("bundle reports %d units, want 3", len(units))
+	if len(units) != 4 {
+		t.Fatalf("bundle reports %d units, want 4", len(units))
 	}
 	servedByKind := map[string]bool{}
 	reasonByKind := map[string]string{}
@@ -140,6 +147,15 @@ func TestPluginInstallServesTheBundleImmediately(t *testing.T) {
 	}
 	if !servedByKind["role"] || !servedByKind["skill"] {
 		t.Errorf("role/skill must report served: %v", servedByKind)
+	}
+	// The agent row is the one this clause caught being claimed wrong: the live server said
+	// agent/served=false after the run path had already moved onto the table, and no assertion
+	// covered it because the fixture pack had no agent unit.
+	if !servedByKind["agent"] {
+		t.Errorf("agent must report served: the run path loads agent paths from the table")
+	}
+	if reasonByKind["agent"] != "" {
+		t.Errorf("a served unit carries a not-served reason: %q", reasonByKind["agent"])
 	}
 	// The honesty clause: a tool recipe is tracked but no run path reads tools from the table,
 	// so claiming it were live would be the paper-contract failure this whole layer exists to avoid.
@@ -160,6 +176,9 @@ func TestPluginInstallServesTheBundleImmediately(t *testing.T) {
 	}
 	if _, ok := lookupRole(env.roles.config, "内置角色"); !ok {
 		t.Fatalf("uninstall took a shipped role with it")
+	}
+	if _, ok := env.table.Unit("agent/report-analyst"); ok {
+		t.Fatalf("uninstall left the bundled agent unit in the table, so a run would still load it")
 	}
 	if _, err := plugin.Digest(filepath.Join(env.bundles, "reporting-pack", "roles", "报告撰写.yaml")); err != nil {
 		t.Fatalf("uninstall deleted the pack's own file: %v", err)

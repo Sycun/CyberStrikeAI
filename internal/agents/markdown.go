@@ -326,77 +326,115 @@ func collectMarkdownBasenames(dir string) ([]string, error) {
 
 // LoadMarkdownAgentsDir 扫描 agents 目录：拆出 Deep / plan_execute / supervisor 主代理各至多一个，及其余子代理。
 func LoadMarkdownAgentsDir(dir string) (*MarkdownDirLoad, error) {
-	out := &MarkdownDirLoad{}
 	names, err := collectMarkdownBasenames(dir)
 	if err != nil {
 		return nil, err
 	}
+	out := &MarkdownDirLoad{}
 	for _, n := range names {
 		p := filepath.Join(dir, n)
 		b, err := os.ReadFile(p)
 		if err != nil {
 			return nil, err
 		}
-		fm, body, err := parseMarkdownAgentRaw(n, string(b))
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", n, err)
+		if err := applyMarkdownAgentFile(out, n, b); err != nil {
+			return nil, err
 		}
-		switch OrchestratorMarkdownKind(n) {
-		case "plan_execute":
-			if out.OrchestratorPlanExecute != nil {
-				return nil, fmt.Errorf("agents: 仅能定义一个 %s，已有 %s", OrchestratorPlanExecuteMarkdownFilename, out.OrchestratorPlanExecute.Filename)
-			}
-			orch, err := orchestratorFromParsed(n, fm, body)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", n, err)
-			}
-			out.OrchestratorPlanExecute = orch
-			out.FileEntries = append(out.FileEntries, FileAgent{
-				Filename:       n,
-				Config:         orchestratorConfigFromOrchestrator(orch),
-				IsOrchestrator: true,
-			})
-			continue
-		case "supervisor":
-			if out.OrchestratorSupervisor != nil {
-				return nil, fmt.Errorf("agents: 仅能定义一个 %s，已有 %s", OrchestratorSupervisorMarkdownFilename, out.OrchestratorSupervisor.Filename)
-			}
-			orch, err := orchestratorFromParsed(n, fm, body)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", n, err)
-			}
-			out.OrchestratorSupervisor = orch
-			out.FileEntries = append(out.FileEntries, FileAgent{
-				Filename:       n,
-				Config:         orchestratorConfigFromOrchestrator(orch),
-				IsOrchestrator: true,
-			})
-			continue
-		}
-		if IsOrchestratorMarkdown(n, fm) {
-			if out.Orchestrator != nil {
-				return nil, fmt.Errorf("agents: 仅能定义一个主代理（Deep 协调者），已有 %s，又与 %s 冲突", out.Orchestrator.Filename, n)
-			}
-			orch, err := orchestratorFromParsed(n, fm, body)
-			if err != nil {
-				return nil, fmt.Errorf("%s: %w", n, err)
-			}
-			out.Orchestrator = orch
-			out.FileEntries = append(out.FileEntries, FileAgent{
-				Filename:       n,
-				Config:         orchestratorConfigFromOrchestrator(orch),
-				IsOrchestrator: true,
-			})
-			continue
-		}
-		sub, err := subAgentFromFrontMatter(n, fm, body)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", n, err)
-		}
-		out.SubAgents = append(out.SubAgents, sub)
-		out.FileEntries = append(out.FileEntries, FileAgent{Filename: n, Config: sub, IsOrchestrator: false})
 	}
 	return out, nil
+}
+
+// LoadMarkdownAgentPaths 读取显式给出的 .md 清单（能力表里的 agent 单元），
+// 语义与扫描目录一致：按文件名排序，主代理各至多一个。
+func LoadMarkdownAgentPaths(paths []string) (*MarkdownDirLoad, error) {
+	type entry struct {
+		name string
+		path string
+	}
+	entries := make([]entry, 0, len(paths))
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		entries = append(entries, entry{name: filepath.Base(filepath.ToSlash(p)), path: p})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
+
+	out := &MarkdownDirLoad{}
+	for _, e := range entries {
+		b, err := os.ReadFile(e.path)
+		if err != nil {
+			return nil, err
+		}
+		if err := applyMarkdownAgentFile(out, e.name, b); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// applyMarkdownAgentFile folds one .md into the accumulator. Splitting it out of the directory
+// loop is what lets the capability table (which knows files, not one root) feed the same parser.
+func applyMarkdownAgentFile(out *MarkdownDirLoad, n string, content []byte) error {
+	fm, body, err := parseMarkdownAgentRaw(n, string(content))
+	if err != nil {
+		return fmt.Errorf("%s: %w", n, err)
+	}
+	switch OrchestratorMarkdownKind(n) {
+	case "plan_execute":
+		if out.OrchestratorPlanExecute != nil {
+			return fmt.Errorf("agents: 仅能定义一个 %s，已有 %s", OrchestratorPlanExecuteMarkdownFilename, out.OrchestratorPlanExecute.Filename)
+		}
+		orch, err := orchestratorFromParsed(n, fm, body)
+		if err != nil {
+			return fmt.Errorf("%s: %w", n, err)
+		}
+		out.OrchestratorPlanExecute = orch
+		out.FileEntries = append(out.FileEntries, FileAgent{
+			Filename:       n,
+			Config:         orchestratorConfigFromOrchestrator(orch),
+			IsOrchestrator: true,
+		})
+		return nil
+	case "supervisor":
+		if out.OrchestratorSupervisor != nil {
+			return fmt.Errorf("agents: 仅能定义一个 %s，已有 %s", OrchestratorSupervisorMarkdownFilename, out.OrchestratorSupervisor.Filename)
+		}
+		orch, err := orchestratorFromParsed(n, fm, body)
+		if err != nil {
+			return fmt.Errorf("%s: %w", n, err)
+		}
+		out.OrchestratorSupervisor = orch
+		out.FileEntries = append(out.FileEntries, FileAgent{
+			Filename:       n,
+			Config:         orchestratorConfigFromOrchestrator(orch),
+			IsOrchestrator: true,
+		})
+		return nil
+	}
+	if IsOrchestratorMarkdown(n, fm) {
+		if out.Orchestrator != nil {
+			return fmt.Errorf("agents: 仅能定义一个主代理（Deep 协调者），已有 %s，又与 %s 冲突", out.Orchestrator.Filename, n)
+		}
+		orch, err := orchestratorFromParsed(n, fm, body)
+		if err != nil {
+			return fmt.Errorf("%s: %w", n, err)
+		}
+		out.Orchestrator = orch
+		out.FileEntries = append(out.FileEntries, FileAgent{
+			Filename:       n,
+			Config:         orchestratorConfigFromOrchestrator(orch),
+			IsOrchestrator: true,
+		})
+		return nil
+	}
+	sub, err := subAgentFromFrontMatter(n, fm, body)
+	if err != nil {
+		return fmt.Errorf("%s: %w", n, err)
+	}
+	out.SubAgents = append(out.SubAgents, sub)
+	out.FileEntries = append(out.FileEntries, FileAgent{Filename: n, Config: sub, IsOrchestrator: false})
+	return nil
 }
 
 // ParseMarkdownSubAgent 将单个 Markdown 文件解析为 MultiAgentSubConfig。

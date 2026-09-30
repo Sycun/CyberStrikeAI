@@ -55,7 +55,7 @@ units:
 |---|---|---|---|
 | role | ✅ 启动扫描 + 包 | ✅ `currentRoles` → 活配置快照（`internal/handler/live_config.go`） | ✅ |
 | skill | ✅ | ✅ `internal/einoskill` 用能力表实现 Eino 的 `skill.Backend` | ✅ |
-| agent | ✅ | ⬜ 仍按目录重扫（`agents.LoadMarkdownAgentsDir`） | ✅ 登记，但**未生效**（响应里 `served:false` + 原因） |
+| agent | ✅ | ✅ 运行路径与管理台都走表（`agents.LoadMarkdownAgents`） | ✅ |
 | tool | ✅ | ⬜ 仅 `POST /config/apply` 生效 | ✅ 登记，但未生效（要过审批下限，见下） |
 | mcp | ✅ 每个远端工具一个身份（`LayerRemote`，按服务器成组装卸） | ✅ 授权按工具身份判定，判定不到再回到命名空间策略 | — |
 
@@ -107,6 +107,16 @@ skill 一行的"读表"含两层：运行路径（`internal/einoskill` 换掉了
 两层必须一起改：只改运行路径会出现"包里的 skill 被 Agent 用着、列表里看不见"，
 这一条是在真实跑起来的服务上实测到的（23 → 装包 24 → 卸载 23），不是推演出来的。
 写路径遇到包拥有的 skill 返回 409 并指名是哪个包，**不会**在内置 skills 目录里悄悄落一份同名副本。
+
+agent 一行的两层同样一起改了：`agents.LoadMarkdownAgentPaths` 与目录扫描共用同一个解析器
+（对内置 16 个 `.md` 逐个比对，路径驱动与目录驱动**逐字节相同**），运行路径与管理台都从表里的
+路径读；表里一个 agent 单元都没有时**回到目录扫描**，因为漏跑启动扫描是可修的装配问题，
+而"每次运行都没有子代理"是不可修的。
+这一行是**真实跑起来的服务**指出来的：`GET /api/plugins` 报
+`[('role', True), ('agent', False), ('skill', True)]`——运行路径已经搬到表上了，
+`served` 字段还留着搬迁时的说明。测试当时抓不到它，因为夹具包里没有 agent 单元；
+现在 `reporting-pack` 带一个 `agents/report-analyst.md`，装完断言 `served=true`、
+卸载后断言该单元从表里消失（先断"在"再断"不在"，否则后半句可能一直在空过）。
 
 内置的 `roles/`、`agents/`、`skills/`、`tools/` 四个目录同样被扫成单元进表，
 所以"内置能力"和"后装能力"走的是同一套身份与同一张表；两侧身份一致性由

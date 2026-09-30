@@ -111,6 +111,9 @@ wiring-check:
 	$(GO) test -count=1 -run 'TestPrepareEinoAgenticSkills' ./internal/multiagent/
 	## 一键安装接口：装完即生效 / 越界路径 400 / 冲突 409 指名 / 启停不动文件 / 包拥有的单元不可摘
 	$(GO) test -count=1 -run 'TestPlugin' ./internal/handler/
+	## markdown agent：路径驱动与目录驱动逐字节一致、包内定义只读、建删同步进表
+	$(GO) test -count=1 -timeout 200s ./internal/agents/ -run 'TestLoadMarkdownAgentPaths|TestLoadMarkdownAgents|TestEmptyTable|TestDisabledAgent'
+	$(GO) test -count=1 -timeout 200s ./internal/handler/ -run 'TestMarkdownAgentList|TestBundledMarkdownAgent|TestCreatedMarkdownAgent'
 	## 远端 MCP 工具身份：按服务器成组装卸、按工具判定、清单缺失时回到命名空间策略
 	$(GO) test -count=1 ./internal/capability/ -run 'TestRegisterSubset|TestSubsetEntries'
 	$(GO) test -count=1 ./internal/app/ -run 'TestRemote|TestEmptyInventory'

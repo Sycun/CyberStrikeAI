@@ -13,19 +13,21 @@ import (
 	"cyberstrike-ai/internal/config"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 var markdownAgentFilenameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.md$`)
 
 // MarkdownAgentsHandler 管理 agents 目录下子代理 Markdown（增删改查）。
 type MarkdownAgentsHandler struct {
-	dir   string
-	audit *audit.Service
+	dir    string
+	logger *zap.Logger
+	audit  *audit.Service
 }
 
 // NewMarkdownAgentsHandler dir 须为已解析的绝对路径。
-func NewMarkdownAgentsHandler(dir string) *MarkdownAgentsHandler {
-	return &MarkdownAgentsHandler{dir: strings.TrimSpace(dir)}
+func NewMarkdownAgentsHandler(dir string, logger *zap.Logger) *MarkdownAgentsHandler {
+	return &MarkdownAgentsHandler{dir: strings.TrimSpace(dir), logger: logger}
 }
 
 // SetAudit wires platform audit logging.
@@ -79,14 +81,17 @@ func (h *MarkdownAgentsHandler) ListMarkdownAgents(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"agents": []any{}, "dir": "", "error": "未配置 agents 目录"})
 		return
 	}
-	files, err := agents.LoadMarkdownAgentFiles(h.dir)
+	// Table-backed, so a definition that arrives from a bundle shows up here as well as in the
+	// run path. bundle / read_only tell the UI which rows this API may not write.
+	loaded, err := agents.MarkdownAgentFilesFromTable(h.dir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	out := make([]gin.H, 0, len(files))
-	for _, fa := range files {
+	out := make([]gin.H, 0, len(loaded.Entries))
+	for _, fa := range loaded.Entries {
 		sub := fa.Config
+		bundle := loaded.BundleByFilename[fa.Filename]
 		out = append(out, gin.H{
 			"filename":        fa.Filename,
 			"id":              sub.ID,
@@ -94,6 +99,8 @@ func (h *MarkdownAgentsHandler) ListMarkdownAgents(c *gin.Context) {
 			"description":     sub.Description,
 			"is_orchestrator": fa.IsOrchestrator,
 			"kind":            sub.Kind,
+			"bundle":          bundle,
+			"read_only":       bundle != "",
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"agents": out, "dir": h.dir})
@@ -102,7 +109,7 @@ func (h *MarkdownAgentsHandler) ListMarkdownAgents(c *gin.Context) {
 // GetMarkdownAgent GET /api/multi-agent/markdown-agents/:filename
 func (h *MarkdownAgentsHandler) GetMarkdownAgent(c *gin.Context) {
 	filename := c.Param("filename")
-	path, err := h.safeJoin(filename)
+	path, _, err := markdownAgentPath(h.dir, filename)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -173,6 +180,10 @@ func (h *MarkdownAgentsHandler) CreateMarkdownAgent(c *gin.Context) {
 			filename = base + ".md"
 		}
 	}
+	if msg, refused := refuseBundleMarkdownAgent(filename); refused {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
 	path, err := h.safeJoin(filename)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -234,6 +245,13 @@ func (h *MarkdownAgentsHandler) CreateMarkdownAgent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// The run path reads the table now, so a created file has to be registered or it stays
+	// invisible to agents until the process restarts.
+	if err := putMarkdownAgentUnit(h.dir, filepath.Base(path)); err != nil {
+		h.logger.Error("登记 Markdown 子代理到能力表失败", zap.String("file", filepath.Base(path)), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if h.audit != nil {
 		h.audit.RecordOK(c, "agent", "markdown_create", "创建 Markdown 子代理", "markdown_agent", filepath.Base(path), nil)
 	}
@@ -243,6 +261,10 @@ func (h *MarkdownAgentsHandler) CreateMarkdownAgent(c *gin.Context) {
 // UpdateMarkdownAgent PUT /api/multi-agent/markdown-agents/:filename
 func (h *MarkdownAgentsHandler) UpdateMarkdownAgent(c *gin.Context) {
 	filename := c.Param("filename")
+	if msg, refused := refuseBundleMarkdownAgent(filename); refused {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
 	path, err := h.safeJoin(filename)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -304,6 +326,11 @@ func (h *MarkdownAgentsHandler) UpdateMarkdownAgent(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	// Re-record the digest: an edited built-in file would otherwise be reported as drift
+	// against the copy that was installed.
+	if err := putMarkdownAgentUnit(h.dir, filename); err != nil {
+		h.logger.Warn("刷新 Markdown 子代理的能力表登记失败", zap.String("file", filename), zap.Error(err))
+	}
 	if h.audit != nil {
 		h.audit.RecordOK(c, "agent", "markdown_update", "更新 Markdown 子代理", "markdown_agent", filename, nil)
 	}
@@ -313,6 +340,10 @@ func (h *MarkdownAgentsHandler) UpdateMarkdownAgent(c *gin.Context) {
 // DeleteMarkdownAgent DELETE /api/multi-agent/markdown-agents/:filename
 func (h *MarkdownAgentsHandler) DeleteMarkdownAgent(c *gin.Context) {
 	filename := c.Param("filename")
+	if msg, refused := refuseBundleMarkdownAgent(filename); refused {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
 	path, err := h.safeJoin(filename)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -325,6 +356,9 @@ func (h *MarkdownAgentsHandler) DeleteMarkdownAgent(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if err := removeMarkdownAgentUnit(filename); err != nil {
+		h.logger.Warn("从能力表摘除 Markdown 子代理失败", zap.String("file", filename), zap.Error(err))
 	}
 	if h.audit != nil {
 		h.audit.RecordOK(c, "agent", "markdown_delete", "删除 Markdown 子代理", "markdown_agent", filename, nil)

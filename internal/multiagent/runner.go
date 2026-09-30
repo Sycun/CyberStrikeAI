@@ -88,7 +88,7 @@ func RunDeepAgent(
 	var markdownLoad *agents.MarkdownDirLoad
 	var orch *agents.OrchestratorMarkdown
 	if strings.TrimSpace(agentsMarkdownDir) != "" {
-		load, merr := agents.LoadMarkdownAgentsDir(agentsMarkdownDir)
+		load, merr := agents.LoadMarkdownAgents(agentsMarkdownDir)
 		if merr != nil {
 			if logger != nil {
 				logger.Warn("加载 agents 目录 Markdown 失败，沿用 config 中的 sub_agents", zap.Error(merr))

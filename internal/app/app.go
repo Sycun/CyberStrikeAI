@@ -448,7 +448,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
 		log.Logger.Warn("创建 agents 目录失败", zap.String("path", agentsDir), zap.Error(err))
 	}
-	markdownAgentsHandler := handler.NewMarkdownAgentsHandler(agentsDir)
+	markdownAgentsHandler := handler.NewMarkdownAgentsHandler(agentsDir, log.Logger)
 	bindAudit(markdownAgentsHandler, auditSvc)
 	log.Logger.Debug("多代理 Markdown 子 Agent 目录", zap.String("agentsDir", agentsDir))
 

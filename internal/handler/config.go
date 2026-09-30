@@ -362,7 +362,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 	if !filepath.IsAbs(agentsDir) {
 		agentsDir = filepath.Join(filepath.Dir(h.configPath), agentsDir)
 	}
-	if load, err := agents.LoadMarkdownAgentsDir(agentsDir); err == nil {
+	if load, err := agents.LoadMarkdownAgents(agentsDir); err == nil {
 		subAgentCount = len(agents.MergeYAMLAndMarkdown(h.config.MultiAgent.SubAgents, load.SubAgents))
 	}
 	multiPub := config.MultiAgentPublic{

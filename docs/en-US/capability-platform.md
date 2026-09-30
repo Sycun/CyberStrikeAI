@@ -256,7 +256,12 @@ one identity scheme and one live table:
   decided by the declared namespace policy, not waved through as unknown).
 - When a bundle declares a tool recipe that no run path reads from the table yet, the response
   says `served:false` with the reason instead of counting it as live. Letting "installed" read as
-  "in effect" is the exact failure this layer exists to prevent.
+  "in effect" is the exact failure this layer exists to prevent - and the flag itself rots if
+  nobody watches it: the running server reported `[('role', True), ('agent', False), ('skill',
+  True)]` after the agent run path had already moved onto the table, and no test caught it because
+  the fixture pack had no agent unit. The pack now ships `agents/report-analyst.md`, install
+  asserts `served=true`, and uninstall asserts the unit leaves the table - presence asserted before
+  absence, so the second half cannot be passing because the unit was never there.
 - Skills are wired through too, and only after **replacing a vendor implementation**: Eino's own
   backend accepts one `BaseDir`, so a skill inside a bundle was structurally unreachable.
   `internal/einoskill` implements that two-method backend over the capability table instead (no
@@ -271,8 +276,15 @@ one identity scheme and one live table:
   409 naming its owner instead of a same-named shadow copy in the built-in directory. Wiring only
   the run path leaves "a bundled skill is used by agents but invisible in the list" - that state
   was measured on the running server (23 → 24 after install → 23 after unplug), not inferred.
-  Agents and tools still re-scan their directories per run; `bundles/README.md` states the gap per
-  kind.
+  Markdown agents are wired through as well: `agents.LoadMarkdownAgentPaths` shares one parser with
+  the directory scan - parity is pinned by loading all 16 shipped `.md` files both ways and
+  requiring byte-identical results - and both the run path and the admin console use it, while
+  create/delete sync the table and a bundle-provided definition is readable but not writable
+  (409 naming its owner). A side effect of the identity scheme: a bundle cannot smuggle in a
+  second `orchestrator.md`, because the built-in scan already owns `agent/orchestrator` and the
+  install is refused long before the loader's "at most one orchestrator" rule could turn it into a
+  failure for every run. Only tool recipes still load via `/config/apply` (they must clear the
+  approval floor first); `bundles/README.md` states the gap per kind.
 
 ## 13. Not implemented yet
 

@@ -58,6 +58,7 @@ type unitView struct {
 // plainly instead of letting "installed" read as "live".
 var servedKinds = map[plugin.Kind]string{
 	plugin.KindRole:  "",
+	plugin.KindAgent: "",
 	plugin.KindSkill: "",
 }
 
@@ -66,12 +67,10 @@ func unitServed(u plugin.Unit) (bool, string) {
 		return true, gap
 	}
 	switch u.Kind {
-	case plugin.KindAgent:
-		return false, "markdown agents are still loaded by scanning agents_dir; the table entry is tracked but not served"
 	case plugin.KindTool:
 		return false, "tool recipes load through POST /config/apply and the capability registry, which requires the operator approval floor; not wired to the table yet"
 	case plugin.KindMCP:
-		return false, "external MCP servers have their own live add/remove path; per-tool capability registration is still open"
+		return false, "external MCP servers add and remove through their own live manager, which registers a capability spec per tool; the table tracks the declaration but does not feed that path"
 	default:
 		return false, "no run path reads this kind from the capability table yet"
 	}
