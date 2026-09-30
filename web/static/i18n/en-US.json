@@ -146,7 +146,7 @@
     "binaryMissing": "Binary missing",
     "rollbackPresent": "Rollback point exists",
     "rollbackMissing": "No rollback point",
-    "notChecked": "The remote has not been consulted: opening this page makes no network call. Press Check for updates to fetch.",
+    "notChecked": "The remote has not been consulted yet. Opening this page queues one automatic check (once per session); press Check for updates to ask again any time.",
     "checkBtn": "Check for updates",
     "checking": "Checking the remote...",
     "checkFailed": "Check failed: {{reason}}",

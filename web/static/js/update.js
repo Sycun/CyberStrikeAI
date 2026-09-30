@@ -20,10 +20,31 @@ let updateBusy = false;          // 页面自己发着的动作请求（检查 /
 let updateChecking = false;      // 只影响「检查更新」按钮的措辞
 let updatePollTimer = null;
 let updateRestartChoice = false; // 勾选框要在轮询重绘之后仍然是勾着的
+let updateAutoCheckDone = false; // 每个会话只自动查一次远端，不每次重绘都去打扰
 
 function updateT(key, opts) {
     const k = 'update.' + key;
     return typeof window.t === 'function' ? window.t(k, opts) : k;
+}
+
+// scheduleUpdateAutoCheck answers the question the page exists to answer, without making
+// somebody press a button to find out whether the button would do anything.
+//
+// The constraints are what keep it polite: one check per session, only for a tree that is
+// actually a git installation, never while a job is already running, and always after the
+// first paint - the page's own claim has to reach the screen before the network does. A
+// failure is not retried here: the page says so plainly, and the operator presses 检查更新
+// when they want to ask again.
+function scheduleUpdateAutoCheck() {
+    if (updateAutoCheckDone) return false;
+    const status = updateConsoleState && updateConsoleState.status;
+    if (!status || !status.installed || isUpdateJobRunning()) return false;
+    updateAutoCheckDone = true;
+    setTimeout(() => {
+        if (!isUpdateConsoleActive()) return;
+        checkForUpdates();
+    }, 1200);
+    return true;
 }
 
 function isUpdateConsoleActive() {
@@ -146,6 +167,7 @@ async function loadUpdateConsole() {
     renderUpdateConsole();
     // 开页就有一次在跑的更新（比如另开一个标签页点的），接着看它，别让人以为没在动。
     if (isUpdateJobRunning()) startUpdatePolling();
+    scheduleUpdateAutoCheck();
 }
 
 // 只有一个定时器：不清就重新 arm，是"页面开两次之后两条轮询往同一份日志里写"的来路。

@@ -146,7 +146,7 @@
     "binaryMissing": "本机没有二进制",
     "rollbackPresent": "有可回滚点",
     "rollbackMissing": "无可回滚点",
-    "notChecked": "还没查过远端：打开本页不会联网，点「检查更新」才会去 fetch。",
+    "notChecked": "还没查过远端。进入本页后会自动查一次（每个会话只查一次）；也可以随时点「检查更新」。",
     "checkBtn": "检查更新",
     "checking": "正在检查远端…",
     "checkFailed": "检查失败：{{reason}}",

@@ -201,6 +201,18 @@ function harness(options) {
             const t = timers.find(x => x.id === id);
             if (t) t.cleared = true;
         },
+        // The page schedules one deferred remote check; a harness without setTimeout would make
+        // that code path untestable rather than absent, so the browser global is provided and the
+        // timer is recorded instead of fired.
+        setTimeout(fn, ms) {
+            const t = { id: nextTimerId++, fn, ms, cleared: false, deferred: true };
+            timers.push(t);
+            return t.id;
+        },
+        clearTimeout(id) {
+            const t = timers.find(x => x.id === id);
+            if (t) t.cleared = true;
+        },
         window: {
             // Resolved against the same zh-CN.json the browser loads, with {{var}} interpolated the
             // way i18next does. A key the dictionary does not carry comes back as the raw key, so a
@@ -250,7 +262,8 @@ function harness(options) {
             setBusy(v) { updateBusy = v; },
             getRestartChoice() { return updateRestartChoice; },
             getPollTimer() { return updatePollTimer; },
-            getCheckDone() { return updateCheck.done; }
+            getCheckDone() { return updateCheck.done; },
+            autoCheckDone() { return updateAutoCheckDone; }
         };
     `, sandbox);
 
@@ -276,6 +289,10 @@ function harness(options) {
         sandbox, nodes, calls, toasts, confirms, timers, flush, runHandler, extractHandlers, responses,
         api: sandbox.api,
         vars: sandbox.vars,
+        // The deferred auto-check timer is inspected from this side: `timers` is the harness's own
+        // array, not something the page's context can see.
+        deferredTimers() { return timers.filter(t => t.deferred && !t.cleared).map(t => t.ms); },
+        fireDeferred() { timers.filter(t => t.deferred && !t.cleared).forEach(t => { t.cleared = true; t.fn(); }); },
         html() { return nodes.get('update-console').innerHTML; },
         fire(name, thisArg) {
             const all = extractHandlers(h.html());
@@ -290,7 +307,7 @@ function harness(options) {
             if (v) node.classList.add('active'); else node.classList.remove('active');
         },
         setConfirm(v) { confirmAnswer = v; },
-        liveTimers() { return timers.filter(t => !t.cleared); },
+        liveTimers() { return timers.filter(t => !t.cleared && !t.deferred); },
         tick() {
             const live = h.liveTimers();
             if (!live.length) throw new Error('no poll timer is armed');
@@ -904,4 +921,49 @@ test('the rendered handlers are executed, and they only hit the documented endpo
         'apply posts once, then the progress read goes to the job endpoint');
     assert.equal(h.calls[0].method, 'POST');
     assert.equal(h.calls[1].method, 'GET');
+});
+
+// The page now asks the remote by itself, once, so the operator arrives at an answer rather
+// than at a button. These pin the politeness of that: one check per session, only for a tree
+// that can be updated, never on top of a running job - and the copy must describe what the
+// code actually does.
+test('opening the page schedules exactly one deferred remote check', async () => {
+    const h = await harness({
+        status: statusOf({ installed: true }),
+        checkedStatus: statusOf({ behind: 3, incomingTotal: 3, updateAvailable: true }),
+    });
+    assert.deepStrictEqual(h.deferredTimers(), [1200], 'one deferred check must be queued');
+    h.fireDeferred();
+    await h.flush();
+    const checks = h.calls.filter(c => c.method === 'POST' && c.url === '/api/system/update/check');
+    assert.strictEqual(checks.length, 1, 'the deferred timer must ask the remote exactly once');
+    assert.match(h.html(), /3/, 'the answer must be on screen without another click');
+
+    // Re-entering the page in the same session does not go back to the remote again.
+    h.api.loadUpdateConsole();
+    await h.flush();
+    assert.deepStrictEqual(h.deferredTimers(), [], 'the auto check is once per session, not per render');
+    assert.strictEqual(h.vars.autoCheckDone(), true);
+});
+
+test('a tree that cannot be updated is never phoned home for', async () => {
+    const h = await harness({ status: statusOf({ installed: false }) });
+    assert.deepStrictEqual(h.deferredTimers(), [], 'no auto check when this is not a git installation');
+    assert.strictEqual(h.calls.filter(c => c.url === '/api/system/update/check').length, 0);
+});
+
+test('an update already running is not disturbed by an auto check', async () => {
+    const h = await harness({ status: statusOf({ installed: true }), job: runningJob });
+    assert.deepStrictEqual(h.deferredTimers(), [], 'a running job is already the story on screen');
+    assert.strictEqual(h.vars.autoCheckDone(), false, 'a skipped check must not spend the session quota');
+});
+
+test('the hint describes the automatic check instead of denying any network use', () => {
+    for (const [label, dict] of [['zh-CN', zh], ['en-US', en]]) {
+        const text = dict.update.notChecked;
+        assert.ok(text, label + ' lost the notChecked copy');
+        assert.doesNotMatch(text, /不会联网|makes no network call|no network call/,
+            label + ' still promises the page never touches the network');
+        assert.match(text, /自动|automatic|automatically/, label + ' must mention the automatic check');
+    }
 });
