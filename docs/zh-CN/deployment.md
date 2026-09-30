@@ -179,6 +179,24 @@ SQLite 热备份时最好先停止服务，或至少复制 `*.db`、`*.db-wal`�
 
 ## 升级
 
+**优先用平台自带的「一键更新」**（控制台「平台管理 → 一键更新」、`POST /api/system/update/apply`、
+或键盘上的 `./cyberstrike-ai -update`）。它拉的是**这个安装目录自己跟踪的远端**：fetch → 快进合并 →
+`go build` → 原子换二进制（旧的留作 `cyberstrike-ai.prev`），并把 `roles/ skills/ tools/ agents/
+bundles/ knowledge_base/ data/ config.yaml` 等运维者内容先暂存再放回，结果里点名保留了哪些文件。
+跑 fork 时这是唯一不会"用别人的代码覆盖自己"的路径；本地源码有改动或分支已分叉时它会拒绝并说明原因，
+而不是硬来。细节见 [开发者指南](developer-guide.md) 的「一键更新」一节。
+
+`upgrade.sh` 仍然可用，它现在只是这条实现的薄壳，并按安装形态分两条路：
+
+- **本目录是 git 工作树**：直接调用 `./cyberstrike-ai -update`（还没有二进制时先
+  `go build -o cyberstrike-ai ./cmd/server` 再更新；两者都没有就明确报错并说明怎么装 Go）。
+  `--check` 只检查不改动，走 `-check-update`。
+- **本目录不是 git 工作树**（Release tarball 安装）：才回落到"下载 Release 包 + `rsync --delete`"的老路径。
+  此时源码仓库取自 `--repo owner/name` 或环境变量 `GITHUB_REPO`，两者都没给才用内置默认值，
+  并且会打一行警告说明代码正从哪个仓库取。`config.yaml`、`data/`、`tools/`、`roles/`、`skills/`、
+  `agents/`、`bundles/`、`venv/`（`--no-venv` 可关闭）以及回滚点 `.update-backup/`、`.update-state.json`、
+  `cyberstrike-ai.prev` 都在 rsync 的保留名单里，不会被 `--delete` 顺手删掉。
+
 推荐流程：
 
 1. 停止服务。
@@ -187,11 +205,18 @@ SQLite 热备份时最好先停止服务，或至少复制 `*.db`、`*.db-wal`�
 4. 保留原配置，按新版 `config.yaml` 示例补新增字段。
 5. 启动服务，检查登录、模型测试、工具列表、知识库状态。
 
-仓库提供 `upgrade.sh`，适合无兼容性问题的快速升级；生产环境仍建议先备份再运行。
+一键更新只做 3（以及需要时的换二进制），1/2/4/5 仍是运维者的判断：数据库结构变更不会因为二进制换了
+就自动兼容。`upgrade.sh` 适合无兼容性问题的快速升级；生产环境仍建议先备份再运行。
+Python 依赖方面：`venv/` 由 `run.sh` 自动创建和管理，保留它就不会被升级打掉；用 `--no-venv` 才会删除并由
+`run.sh` 重装。
 
 ## 回滚
 
-回滚时同时恢复：
+一键更新自带回滚点：`./cyberstrike-ai -update-rollback` 或页面上的回滚按钮，会撤到那次更新前的提交并把
+`cyberstrike-ai.prev` 换回原位；它只在"HEAD 仍是那次更新写下的提交"时才执行，之后的工作不会被顺手抹掉。
+被暂存的运维者内容在 `.update-backup/<时间戳>/` 里也留有一份。
+
+除此之外，回滚时同时恢复：
 
 - 上一版本二进制或代码。
 - 升级前的 `config.yaml`。

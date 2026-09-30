@@ -268,7 +268,24 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   所以 `TestBuiltInCapabilityScanCoversEveryServedKind` 同时要求：`plugin.Kinds` 里每个 kind
   要么被扫描、要么在本测试里写明豁免理由。差距逐行见 `bundles/README.md` 的表。
 
-## 十三、尚未实现（下一阶段）
+## 十三、更新这套安装自己
+
+让这台机器"变得不一样"的入口有两个，它们不是一回事，边界写在实现里：
+
+- **能力包**（`plugins:install`）改的是**能力面**：装进 `bundles/` 的单元写进能力表，包声明的 MCP 只登记不启动。
+- **一键更新**（`update:apply`）改的是**代码**：把这个目录自己跟踪的远端快进 → `go build` → 原子换二进制
+  （旧的留作 `cyberstrike-ai.prev`），远端按 `mine → origin → upstream` 在本地已有的 remote 里取，
+  没有任何写死的第三方仓库地址。
+
+两条线不交叉，这一点是设计上要求的：一键更新不做能力表的事，也不会因为"某个文件是包声明过的"就跳过保护——
+它只按 protected 清单（`roles/ skills/ tools/ agents/ bundles/ knowledge_base/ data/ log/ venv/
+config.yaml .env`）办事，先把本次真会写到的路径暂存进 `.update-backup/<时间戳>/`，合并后原样放回，
+`keptContent` 逐个点名，绝不静默丢弃；能力表所在的 `data/` 因此在更新后原样保留，装过的包不会因为更新代码而消失。
+反过来，能力包也从不参与"从哪里取代码"。
+拒绝语义（本地源码改动、分支分叉、无 Go 工具链、非 git 工作树）与三种入口（页面 / REST / CLI）、
+回滚与重启的两种情形，见 [开发者指南](developer-guide.md) 的「一键更新」一节。
+
+## 十四、尚未实现（下一阶段）
 
 - P6 剩余：数据层按域切 Store（`internal/store` 已有 `NotificationReads`、`HITL`、`Session`
   与共享的会话可见性子句；`Session` 现也拥有 `messages` 的内容写回与两条 CASE 追加，

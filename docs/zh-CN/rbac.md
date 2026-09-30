@@ -82,6 +82,7 @@ AI 测试角色不是安全授权边界。即使选择了“渗透测试”角�
 | C2 | `c2:read`、`c2:write`、`c2:delete` |
 | MCP | `mcp:read`、`mcp:execute`、`mcp:write`、`mcp:external:execute` |
 | 能力插件 | `plugins:read`、`plugins:write`、`plugins:install` |
+| 一键更新（本机源码） | `update:read`、`update:apply` |
 | 知识库 | `knowledge:read`、`knowledge:write`、`knowledge:delete` |
 | Skills | `skills:read`、`skills:write`、`skills:delete` |
 | Markdown Agents | `agents:read`、`agents:write`、`agents:delete` |
@@ -112,6 +113,8 @@ AI 测试角色不是安全授权边界。即使选择了“渗透测试”角�
 - 能力插件是**三项**：`plugins:read` 看装了什么；`plugins:write` 启停或摘除单个单元；
   `plugins:install` 安装/卸载整个能力包。安装单列是因为装一个包会改变 Agent 能做什么，
   不该由"能改某个 skill"的权限顺带取得。
+- 一键更新是**两项**：`update:read` 看本机安装的版本与远端差集；`update:apply` 拉自己的远端、重编译并换掉
+  平台二进制。写侧还要求会话是 `all` scope——一台机器一份源码，`assigned`/`own` 不该能移动别人正在跑的代码。
 - `robot:write` 管理机器人配置和测试入口；机器人聊天本身使用绑定用户或服务账号的业务权限。
 
 ---
@@ -157,6 +160,7 @@ project:write → own
 - 知识库写操作（搜索除外）。
 - HITL 全局白名单、默认审核方和审计策略。
 - C2 Profile 写操作。
+- 一键更新的写操作（`check`/`apply`/`rollback`，即 `update:apply`）。
 - 部分全局监控统计。
 
 ---

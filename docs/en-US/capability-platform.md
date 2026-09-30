@@ -349,7 +349,30 @@ one identity scheme and one live table:
   scanned or explicitly exempted with a reason. `bundles/README.md` states the remaining gap per
   kind.
 
-## 13. Not implemented yet
+## 13. Updating the installation itself
+
+Two surfaces make a machine "different from the release", and they are not the same thing - the
+boundary is written into the implementation:
+
+- **Bundles** (`plugins:install`) change the **capability surface**: units land in `bundles/`, are
+  written to the capability table, and MCP servers a pack declares are recorded, never started.
+- **One-click update** (`update:apply`) changes the **code**: it fast-forwards the remote this
+  directory itself tracks, runs `go build` and swaps the binary atomically (keeping the old one as
+  `cyberstrike-ai.prev`). The remote is chosen among the ones this tree already has, in the order
+  `mine`, `origin`, `upstream` - no third-party repository is hardcoded anywhere.
+
+The two do not cross, and that is a design requirement rather than an accident: the update does not
+touch the capability table, and it does not skip protection because a file was "declared by a pack".
+It works purely off the protected list (`roles/ skills/ tools/ agents/ bundles/ knowledge_base/ data/
+log/ venv/ config.yaml .env`), first copying aside only the paths this update would actually write
+into `.update-backup/<timestamp>/`, then putting them back after the merge, naming each one in
+`keptContent` instead of dropping it silently. The table lives under `data/`, so installing a pack
+survives an update of the code. A bundle in turn never decides where the code comes from.
+For the refusal semantics (local source edits, diverged branch, missing Go toolchain, non-git
+directory), the three entry points (page / REST / CLI), rollback and the two restart cases, see the
+one-click update section of [the developer guide](developer-guide.md).
+
+## 14. Not implemented yet
 
 - P6 remainder: per-domain Store extraction (`internal/store` already owns notification reads, the
   `hitl_interrupts` surface the HTTP layer uses, the shared conversation-visibility clause, and the

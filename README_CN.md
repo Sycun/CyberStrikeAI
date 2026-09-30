@@ -268,16 +268,26 @@ go build -o cyberstrike-ai cmd/server/main.go
 
 ### 版本升级与兼容性
 
+**优先用平台自带的「一键更新」**（控制台「平台管理 → 一键更新」，或 `./cyberstrike-ai -update` /
+`-check-update` / `-update-rollback`）：它拉的是**本安装目录自己跟踪的远端**，快进后重编译并原子换二进制，
+你的 `roles/skills/tools/agents/bundles/data/config.yaml` 会被原样保留（结果里逐个点名保留了什么），
+本地源码有改动或分支已分叉时它会拒绝而不是覆盖。详见 [部署指南](docs/zh-CN/deployment.md)。
+
+`upgrade.sh` 仍然可用：本目录是 git 工作树时它就是上面那条命令的薄壳；不是 git 工作树（tarball 安装）时
+才回落到"下载 GitHub Release 包 + rsync"的老路径，此时源码仓库由 `--repo owner/name` 或 `GITHUB_REPO`
+决定（都不给才用内置默认值，并会警告说明代码来自哪个仓库）。
+
 1. （首次使用）启用脚本：`chmod +x upgrade.sh`
-2. 一键升级：`./upgrade.sh`（可选参数：`--tag vX.Y.Z`、`--no-venv`、`--yes`）。本地的 `tools/`、`roles/`、`skills/` 会始终保留不被覆盖。
-3. 脚本会备份你的 `config.yaml` 和 `data/`，从 GitHub Release 升级代码，更新 `config.yaml` 的 `version` 字段后重启服务。
+2. 升级：`./upgrade.sh`（可选参数：`--check`、`--tag vX.Y.Z`、`--repo owner/name`、`--no-venv`、`--yes`）。本地的 `tools/`、`roles/`、`skills/`、`agents/`、`bundles/` 会始终保留不被覆盖。
+3. 脚本会备份你的 `config.yaml` 和 `data/`，升级代码，更新 `config.yaml` 的 `version` 字段后重启服务。
 
 推荐的一键指令：
 `chmod +x upgrade.sh && ./upgrade.sh --yes`
 
-如果升级失败，可以从 `.upgrade-backup/` 恢复，或按旧方式手动拷贝 `/data` 和 `config.yaml` 后再运行 `./run.sh`。
+如果升级失败：git 工作树里直接 `./cyberstrike-ai -update-rollback`（回到那次更新前的提交与二进制）；
+tarball 安装则从 `.upgrade-backup/` 恢复，或手动拷回 `data/` 和 `config.yaml` 后再运行 `./run.sh`。
 
-依赖/提示：
+依赖/提示（只有 tarball 路径用得到）：
 * 需要 `curl` 或 `wget` 用于下载 GitHub Release 包。
 * 建议/需要 `rsync` 用于安全同步代码。
 * 如果遇到 GitHub API 限流，运行前设置 `export GITHUB_TOKEN="..."` 再执行 `./upgrade.sh`。

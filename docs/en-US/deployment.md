@@ -75,6 +75,62 @@ proxy_set_header Upgrade $http_upgrade;
 proxy_set_header Connection "upgrade";
 ```
 
+## Upgrading
+
+**Prefer the platform's own one-click update** (console Platform management -> One-click update,
+`POST /api/system/update/apply`, or `./cyberstrike-ai -update` at a keyboard). It pulls **the remote
+this install directory already tracks**: fetch, fast-forward, `go build`, atomic binary swap (the old
+binary is kept as `cyberstrike-ai.prev`), while operator content - `roles/ skills/ tools/ agents/
+bundles/ knowledge_base/ data/ config.yaml` - is put aside and restored, and the result names every
+file it kept. For a fork this is the only path that does not overwrite you with somebody else's code;
+when source is modified locally or the branch has diverged it refuses and says why instead of forcing.
+See [the developer guide](developer-guide.md) for the full semantics.
+
+`upgrade.sh` still works and is now a thin shell over that implementation, with two paths decided by
+the installation kind:
+
+- **git work tree**: calls `./cyberstrike-ai -update` directly (building
+  `go build -o cyberstrike-ai ./cmd/server` first when there is no binary yet, and failing with
+  instructions on installing Go when there is neither). `--check` inspects only, through
+  `-check-update`.
+- **not a git work tree** (Release tarball install): only here does it fall back to downloading a
+  Release tarball and `rsync --delete`-ing it in. The source repository then comes from
+  `--repo owner/name` or the `GITHUB_REPO` environment variable, and the built-in default is used only
+  when neither is given - with a warning naming which repository the code is coming from.
+  `config.yaml`, `data/`, `tools/`, `roles/`, `skills/`, `agents/`, `bundles/`, `venv/` (skippable with
+  `--no-venv`) and the rollback points `.update-backup/`, `.update-state.json`, `cyberstrike-ai.prev`
+  are on the rsync keep list, so `--delete` cannot remove them.
+
+Recommended flow either way:
+
+1. Stop the service.
+2. Back up `config.yaml`, `data/` and your custom directories.
+3. Pull or replace the new code/binary.
+4. Keep your own configuration and add fields the new `config.yaml` example introduced.
+5. Start the service and check login, model test, tool list and knowledge-base status.
+
+The one-click update performs step 3 (plus the rebuild); 1, 2, 4 and 5 stay operator decisions - a
+database migration does not become compatible just because the binary changed. `upgrade.sh` suits
+quick upgrades without compatibility risk; in production still back up first. Python dependencies:
+`venv/` is created and managed by `run.sh`, and keeping it means an upgrade does not remove it - only
+`--no-venv` deletes it and lets `run.sh` reinstall.
+
+## Rollback
+
+The one-click update leaves its own rollback point: `./cyberstrike-ai -update-rollback`, or the button
+on the page, goes back to the commit before that update and puts `cyberstrike-ai.prev` back. It runs
+only while HEAD is still the commit that update wrote, so work done afterwards is not discarded.
+Content that was put aside also survives under `.update-backup/<timestamp>/`.
+
+Beyond that, roll back together:
+
+- The previous binary or code.
+- The pre-upgrade `config.yaml`.
+- The pre-upgrade `data/`.
+
+If the new version already wrote database schema changes, rolling back the binary alone may not be
+enough; restore the whole backup.
+
 ## Deployment Decision Table
 
 | Scenario | Recommended setup | Key settings | Avoid |

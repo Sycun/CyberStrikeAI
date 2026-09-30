@@ -75,6 +75,7 @@ Permissions use `module:action`. Common actions are `read`, `write`, `delete`, a
 | C2 | `c2:read`, `c2:write`, `c2:delete` |
 | MCP | `mcp:read`, `mcp:execute`, `mcp:write`, `mcp:external:execute` |
 | Capability plug-ins | `plugins:read`, `plugins:write`, `plugins:install` |
+| One-click update (local source) | `update:read`, `update:apply` |
 | Knowledge | `knowledge:read`, `knowledge:write`, `knowledge:delete` |
 | Skills | `skills:read`, `skills:write`, `skills:delete` |
 | Markdown Agents | `agents:read`, `agents:write`, `agents:delete` |
@@ -105,6 +106,11 @@ Important distinctions:
   `plugins:write` enables/disables or detaches a single unit, and `plugins:install` installs or
   uninstalls a whole bundle. Installing is broken out because a bundle changes what the agent can
   do, and that should not come bundled with the right to edit one skill.
+- One-click update is two permissions: `update:read` shows the installed version and the gap against
+  the remote, while `update:apply` pulls this installation's own repository, rebuilds the platform
+  binary and swaps it. The mutating side additionally requires the session to hold that permission
+  with `all` scope - one machine has one source tree, so an `assigned`/`own` session must not be able
+  to move the code everybody else is running.
 - `robot:write` manages robot configuration and the test endpoint. Chatbot conversations use the bound user or configured service account's business permissions.
 
 ---
@@ -149,6 +155,7 @@ Some definitions have no owner. Their mutations require the corresponding permis
 - Knowledge mutations other than search.
 - Global HITL allowlist, reviewer, and audit policy.
 - C2 Profile mutations.
+- One-click update mutations (`check`/`apply`/`rollback`, i.e. `update:apply`).
 - Some global monitor statistics.
 
 ---

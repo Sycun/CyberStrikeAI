@@ -64,6 +64,69 @@ cp ~/csai-测试版/config.example.yaml ~/csai-测试版/config.yaml  # 端口�
 同样只在 verify 里提示、不删（那是点验的输入，不是源码）。
 测试树位置可用 `CSAI_TESTTREE` 或 `make test-gates TESTTREE=...` 覆盖。
 
+## 一键更新：让安装目录更新它自己的源码
+
+部署现场的日常是"我的 fork 又前进了几十个提交 → 把这套安装带上去 → 重新编译 → 换二进制 → 重启"。
+这件事以前只有 `upgrade.sh`，而它写死了别人的仓库：对跑 fork 的人来说"升级"等于"用别人的代码覆盖自己"。
+现在这个能力做进了平台自己（`internal/update`），页面、REST 与 CLI 三条入口共用同一份实现，
+所以它们给出的拒绝理由不可能各说各话。
+
+### 三种入口
+
+| 入口 | 怎么用 |
+|---|---|
+| 控制台 | 「平台管理 → 一键更新」（`#/system-update`）。打开页面只读本机状态、不联网；点「检查更新」才去 fetch；「一键更新」发起任务并轮询进度；页面另有"更新完成后退出进程"勾选与回滚按钮 |
+| REST | `GET /api/system/update`（磁盘现状，不联网）、`POST /api/system/update/check`（fetch 后报告差集）、`POST /api/system/update/apply`（`202` 返回 `job_id`，用 `GET /api/system/update/job` 轮询）、`POST /api/system/update/rollback` |
+| CLI | `./cyberstrike-ai -check-update`、`./cyberstrike-ai -update`、`./cyberstrike-ai -update-rollback`。安装目录 = `--config` 所在目录，未给 `--config` 时是当前目录 |
+
+权限是 `update:read`（GET）与 `update:apply`（四个写接口）。`update:apply` 还要求会话是 global（`all` scope）：
+一台机器只有一份源码，`assigned`/`own` scope 的账号不该能移动别人正在跑的代码。
+
+### 它从哪里取代码
+
+从**这个目录自己的远端**，没有任何写死的第三方仓库地址。远端按 `mine → origin → upstream` 的次序在这个目录已有的
+remote 里取（这是本项目实际的克隆形态：自己的 fork 叫 `mine` 并跟踪自己的工作，上游只留作参考），
+分支默认取当前分支 `@{upstream}` 指向的名字（没有 upstream 时用当前分支名）。
+`upgrade.sh` 现在只是这条实现的薄壳：本目录是 git 工作树时它直接调 `./cyberstrike-ai -update`。
+
+### 四种拒绝场景
+
+| 场景 | reason | 含义与处理 |
+|---|---|---|
+| 本地改过**产品源码**（不在 protected 清单里的路径） | `local_source_edits` | 一键更新是"下载"，不是"替你决定冲突"。点名文件，先提交或还原再重试 |
+| 分支与远端**分叉**（本地既领先又落后） | `diverged` | 那是合并决策，给出 ahead/behind 数字；手工处理后再点 |
+| 本机没有 Go 工具链 | `no_toolchain` | **源码照样更新**，只有二进制没换；装好 `go` 再点一次即可补上 |
+| 这个目录不是 git 工作树 | `not_a_repo`（状态里 `installed: false`） | tarball 安装的目录没有可快进的远端，按发布包方式更新 |
+
+`apply` 是异步的，所以它总是先回 `202`，上表的拒绝出现在轮询到的 `job.failure`（`reason`/`message`/`items`）里；
+`rollback` 是同步的，拒绝直接落到状态码（`local_source_edits`、`diverged`、`no_state`、`moved_since_update`、
+`no_binary` → 409，其余 → 400）。其他失败（`merge_failed`、`build_failed`、`swap_failed`）带着 git/go 的原始输出；
+编译失败时二进制保持原版本，而源码已移动、状态文件已写好，因此仍然可以回滚。
+
+### 运维者的内容如何被保留
+
+`roles/ skills/ tools/ agents/ bundles/ knowledge_base/ data/ log/ venv/ config.yaml .env` 是**运维者的内容**，
+判定在 `update.Protected`。合并前，只有本次更新**确实会写到**的那些路径被复制到
+`.update-backup/<时间戳>/` 并从工作树移开（你多出来的、上游没动的目录连碰都不碰），合并后再原样放回，
+于是"更新代码、留下我的工作"成立。结果里的 `keptContent` 逐个点名被保留的文件——绝不静默丢弃：
+当上游与你在同一个文件上都有改动，落地的是你的版本，而这件事写在结果里。
+包（bundle）声明的 MCP 与凭据跟这条路径无关，那由能力表与插件流程负责（见 [capability-platform.md](capability-platform.md)）。
+
+### 回滚
+
+`./cyberstrike-ai -update-rollback` 或页面按钮：`git reset --hard` 回到那次更新前的提交，
+并把换二进制时留下的 `cyberstrike-ai.prev` 放回原位，随后删除 `.update-state.json`。
+它会拒绝的情形：没有更新记录（`no_state`）、没有留下旧二进制（`no_binary`）、记录里的提交在本仓库不存在
+（`bad_state`）、**HEAD 自那次更新之后又动过**（`moved_since_update`：回滚只该撤到更新前，不该顺手抹掉之后的工作）、
+以及存在本地源码改动（`local_source_edits`）。
+
+### 重启的两种情形
+
+只有请求显式带 `restart: true` **并且**本次启动装配了重启钩子时，进程才会在优雅 `Shutdown` 之后以 0 退出；
+是否真的"再起来"取决于外部守护（systemd、`run.sh`），页面文案也照这个说，不许诺一次可能不会发生的重启。
+其余情况只报告 `needsRestart`，运行的仍是旧二进制。`restart: true` 而本次启动没有钩子时直接 400，
+而不是把服务停掉然后声称重启过了。
+
 ## 路由
 
 路由由 `internal/app` 的**分域注册器**装配：`setupRoutes(routeDeps)` 只负责建组、挂中间件并逐个调用

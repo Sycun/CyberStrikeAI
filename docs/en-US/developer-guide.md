@@ -68,6 +68,81 @@ compared, never deleted - and a bundle dropped into its `bundles/` on purpose is
 removed, because that is verification input rather than source. Override the location with
 `CSAI_TESTTREE` or `make test-gates TESTTREE=...`.
 
+## One-Click Update: Letting an Installation Update Its Own Source
+
+On a deployed machine the routine is "my fork moved forward by a few dozen commits -> bring this
+installation up -> rebuild -> swap the binary -> restart". This used to be only `upgrade.sh`, which
+pointed at one fixed upstream repository, so for anyone running a fork "upgrade" meant "overwrite
+yourself with somebody else's code". The capability now lives in the platform (`internal/update`)
+and the console page, the REST API and the CLI share one implementation, so the three surfaces
+cannot disagree about why an update was refused.
+
+### Three entry points
+
+| entry | how it is used |
+|---|---|
+| console | Platform management -> One-click update (`#/system-update`). Opening the page reads the local tree only and does not go online; **Check** is what performs the fetch; **Update** starts a job the page polls; the page also carries the "exit after updating" option and a rollback button |
+| REST | `GET /api/system/update` (state on disk, no network), `POST /api/system/update/check` (fetch, then report the gap), `POST /api/system/update/apply` (`202` with `job_id`, polled through `GET /api/system/update/job`), `POST /api/system/update/rollback` |
+| CLI | `./cyberstrike-ai -check-update`, `./cyberstrike-ai -update`, `./cyberstrike-ai -update-rollback`. The install root is the directory holding `--config`, or the current directory when `--config` was not given |
+
+Permissions are `update:read` (GET) and `update:apply` (the four mutating endpoints). `update:apply`
+additionally requires a global (`all` scope) session: one machine has one source tree, and an
+`assigned`/`own` session must not be able to move the code everybody else is running.
+
+### Where the code comes from
+
+From **the remote this directory already tracks**; no third-party repository is hardcoded. The remote
+is picked from the ones this tree has, in the order `mine`, `origin`, `upstream` (that matches how this
+project is actually cloned: your own fork is `mine` and tracks your work, the upstream is kept for
+reference), and the branch defaults to what the current branch's `@{upstream}` names (the current
+branch itself when there is no upstream). `upgrade.sh` is now a thin shell over the same
+implementation: when this directory is a git work tree it just calls `./cyberstrike-ai -update`.
+
+### The four refusals
+
+| situation | reason | meaning and what to do |
+|---|---|---|
+| product **source** modified locally (a path outside the protected list) | `local_source_edits` | An update is a download, not a conflict decision. The file names are listed; commit or restore them first |
+| branch **diverged** from its remote (ahead and behind at once) | `diverged` | That is a merge decision; the counts are reported so you can resolve it by hand |
+| no Go toolchain on this box | `no_toolchain` | **The source still updates**; only the binary is not swapped. Install `go` and press update again to finish |
+| this directory is not a git work tree | `not_a_repo` (`installed: false` in the status) | A tarball installation has no remote to fast-forward; update it through the release package |
+
+`apply` is asynchronous, so it always answers `202` first and the refusals above arrive in the polled
+`job.failure` (`reason` / `message` / `items`). `rollback` is synchronous and maps refusals to status
+codes (`local_source_edits`, `diverged`, `no_state`, `moved_since_update`, `no_binary` -> 409, anything
+else -> 400). Other failures (`merge_failed`, `build_failed`, `swap_failed`) carry git's or the
+compiler's own output; a failed build leaves the previous binary in place while the source has already
+moved and the state file is written, so it stays rollback-able.
+
+### How operator content survives
+
+`roles/ skills/ tools/ agents/ bundles/ knowledge_base/ data/ log/ venv/ config.yaml .env` belong to
+the **operator** (`update.Protected` is the judge). Before the merge, only those of those paths the
+update actually writes to are copied into `.update-backup/<timestamp>/` and removed from the tree -
+your extra directories that upstream never touched are not disturbed - and they are put back
+afterwards, which is what "update the code, keep my work" means. The result names every file in
+`keptContent` instead of quietly dropping it: where both you and upstream changed the same file, the
+version that lands is yours, and the result says so. MCP servers and credentials declared by a bundle
+are unrelated to this path; they are handled by the capability table and the plugin flow (see
+[capability-platform.md](capability-platform.md)).
+
+### Rollback
+
+`./cyberstrike-ai -update-rollback`, or the button on the page: `git reset --hard` back to the commit
+the update came from, the binary kept as `cyberstrike-ai.prev` is put back, and `.update-state.json`
+is removed. It refuses when there is no update record (`no_state`), no kept binary (`no_binary`), the
+recorded commit is not in this repository (`bad_state`), **HEAD has moved since that update**
+(`moved_since_update` - a rollback undoes the update, not the work done after it), or source is
+modified locally (`local_source_edits`).
+
+### The two restart cases
+
+The process only stands down (graceful `Shutdown`, then exit 0) when the request explicitly says
+`restart: true` **and** a restart hook was wired at startup. Whether it actually comes back is up to a
+supervisor (systemd, `run.sh`), and the page says exactly that rather than promising a boot that may
+not happen. Otherwise the API only reports `needsRestart` and the old binary keeps running. Asking for
+a restart with no hook wired is a `400`, instead of stopping the service and claiming it restarted.
+
 ## Adding a Business Module
 
 Do not add only a handler. A complete module usually needs:
@@ -148,6 +223,9 @@ High-value tests:
   `CSAI_WRITE_ROUTE_GOLDEN=1 go test ./internal/routes -run TestWriteGolden`.
 - Capability policy: `internal/capability/policy_builtin.go` (built-in tools) or the `capability:` block in `tools/<name>.yaml` (recipes). A tool with no registered manifest is refused at execution; there is no coarse fallback. Built-ins need no Go change when they are recipes, and `make generate` refreshes the derived catalog, frontend enum and argument schemas.
 - Config apply: `internal/handler/config.go`
+- One-click update: `internal/update/` (status, apply, rollback), HTTP surface in
+  `internal/handler/update.go`, CLI switches in `cmd/server/update_cli.go`, thin shell in
+  `upgrade.sh`
 - OpenAPI: `internal/handler/openapi.go`
 - Tool executor: `internal/security/executor.go`
 - Skill package: `internal/skillpackage/`

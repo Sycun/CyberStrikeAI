@@ -269,17 +269,31 @@ If server logs show `client sent an HTTP request to an HTTPS server`, a client i
 
 ### Upgrade and Compatibility
 
-**CyberStrikeAI one-click upgrade:**
+**Prefer the platform's own one-click update** (console Platform management -> One-click update, or
+`./cyberstrike-ai -update` / `-check-update` / `-update-rollback`): it pulls **the remote this
+installation directory already tracks**, fast-forwards, rebuilds and swaps the binary atomically, keeps
+your `roles/skills/tools/agents/bundles/data/config.yaml` untouched (the result names every file it
+kept), and refuses - rather than overwrites - when source is modified locally or the branch has
+diverged. See the [deployment guide](docs/en-US/deployment.md).
+
+`upgrade.sh` still works: when this directory is a git work tree it is a thin shell over the command
+above; only a non-git (tarball) installation falls back to the old "download a GitHub Release and
+rsync it in" path, where the source repository comes from `--repo owner/name` or `GITHUB_REPO` and the
+built-in default applies only when neither is given (with a warning naming the repository).
+
+**CyberStrikeAI upgrade script:**
 1. (First time) enable the script: `chmod +x upgrade.sh`
-2. Upgrade with: `./upgrade.sh` (optional flags: `--tag vX.Y.Z`, `--no-venv`, `--yes`). Local `tools/`, `roles/`, and `skills/` are always preserved.
-3. The script will back up your `config.yaml` and `data/`, upgrade the code from GitHub Release, update `config.yaml`'s `version`, then restart the server.
+2. Upgrade with: `./upgrade.sh` (optional flags: `--check`, `--tag vX.Y.Z`, `--repo owner/name`, `--no-venv`, `--yes`). Local `tools/`, `roles/`, `skills/`, `agents/` and `bundles/` are always preserved.
+3. The script will back up your `config.yaml` and `data/`, upgrade the code, update `config.yaml`'s `version`, then restart the server.
 
 Recommended one-liner:
 `chmod +x upgrade.sh && ./upgrade.sh --yes`
 
-If something goes wrong, you can restore from `.upgrade-backup/` (or manually copy `/data` and `config.yaml` back) and run `./run.sh` again.
+If something goes wrong: inside a git work tree just run `./cyberstrike-ai -update-rollback` (back to
+the commit and binary kept before that update); for a tarball installation restore from
+`.upgrade-backup/` (or manually copy `data/` and `config.yaml` back) and run `./run.sh` again.
 
-Requirements / tips:
+Requirements / tips (tarball path only):
 * You need `curl` or `wget` for downloading Release packages.
 * `rsync` is recommended/required for the safe code sync.
 * If GitHub API rate-limits you, set `export GITHUB_TOKEN="..."` before running `./upgrade.sh`.
