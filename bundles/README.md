@@ -56,7 +56,7 @@ units:
 | role | ✅ 启动扫描 + 包 | ✅ `currentRoles` → 活配置快照（`internal/handler/live_config.go`） | ✅ |
 | skill | ✅ | ✅ `internal/einoskill` 用能力表实现 Eino 的 `skill.Backend` | ✅ |
 | agent | ✅ | ✅ 运行路径与管理台都走表（`agents.LoadMarkdownAgents`） | ✅ |
-| tool | ✅ | ⬜ 仅 `POST /config/apply` 生效 | ✅ 登记，但未生效（要过审批下限，见下） |
+| tool | ✅ | ✅ 配方清单由表驱动重建（`ToolLayer.Rebuild`，与 `POST /config/apply` 同一条序列） | ✅ 装完即重建 |
 | mcp | ✅ 每个远端工具一个身份（`LayerRemote`，按服务器成组装卸） | ✅ 授权按工具身份判定，判定不到再回到命名空间策略 | — |
 
 ## 外部 MCP 工具也有身份
@@ -93,8 +93,38 @@ units:
 两点不装作已完成：
 
 - 安装**只能**从 `<configDir>/bundles` 里挑，越界路径（`../`、绝对路径）一律 400。
-- `served:false` 是**响应里的字段**，不是文档里的脚注。一个包声明了 tool 配方而运行路径还不
-  从表里读工具时，接口就说"登记了、没生效"，而不是让"装好了"读起来像"能用了"。
+- `served:false` 是**响应里的字段**，不是文档里的脚注。现在还写着 `false` 的只有 mcp 一类：
+  远端服务器的活路径是自己的管理器，能力表只登记声明。让"装好了"读起来像"能用了"，
+  就是这一层存在的理由的反面。
+
+## tool 配方怎么接上表的
+
+配方清单原本只在两个地方产生：`config.Load` 扫一次 `tools_dir`，`POST /config/apply` 再扫一次。
+现在 `ToolLayer.Rebuild()`（`ConfigHandler.Tools` 持有的协作者，见 `internal/handler/tool_table.go`）是唯一的重建入口，它按顺序做三件事，与 apply 原本做的**完全同一套**：
+
+1. 从表里读配方**路径**（表里没有 tool 单元时回到目录扫描——漏跑启动扫描不该把 90 个内置配方清空）；
+2. 重建能力注册表的 recipe 层（没有 `capability:` 清单的配方照旧被拒，调用时 fail-closed）；
+3. `ClearTools()` 后重新注册全部工具面（配方 + 每个内置 registrar）。
+
+一键安装/卸载/启停只有**涉及 tool 单元**时才触发它——`ClearTools` 会清掉整个工具面，
+纯角色包不该付这个代价。整段由 `toolLayerMu` 串行：两个重建重叠时，一方的 `ClearTools`
+可能落进另一方"清空后还没重注册"的窗口。
+
+两条不会被说清楚的规则，都用测试钉住了：
+
+- **开关只收窄**：运行期状态是 `文件 enabled ∧ 表 enabled`。表单元的 `Enabled` 默认是 true，
+  如果把它当覆盖值，`enabled: false` 的内置配方会被悄悄打开。
+- **运行期开关不写回文件**：`PUT /config` 会把每个工具的 `enabled` 落到它自己的 yaml 里
+  （既有行为）。若这次落盘的是由表带来的 false，配方就被永久钉死——之后再打开表开关也起不来。
+  所以那条写回循环跳过"表说停用"的工具。
+
+漏接的失败模式是**静默**的：装配若不把 `configHandler` 传给 `NewPluginHandler`，包里的配方会被登记、
+被列出来、被回答"已安装"，然后永远不能执行。构造函数把它做成必填参数，装配处再传错由
+`make wiring-check` 的 AST 断言兜住（第 4 个实参必须是 `configHandler.Tools`，传别的、传 nil 都算漏接）。
+启动扫描若漏掉 `KindTool` 这一行，装任何一个包就会把整批内置配方换成包里那一个 ——
+这条由 `TestBuiltInCapabilityScanCoversEveryServedKind` 兜住，同时要求新加的 kind 必须被扫描或显式豁免。
+"表驱动 vs 目录驱动"对内置 90 个配方逐条比对（名字、顺序、启用位全等），由
+`TestToolLayerFromTableMatchesDirectoryLoad` 钉住。
 
 角色这一行是本轮改掉的：`roles/*.yaml` 以前只在 `config.Load` 里解析一次，之后由角色 API
 **无锁原地改**那张 map（连 GET 里都会 `h.config.Roles = make(...)`），八个文件在没同步的情况下读它。

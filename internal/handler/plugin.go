@@ -23,8 +23,19 @@ type PluginHandler struct {
 	table     *plugin.Table
 	bundles   string // the only directory a bundle may be installed from
 	republish catalogPublisher
-	logger    *zap.Logger
-	audit     *audit.Service
+	// tools rebuilds the recipe layer plus the MCP tool surface after a mutation that touched a
+	// tool unit. It is a constructor argument for the same reason the audit service is: leaving
+	// it out is not an error, it is a bundle whose recipe silently never becomes executable
+	// while the table says it is installed.
+	tools  toolLayerRebuilder
+	logger *zap.Logger
+	audit  *audit.Service
+}
+
+// toolLayerRebuilder is the piece of the tool layer that owns the recipe list and the MCP tool
+// surface; *ToolLayer implements it.
+type toolLayerRebuilder interface {
+	Rebuild() error
 }
 
 // catalogPublisher is the piece that turns table state into served configuration. RoleHandler
@@ -38,8 +49,8 @@ type catalogPublisher interface {
 // SetAudit method on purpose: every other handler is wired with a setter that the assembly has
 // to remember, which is why an audit-completeness gate exists for them. Here forgetting is a
 // compile error, so the handler is also deliberately outside that gate's scope.
-func NewPluginHandler(table *plugin.Table, bundlesDir string, publisher catalogPublisher, auditSvc *audit.Service, logger *zap.Logger) *PluginHandler {
-	return &PluginHandler{table: table, bundles: bundlesDir, republish: publisher, audit: auditSvc, logger: logger}
+func NewPluginHandler(table *plugin.Table, bundlesDir string, publisher catalogPublisher, tools toolLayerRebuilder, auditSvc *audit.Service, logger *zap.Logger) *PluginHandler {
+	return &PluginHandler{table: table, bundles: bundlesDir, republish: publisher, tools: tools, audit: auditSvc, logger: logger}
 }
 
 type unitView struct {
@@ -60,6 +71,7 @@ var servedKinds = map[plugin.Kind]string{
 	plugin.KindRole:  "",
 	plugin.KindAgent: "",
 	plugin.KindSkill: "",
+	plugin.KindTool:  "",
 }
 
 func unitServed(u plugin.Unit) (bool, string) {
@@ -67,8 +79,6 @@ func unitServed(u plugin.Unit) (bool, string) {
 		return true, gap
 	}
 	switch u.Kind {
-	case plugin.KindTool:
-		return false, "tool recipes load through POST /config/apply and the capability registry, which requires the operator approval floor; not wired to the table yet"
 	case plugin.KindMCP:
 		return false, "external MCP servers add and remove through their own live manager, which registers a capability spec per tool; the table tracks the declaration but does not feed that path"
 	default:
@@ -160,7 +170,7 @@ func (h *PluginHandler) Install(c *gin.Context) {
 		h.replyMutationError(c, "install", bundle.ID, err)
 		return
 	}
-	report := h.republishCatalog(c)
+	report := h.republishCatalog(c, bundleHasKind(bundle, plugin.KindTool))
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "bundle_install", "安装能力包", "plugin_bundle", bundle.ID, map[string]interface{}{
 			"version": bundle.Version,
@@ -168,12 +178,12 @@ func (h *PluginHandler) Install(c *gin.Context) {
 			"roles":   report.roles,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{
+	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
 		"message":   "能力包已安装并生效",
 		"bundle":    h.bundleView(bundle),
 		"roles":     report.roles,
 		"refreshed": report.refreshed,
-	})
+	}, report))
 }
 
 // Uninstall handles DELETE /api/plugins/bundles/:id.
@@ -183,21 +193,27 @@ func (h *PluginHandler) Uninstall(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "能力包 ID 不能为空"})
 		return
 	}
-	if _, ok := h.table.Bundle(id); !ok {
+	existing, ok := h.table.Bundle(id)
+	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("能力包 %q 未安装", id)})
 		return
 	}
+	// The kinds this pack contributes decide whether the tool surface has to be rebuilt, and the
+	// bundle is gone from the table once the uninstall succeeds, so read it first.
+	wantTools := bundleHasKind(existing, plugin.KindTool)
 	if err := h.table.UninstallBundle(id); err != nil {
 		h.replyMutationError(c, "uninstall", id, err)
 		return
 	}
-	report := h.republishCatalog(c)
+	report := h.republishCatalog(c, wantTools)
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "bundle_uninstall", "卸载能力包", "plugin_bundle", id, map[string]interface{}{
 			"roles": report.roles,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "能力包已卸载", "id": id, "roles": report.roles, "refreshed": report.refreshed})
+	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
+		"message": "能力包已卸载", "id": id, "roles": report.roles, "refreshed": report.refreshed,
+	}, report))
 }
 
 // EnableUnit handles POST /api/plugins/units/:kind/:name/enabled - flip without touching
@@ -228,13 +244,15 @@ func (h *PluginHandler) EnableUnit(c *gin.Context) {
 		h.replyMutationError(c, "enable", id, err)
 		return
 	}
-	report := h.republishCatalog(c)
+	report := h.republishCatalog(c, unitIDKind(id) == plugin.KindTool)
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "unit_enabled", "启停能力单元", "plugin_unit", id, map[string]interface{}{
 			"enabled": *body.Enabled, "roles": report.roles,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已更新", "unit": toUnitView(unit), "roles": report.roles})
+	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
+		"message": "已更新", "unit": toUnitView(unit), "roles": report.roles, "refreshed": report.refreshed,
+	}, report))
 }
 
 // RemoveLocalUnit handles DELETE /api/plugins/units/:kind/:name for a unit that came from a
@@ -249,16 +267,29 @@ func (h *PluginHandler) RemoveLocalUnit(c *gin.Context) {
 		h.replyMutationError(c, "remove", id, err)
 		return
 	}
-	report := h.republishCatalog(c)
+	report := h.republishCatalog(c, unitIDKind(id) == plugin.KindTool)
 	if h.audit != nil {
 		h.audit.RecordOK(c, "plugin", "unit_detach", "从能力表摘除单元", "plugin_unit", id, map[string]interface{}{"roles": report.roles})
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "已从能力表摘除（不删除文件）", "id": id, "roles": report.roles})
+	c.JSON(http.StatusOK, mergeToolLayerReport(gin.H{
+		"message": "已从能力表摘除（不删除文件）", "id": id, "roles": report.roles, "refreshed": report.refreshed,
+	}, report))
+}
+
+// mergeToolLayerReport states the tool-layer outcome in the body, including why it did not happen.
+func mergeToolLayerReport(body gin.H, r republishReport) gin.H {
+	body["tools_rebuilt"] = r.tools
+	if r.toolMessage != "" {
+		body["tool_layer_error"] = r.toolMessage
+	}
+	return body
 }
 
 type republishReport struct {
-	roles     int
-	refreshed bool
+	roles       int
+	tools       bool
+	refreshed   bool
+	toolMessage string
 }
 
 // republishCatalog rebuilds the served configuration from the table after any mutation.
@@ -266,17 +297,62 @@ type republishReport struct {
 // A failure here is reported in the response rather than turning a successful install into a 500:
 // the table *is* the source of truth, so the install did land, and rolling it back silently
 // would be its own surprise. The operator sees "installed, catalog not refreshed" and can retry.
-func (h *PluginHandler) republishCatalog(c *gin.Context) republishReport {
+//
+// wantTools is decided by the caller from what actually changed: rebuilding the tool surface runs
+// ClearTools and re-registers every built-in tool, so a role-only pack must not pay for it.
+func (h *PluginHandler) republishCatalog(c *gin.Context, wantTools bool) republishReport {
+	report := republishReport{refreshed: true}
 	if h.republish == nil {
-		return republishReport{}
+		// No publisher wired: the roles catalog is not being refreshed, and claiming otherwise
+		// would be the paper contract this response exists to avoid.
+		report.refreshed = false
+	} else {
+		roles, err := h.republish.Reload()
+		if err != nil {
+			h.logger.Warn("能力表已变更，但角色目录未能刷新", zap.Error(err))
+			c.Set("pluginRefreshError", err.Error())
+			return republishReport{refreshed: false}
+		}
+		report.roles = roles
 	}
-	roles, err := h.republish.Reload()
-	if err != nil {
-		h.logger.Warn("能力表已变更，但角色目录未能刷新", zap.Error(err))
+	if !wantTools {
+		return report
+	}
+	if h.tools == nil {
+		h.logger.Warn("能力表已变更，但装配未接入工具层重建，配方不会生效")
+		c.Set("pluginRefreshError", "未接入工具层重建")
+		return republishReport{roles: report.roles, refreshed: false,
+			toolMessage: "工具层未重建：装配没有接入工具层重建器，配方需重启或 POST /config/apply"}
+	}
+	if err := h.tools.Rebuild(); err != nil {
+		h.logger.Warn("能力表已变更，但工具层未能重建", zap.Error(err))
 		c.Set("pluginRefreshError", err.Error())
-		return republishReport{refreshed: false}
+		return republishReport{roles: report.roles, refreshed: false,
+			toolMessage: "工具层未重建: " + err.Error()}
 	}
-	return republishReport{roles: roles, refreshed: true}
+	report.tools = true
+	return report
+}
+
+// bundleHasKind reports whether any unit of the bundle is of this kind.
+func bundleHasKind(b *plugin.Bundle, kind plugin.Kind) bool {
+	if b == nil {
+		return false
+	}
+	for _, u := range b.Units {
+		if u.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func unitIDKind(id string) plugin.Kind {
+	kind, _, ok := strings.Cut(id, "/")
+	if !ok {
+		return ""
+	}
+	return plugin.Kind(kind)
 }
 
 // resolveBundleDir confines every install to the configured bundles root.

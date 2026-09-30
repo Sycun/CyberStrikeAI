@@ -31,6 +31,8 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 	remoteObservers := 0
 	scanned := 0
 	scannedCalled := 0
+	pluginCalls := 0
+	pluginWithoutToolLayer := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -67,6 +69,20 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "plugin" {
 					tableInstalled++
 				}
+			case "NewPluginHandler":
+				// The 4th argument is the tool-layer rebuilder. Passing nil is legal Go and
+				// means a bundle's tool recipe is recorded in the table but never becomes
+				// executable - the response would say "installed" while nothing serves it.
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "handler" {
+					pluginCalls++
+					if len(call.Args) < 6 {
+						t.Errorf("handler.NewPluginHandler takes %d arguments, want the tool-layer rebuilder among them", len(call.Args))
+					} else if sel, ok := call.Args[3].(*ast.SelectorExpr); !ok || sel.Sel.Name != "Tools" {
+						pluginWithoutToolLayer++
+					} else if id, ok := sel.X.(*ast.Ident); !ok || id.Name != "configHandler" {
+						pluginWithoutToolLayer++
+					}
+				}
 			case "Reload":
 				published++
 			}
@@ -99,8 +115,17 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 		t.Fatalf("no role catalog publish in assembly: the store would be installed but empty, so "+
 			"the roles API and every run path would serve nothing (files scanned: %d)", scanned)
 	}
+	if pluginCalls != 1 {
+		t.Fatalf("handler.NewPluginHandler is called %d times in internal/app, want exactly 1", pluginCalls)
+	}
+	if pluginWithoutToolLayer != 0 {
+		t.Fatalf("the plug-in handler was assembled without the tool-layer rebuilder: a bundle's tool " +
+			"recipe would be recorded in the table and reported as installed, while no run path could " +
+			"ever execute it (pass the configHandler, which owns RebuildToolLayer)")
+	}
 	t.Logf("assembly wiring: %d files scanned, 1 live-store install, 1 table install, "+
-		"1 remote inventory observer, %d capability scan call(s), %d catalog publish call(s)",
+		"1 remote inventory observer, %d capability scan call(s), %d catalog publish call(s), "+
+		"1 plug-in handler with its tool-layer rebuilder",
 		scanned, scannedCalled, published)
 }
 

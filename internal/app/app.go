@@ -527,8 +527,10 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		log.Logger.Info("角色目录已发布", zap.Int("roles", published))
 	}
 	// The one-click extend surface. It is confined to <configDir>/bundles, and it drives the same
-	// table the run paths read, so an install here is live on the next request.
-	pluginHandler := handler.NewPluginHandler(pluginTable, filepath.Join(configDir, "bundles"), roleHandler, auditSvc, log.Logger)
+	// table the run paths read, so an install here is live on the next request. A pack that
+	// contributes tool recipes goes through configHandler's tool-layer rebuild - the same sequence
+	// POST /config/apply runs - so the recipe becomes executable without pressing "应用配置".
+	pluginHandler := handler.NewPluginHandler(pluginTable, filepath.Join(configDir, "bundles"), roleHandler, configHandler.Tools, auditSvc, log.Logger)
 	skillsHandler := handler.NewSkillsHandler(cfg, configPath, log.Logger)
 	bindAudit(skillsHandler, auditSvc)
 	fofaHandler := handler.NewFofaHandler(cfg, log.Logger)
@@ -597,8 +599,8 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		registerVisionTools(mcpServer, cfg, log.Logger)
 		return nil
 	}
-	configHandler.SetVulnerabilityToolRegistrar(vulnerabilityRegistrar)
-	configHandler.SetCapabilityRefresher(func(tools []config.ToolConfig) error {
+	configHandler.Tools.SetVulnerabilityToolRegistrar(vulnerabilityRegistrar)
+	configHandler.Tools.SetCapabilityRefresher(func(tools []config.ToolConfig) error {
 		rejections, err := RefreshRecipeLayer(tools)
 		for _, r := range rejections {
 			log.Logger.Warn("能力配方被拒绝，调用将 fail-closed",
@@ -613,17 +615,17 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
 		return nil
 	}
-	configHandler.SetWebshellToolRegistrar(webshellRegistrar)
+	configHandler.Tools.SetWebshellToolRegistrar(webshellRegistrar)
 
 	// Skills 由 Eino ADK skill 中间件提供（多代理）；此处不注册 MCP 形态的技能工具
-	configHandler.SetSkillsToolRegistrar(func() error { return nil })
+	configHandler.Tools.SetSkillsToolRegistrar(func() error { return nil })
 
 	handler.RegisterBatchTaskMCPTools(mcpServer, agentHandler, log.Logger)
 	batchTaskToolRegistrar := func() error {
 		handler.RegisterBatchTaskMCPTools(mcpServer, agentHandler, log.Logger)
 		return nil
 	}
-	configHandler.SetBatchTaskToolRegistrar(batchTaskToolRegistrar)
+	configHandler.Tools.SetBatchTaskToolRegistrar(batchTaskToolRegistrar)
 
 	// 设置知识库初始化器（用于动态初始化，需要在 App 创建后设置）
 	configHandler.SetKnowledgeInitializer(func() (*handler.KnowledgeHandler, error) {
@@ -640,7 +642,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 				knowledge.RegisterKnowledgeTool(mcpServer, app.knowledgeRetriever, app.knowledgeManager, log.Logger)
 				return nil
 			}
-			configHandler.SetKnowledgeToolRegistrar(registrar)
+			configHandler.Tools.SetKnowledgeToolRegistrar(registrar)
 			// 设置检索器更新器，以便在ApplyConfig时更新检索器配置
 			configHandler.SetRetrieverUpdater(app.knowledgeRetriever)
 			log.Logger.Info("动态初始化后已设置知识库工具注册器和检索器更新器")
@@ -656,7 +658,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 			knowledge.RegisterKnowledgeTool(mcpServer, knowledgeRetriever, knowledgeManager, log.Logger)
 			return nil
 		}
-		configHandler.SetKnowledgeToolRegistrar(registrar)
+		configHandler.Tools.SetKnowledgeToolRegistrar(registrar)
 		// 设置检索器更新器，以便在ApplyConfig时更新检索器配置
 		configHandler.SetRetrieverUpdater(knowledgeRetriever)
 	}
@@ -667,7 +669,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	wechatRobotHandler := handler.NewWechatRobotHandler(cfg, configHandler, log.Logger)
 
 	configHandler.SetC2Runtime(app)
-	configHandler.SetC2ToolRegistrar(func() error {
+	configHandler.Tools.SetC2ToolRegistrar(func() error {
 		if app.config.C2.EnabledEffective() && app.c2Manager != nil {
 			registerC2Tools(mcpServer, app.c2Manager, log.Logger, app.config.Server.Port)
 		}

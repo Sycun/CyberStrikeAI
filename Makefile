@@ -117,6 +117,10 @@ wiring-check:
 	## 远端 MCP 工具身份：按服务器成组装卸、按工具判定、清单缺失时回到命名空间策略
 	$(GO) test -count=1 ./internal/capability/ -run 'TestRegisterSubset|TestSubsetEntries'
 	$(GO) test -count=1 ./internal/app/ -run 'TestRemote|TestEmptyInventory'
+	## tool 配方：表驱动与目录加载逐条一致、开关只收窄不改文件、装包立刻成为可执行工具
+	$(GO) test -count=1 -timeout 200s ./internal/handler/ -run 'TestToolLayer|TestRebuildToolLayer|TestSaveConfigDoesNot|TestEveryKindReports'
+	## 启动扫描必须覆盖每个"运行路径读表"的 kind：漏一行，装任何一个包就会把整批内置配方换掉
+	$(GO) test -count=1 -run 'TestBuiltInCapabilityScanCoversEveryServedKind' ./internal/app/
 
 .PHONY: ci
 ci: fmt-check vet test-race lint arch-lint layering-check wiring-check

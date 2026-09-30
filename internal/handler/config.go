@@ -50,14 +50,6 @@ type BatchTaskToolRegistrar func() error
 // CapabilityRefreshFunc rebuilds the recipe layer of the capability registry.
 type CapabilityRefreshFunc func(tools []config.ToolConfig) error
 
-// SetCapabilityRefresher wires the capability policy layer to the config handler.
-func (h *ConfigHandler) SetCapabilityRefresher(fn CapabilityRefreshFunc) {
-	if h == nil {
-		return
-	}
-	h.capabilityRefresher = fn
-}
-
 // C2ToolRegistrar C2 MCP 工具注册器（ApplyConfig 时 ClearTools 之后调用）
 type C2ToolRegistrar func() error
 
@@ -86,35 +78,29 @@ type RobotRestarter interface {
 
 // ConfigHandler 配置处理器
 type ConfigHandler struct {
-	configPath             string
-	config                 *config.Config
-	mcpServer              *mcp.Server
-	executor               *security.Executor
-	agent                  AgentUpdater            // Agent接口，用于更新Agent配置
-	attackChainHandler     AttackChainUpdater      // 攻击链处理器接口，用于更新配置
-	externalMCPMgr         *mcp.ExternalMCPManager // 外部MCP管理器
-	knowledgeToolRegistrar KnowledgeToolRegistrar  // 知识库工具注册器（可选）
-	// settings 是发布运行期配置的快照存储（见 internal/settings）。
-	settings                   *SettingsStore
-	vulnerabilityToolRegistrar VulnerabilityToolRegistrar // 漏洞工具注册器（可选）
-	// capabilityRefresher 重建 recipe 能力层（可选）。注册表按层替换，内置工具的策略
-	// 不会被一次 config「应用」清掉，这是原先 ClearTools 丢工具问题的根治点。
-	capabilityRefresher    CapabilityRefreshFunc
-	webshellToolRegistrar  WebshellToolRegistrar  // WebShell 工具注册器（可选）
-	skillsToolRegistrar    SkillsToolRegistrar    // Skills工具注册器（可选）
-	batchTaskToolRegistrar BatchTaskToolRegistrar // 批量任务 MCP 工具（可选）
-	c2ToolRegistrar        C2ToolRegistrar        // C2 MCP 工具（可选）
-	c2Runtime              C2Runtime              // C2 启停（可选）
-	retrieverUpdater       RetrieverUpdater       // 检索器更新器（可选）
-	knowledgeInitializer   KnowledgeInitializer   // 知识库初始化器（可选）
-	appUpdater             AppUpdater             // App更新器（可选）
-	robotRestarter         RobotRestarter         // 机器人连接重启器（可选），ApplyConfig 时重启钉钉/飞书
-	audit                  *audit.Service
-	db                     database.ConfigStore
-	logger                 *zap.Logger
-	mu                     sync.RWMutex
-	toolGuard              *toolguard.Manager
-	lastEmbeddingConfig    *config.EmbeddingConfig // 上一次的嵌入模型配置（用于检测变更）
+	configPath         string
+	config             *config.Config
+	mcpServer          *mcp.Server
+	executor           *security.Executor
+	agent              AgentUpdater            // Agent接口，用于更新Agent配置
+	attackChainHandler AttackChainUpdater      // 攻击链处理器接口，用于更新配置
+	externalMCPMgr     *mcp.ExternalMCPManager // 外部MCP管理器
+	// Tools 拥有配方清单、recipe 能力层与整个 MCP 工具面（见 tool_table.go）。注册表按层
+	// 替换，内置工具的策略不会被一次 config「应用」清掉，这是原先 ClearTools 丢工具问题的
+	// 根治点；把它从 ConfigHandler 拆出来，是因为它有自己的状态和自己的串行化。
+	Tools                *ToolLayer
+	settings             *SettingsStore // 发布运行期配置的快照存储（见 internal/settings）
+	c2Runtime            C2Runtime      // C2 启停（可选）
+	retrieverUpdater     RetrieverUpdater
+	knowledgeInitializer KnowledgeInitializer // 知识库初始化器（可选）
+	appUpdater           AppUpdater           // App更新器（可选）
+	robotRestarter       RobotRestarter       // 机器人连接重启器（可选），ApplyConfig 时重启钉钉/飞书
+	audit                *audit.Service
+	db                   database.ConfigStore
+	logger               *zap.Logger
+	mu                   sync.RWMutex
+	toolGuard            *toolguard.Manager
+	lastEmbeddingConfig  *config.EmbeddingConfig // 上一次的嵌入模型配置（用于检测变更）
 }
 
 func (h *ConfigHandler) SetDB(db *database.DB) {
@@ -169,51 +155,10 @@ func NewConfigHandler(configPath string, cfg *config.Config, mcpServer *mcp.Serv
 		agent:               agent,
 		attackChainHandler:  attackChainHandler,
 		externalMCPMgr:      externalMCPMgr,
+		Tools:               newToolLayer(cfg, configPath, mcpServer, executor, externalMCPMgr, logger),
 		logger:              logger,
 		lastEmbeddingConfig: lastEmbeddingConfig,
 	}
-}
-
-// SetKnowledgeToolRegistrar 设置知识库工具注册器
-func (h *ConfigHandler) SetKnowledgeToolRegistrar(registrar KnowledgeToolRegistrar) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.knowledgeToolRegistrar = registrar
-}
-
-// SetVulnerabilityToolRegistrar 设置漏洞工具注册器
-func (h *ConfigHandler) SetVulnerabilityToolRegistrar(registrar VulnerabilityToolRegistrar) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.vulnerabilityToolRegistrar = registrar
-}
-
-// SetWebshellToolRegistrar 设置 WebShell 工具注册器
-func (h *ConfigHandler) SetWebshellToolRegistrar(registrar WebshellToolRegistrar) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.webshellToolRegistrar = registrar
-}
-
-// SetSkillsToolRegistrar 设置Skills工具注册器
-func (h *ConfigHandler) SetSkillsToolRegistrar(registrar SkillsToolRegistrar) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.skillsToolRegistrar = registrar
-}
-
-// SetBatchTaskToolRegistrar 设置批量任务 MCP 工具注册器
-func (h *ConfigHandler) SetBatchTaskToolRegistrar(registrar BatchTaskToolRegistrar) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.batchTaskToolRegistrar = registrar
-}
-
-// SetC2ToolRegistrar 设置 C2 MCP 工具注册器
-func (h *ConfigHandler) SetC2ToolRegistrar(registrar C2ToolRegistrar) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.c2ToolRegistrar = registrar
 }
 
 // SetC2Runtime 设置 C2 运行时（Apply 时启停）
@@ -1615,7 +1560,7 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 	var knowledgeInitializer KnowledgeInitializer
 
 	h.mu.RLock()
-	needInitKnowledge = h.config.Knowledge.Enabled && h.knowledgeToolRegistrar == nil && h.knowledgeInitializer != nil
+	needInitKnowledge = h.config.Knowledge.Enabled && !h.Tools.KnowledgeRegistrarInstalled() && h.knowledgeInitializer != nil
 	if needInitKnowledge {
 		knowledgeInitializer = h.knowledgeInitializer
 	}
@@ -1702,99 +1647,17 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 		h.logger.Info("已更新嵌入模型配置记录")
 	}
 
-	// 从 tools 目录重新加载工具配置（新增/修改/删除 yaml 后无需重启）
-	if err := config.ReloadSecurityToolsFromDir(h.config, h.configPath); err != nil {
-		h.logger.Error("重新加载工具配置失败", zap.Error(err))
+	// 从能力表（表为空时回到 tools_dir）重新加载工具配方，再重建能力策略层与 MCP 工具面。
+	// 这段与一键安装/摘除走的是同一次重建：ClearTools 清空的是整个工具面，两个触发点重叠
+	// 会让一方的 ClearTools 落进另一方"清空后尚未重注册"的窗口，所以整段由 ToolLayer 自己的锁串行。
+	if err := h.Tools.Rebuild(); err != nil {
+		msg, auditMsg, detail := toolLayerUserError(err)
+		h.logger.Error(msg, zap.Error(err))
 		if h.audit != nil {
-			h.audit.RecordFail(c, "config", "apply", "应用配置失败：重新加载工具", map[string]interface{}{"error": err.Error()})
+			h.audit.RecordFail(c, "config", "apply", auditMsg, map[string]interface{}{"error": detail})
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "重新加载工具配置失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": msg + ": " + detail})
 		return
-	}
-	h.logger.Debug("已从 tools 目录重新加载工具配置", zap.Int("tools_count", len(h.config.Security.Tools)))
-
-	// 重新注册工具（根据新的启用状态）
-	h.logger.Debug("重新注册工具")
-
-	// 先重建能力策略层：工具定义可以重建，但授权与审批下限必须始终存在。
-	if h.capabilityRefresher != nil {
-		if err := h.capabilityRefresher(h.config.Security.Tools); err != nil {
-			h.logger.Error("重建能力策略注册表失败", zap.Error(err))
-			if h.audit != nil {
-				h.audit.RecordFail(c, "config", "apply", "应用配置失败：能力策略注册表", map[string]interface{}{"error": err.Error()})
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "重建能力策略注册表失败: " + err.Error()})
-			return
-		}
-	}
-
-	// 清空MCP服务器中的工具
-	h.mcpServer.ClearTools()
-
-	// 重新注册安全工具
-	h.executor.SetToolOutputMaxBytes(h.config.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective())
-	h.executor.SetToolOutputSpillRoot(h.config.MultiAgent.EinoMiddleware.ReductionRootDir)
-	h.executor.RegisterTools(h.mcpServer)
-	mcp.RegisterExecutionControlTools(h.mcpServer, h.externalMCPMgr)
-
-	// 重新注册漏洞记录工具（内置工具，必须注册）
-	if h.vulnerabilityToolRegistrar != nil {
-		h.logger.Info("重新注册漏洞记录工具")
-		if err := h.vulnerabilityToolRegistrar(); err != nil {
-			h.logger.Error("重新注册漏洞记录工具失败", zap.Error(err))
-		} else {
-			h.logger.Info("漏洞记录工具已重新注册")
-		}
-	}
-
-	// 重新注册 WebShell 工具（内置工具，必须注册）
-	if h.webshellToolRegistrar != nil {
-		h.logger.Info("重新注册 WebShell 工具")
-		if err := h.webshellToolRegistrar(); err != nil {
-			h.logger.Error("重新注册 WebShell 工具失败", zap.Error(err))
-		} else {
-			h.logger.Info("WebShell 工具已重新注册")
-		}
-	}
-
-	// 重新注册Skills工具（内置工具，必须注册）
-	if h.skillsToolRegistrar != nil {
-		h.logger.Info("重新注册Skills工具")
-		if err := h.skillsToolRegistrar(); err != nil {
-			h.logger.Error("重新注册Skills工具失败", zap.Error(err))
-		} else {
-			h.logger.Info("Skills工具已重新注册")
-		}
-	}
-
-	// 重新注册批量任务 MCP 工具
-	if h.batchTaskToolRegistrar != nil {
-		h.logger.Info("重新注册批量任务 MCP 工具")
-		if err := h.batchTaskToolRegistrar(); err != nil {
-			h.logger.Error("重新注册批量任务 MCP 工具失败", zap.Error(err))
-		} else {
-			h.logger.Info("批量任务 MCP 工具已重新注册")
-		}
-	}
-
-	// 重新注册 C2 MCP 工具（仅当 C2 已启动）
-	if h.c2ToolRegistrar != nil {
-		h.logger.Info("重新注册 C2 MCP 工具")
-		if err := h.c2ToolRegistrar(); err != nil {
-			h.logger.Error("重新注册 C2 MCP 工具失败", zap.Error(err))
-		} else {
-			h.logger.Info("C2 MCP 工具已处理")
-		}
-	}
-
-	// 如果知识库启用，重新注册知识库工具
-	if h.config.Knowledge.Enabled && h.knowledgeToolRegistrar != nil {
-		h.logger.Info("重新注册知识库工具")
-		if err := h.knowledgeToolRegistrar(); err != nil {
-			h.logger.Error("重新注册知识库工具失败", zap.Error(err))
-		} else {
-			h.logger.Info("知识库工具已重新注册")
-		}
 	}
 
 	// 更新Agent的OpenAI配置
@@ -1934,6 +1797,12 @@ func (h *ConfigHandler) saveConfig() error {
 		}
 
 		for _, tool := range h.config.Security.Tools {
+			// 运行期开关（能力表）产生的 false 不写回文件：否则一次按包的停用会被固化成
+			// 配方自己的 enabled: false，之后即使把开关打开也再也起不来。
+			if toolUnitSwitchedOff(tool.Name) {
+				h.logger.Debug("该工具的停用来自能力表的运行期开关，不写回配方文件", zap.String("tool", tool.Name))
+				continue
+			}
 			toolFile := filepath.Join(toolsDir, tool.Name+".yaml")
 			// 检查文件是否存在
 			if _, err := os.Stat(toolFile); os.IsNotExist(err) {

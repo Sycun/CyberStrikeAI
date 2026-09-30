@@ -283,8 +283,23 @@ one identity scheme and one live table:
   (409 naming its owner). A side effect of the identity scheme: a bundle cannot smuggle in a
   second `orchestrator.md`, because the built-in scan already owns `agent/orchestrator` and the
   install is refused long before the loader's "at most one orchestrator" rule could turn it into a
-  failure for every run. Only tool recipes still load via `/config/apply` (they must clear the
-  approval floor first); `bundles/README.md` states the gap per kind.
+  failure for every run. Tool recipes were the last run path that read a directory instead of the
+  table: `ToolLayer.Rebuild()` (a collaborator on `ConfigHandler.Tools`) is now the single rebuild entry for the recipe list and
+  performs the same three steps `/config/apply` always performed - read paths from the table (fall
+  back to the directory scan when the table holds no tool units), rebuild the recipe capability
+  layer, then `ClearTools` and re-register the whole tool surface. Install/unplug/switch trigger it
+  only when a tool unit is involved, because `ClearTools` wipes every built-in tool too, and the
+  sequence is serialised so one rebuild's `ClearTools` cannot land inside another's window. Two
+  rules are pinned by tests rather than prose: the live state is `file enabled AND table enabled`
+  (a unit's default-true flag treated as an override would silently switch on recipes whose YAML
+  says `enabled: false`), and the `PUT /config` loop that persists each tool's `enabled` back into
+  its own file must skip table-switched-off tools, or one runtime disable becomes permanent. Parity
+  over the 90 shipped recipes compares both sources entry by entry - names, order, enable flags.
+  A missed `KindTool` row in the boot scan does not error; it turns "install any pack" into
+  "replace the whole built-in recipe list with that pack's one entry", so
+  `TestBuiltInCapabilityScanCoversEveryServedKind` also requires every kind in `plugin.Kinds` to be
+  scanned or explicitly exempted with a reason. `bundles/README.md` states the remaining gap per
+  kind.
 
 ## 13. Not implemented yet
 

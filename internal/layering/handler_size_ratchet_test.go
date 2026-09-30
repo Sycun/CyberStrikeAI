@@ -27,6 +27,17 @@ import (
 // down, and "stays down" needs a gate - otherwise the next feature that needs a handle on
 // something adds one more method to the biggest type because that is the path of least
 // resistance, and the doc's diagnosis quietly becomes worse.
+//
+// The tool layer is the third cut and the reason the ConfigHandler ceiling is 38 rather than 45.
+// Making the capability table the source of the recipe list needed five methods' worth of logic
+// (read the table, refresh the recipe layer, re-register the tool surface, rebuild those three
+// under one lock, snapshot the injected closures) plus a mutex of its own. Adding them to
+// ConfigHandler would have measured 49 - four past its ceiling - and the tempting fix is to raise
+// the number. Instead the tool surface became a `ToolLayer` collaborator that owns its state and
+// its serialisation, and the seven registrar/capability setters moved onto it. The setter total
+// stayed exactly 64: moving an injection point is not adding one, and that is what makes this cut
+// safe to count as progress. `ToolLayer` is measured at 13 methods and deliberately not listed in
+// the map below - it has no ambition to be a handler; if it grows into one, it gets a ceiling then.
 
 const (
 	agentHandlerMethodCeiling = 112
@@ -39,7 +50,7 @@ const (
 var receiverMethodCeilings = map[string]int{
 	"AgentHandler":       agentHandlerMethodCeiling,
 	"RobotHandler":       68,
-	"ConfigHandler":      45,
+	"ConfigHandler":      38,
 	"BatchTaskManager":   40,
 	"C2Handler":          39,
 	"AgentTaskManager":   34,

@@ -21,9 +21,22 @@ import (
 type pluginTestEnv struct {
 	plugins  *PluginHandler
 	roles    *RoleHandler
+	tools    *recordingToolLayer
 	table    *plugin.Table
 	bundles  string
 	recorder *httptest.ResponseRecorder
+}
+
+// recordingToolLayer stands in for the config handler's tool-surface rebuild so the test can see
+// whether the plug-in surface asked for one, and for which pack.
+type recordingToolLayer struct {
+	calls int
+	err   error
+}
+
+func (r *recordingToolLayer) Rebuild() error {
+	r.calls++
+	return r.err
 }
 
 func newPluginTestEnv(t *testing.T, withBuiltInBundle bool) *pluginTestEnv {
@@ -34,8 +47,9 @@ func newPluginTestEnv(t *testing.T, withBuiltInBundle bool) *pluginTestEnv {
 		roles:   roles,
 		table:   table,
 		bundles: bundlesDir,
+		tools:   &recordingToolLayer{},
 	}
-	env.plugins = NewPluginHandler(table, bundlesDir, roles, nil, zap.NewNop())
+	env.plugins = NewPluginHandler(table, bundlesDir, roles, env.tools, nil, zap.NewNop())
 
 	if withBuiltInBundle {
 		// The real example pack, copied next to the test config so the install path is exercised
@@ -157,19 +171,32 @@ func TestPluginInstallServesTheBundleImmediately(t *testing.T) {
 	if reasonByKind["agent"] != "" {
 		t.Errorf("a served unit carries a not-served reason: %q", reasonByKind["agent"])
 	}
-	// The honesty clause: a tool recipe is tracked but no run path reads tools from the table,
-	// so claiming it were live would be the paper-contract failure this whole layer exists to avoid.
-	if servedByKind["tool"] {
-		t.Errorf("tool unit reported as served, but tool loading still goes through /config/apply")
+	if !servedByKind["tool"] {
+		t.Errorf("tool must report served: the recipe list is rebuilt from the table, %v", servedByKind)
 	}
-	if !strings.Contains(reasonByKind["tool"], "config/apply") {
-		t.Errorf("tool unit carries no reason: %q", reasonByKind["tool"])
+	// The pack declares a tool unit, so installing it must rebuild the recipe layer and the MCP
+	// tool surface - the same sequence POST /config/apply runs.
+	if !installed["tools_rebuilt"].(bool) {
+		t.Errorf("installing a pack with a tool recipe did not rebuild the tool layer: %v", installed)
 	}
+	if env.tools.calls != 1 {
+		t.Fatalf("tool-layer rebuild calls after install = %d, want 1", env.tools.calls)
+	}
+	// The honesty clause that is left: an MCP declaration is tracked and listed, but the live path
+	// for external servers is the MCP manager, not this table. See
+	// TestEveryKindReportsItsActualServedState for the per-kind verdict.
 
 	// Unplug: both the table and the served catalog go back.
 	rec = env.do(t, http.MethodDelete, "/api/plugins/bundles/reporting-pack", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("uninstall returned %d: %s", rec.Code, rec.Body.String())
+	}
+	if env.tools.calls != 2 {
+		t.Fatalf("tool-layer rebuild calls after uninstall = %d, want 2 (the pack's recipe must stop "+
+			"being executable, not just leave the table)", env.tools.calls)
+	}
+	if got := decodeState(t, rec)["tools_rebuilt"]; got != true {
+		t.Fatalf("uninstall did not report a tool-layer rebuild: %v", got)
 	}
 	if _, ok := lookupRole(env.roles.config, "报告撰写"); ok {
 		t.Fatalf("unplugged role is still served")
@@ -310,7 +337,7 @@ func TestPluginUnitDetachRespectsOwnership(t *testing.T) {
 }
 
 func TestPluginHandlerWithoutATableIsUnavailableNotPanic(t *testing.T) {
-	h := NewPluginHandler(nil, "", nil, nil, zap.NewNop())
+	h := NewPluginHandler(nil, "", nil, nil, nil, zap.NewNop())
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.GET("/api/plugins", h.GetState)
@@ -318,5 +345,117 @@ func TestPluginHandlerWithoutATableIsUnavailableNotPanic(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/plugins", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code = %d, want 503", rec.Code)
+	}
+}
+
+// A pack that contributes only roles must not pay for a tool-surface rebuild: that path runs
+// ClearTools and re-registers every built-in tool, so doing it for nothing would be a visible
+// stall for concurrent runs.
+func TestPluginInstallWithoutToolUnitsSkipsTheToolLayer(t *testing.T) {
+	env := newPluginTestEnv(t, false)
+	writeTestFile(t, filepath.Join(env.bundles, "role-only", "roles", "只加角色.yaml"),
+		"name: 只加角色\nuser_prompt: 只有角色\nenabled: true\n")
+	writeTestFile(t, filepath.Join(env.bundles, "role-only", plugin.ManifestFileName),
+		"id: role-only\nversion: 1.0.0\nunits:\n  - kind: role\n    path: roles/只加角色.yaml\n")
+
+	rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"role-only"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install: %d %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	if state["refreshed"] != true {
+		t.Fatalf("role catalog was not refreshed: %v", state)
+	}
+	if state["tools_rebuilt"] != false {
+		t.Fatalf("a role-only pack rebuilt the whole tool surface: %v", state)
+	}
+	if env.tools.calls != 0 {
+		t.Fatalf("RebuildToolLayer called %d times for a pack with no tool unit", env.tools.calls)
+	}
+
+	// The same pack's role unit must still switch without touching the tool layer.
+	if rec := env.do(t, http.MethodPost, "/api/plugins/units/role/只加角色/enabled", `{"enabled":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("disable: %d %s", rec.Code, rec.Body.String())
+	}
+	if env.tools.calls != 0 {
+		t.Fatalf("switching a role rebuilt the tool surface %d time(s)", env.tools.calls)
+	}
+}
+
+// Forgetting the rebuilder at assembly time is not an error the endpoint can raise - the install
+// did land - so it has to be a loud field in the response instead of a quiet "installed".
+func TestPluginInstallReportsAMissingToolLayerRebuilder(t *testing.T) {
+	env := newPluginTestEnv(t, true)
+	env.plugins.tools = nil
+
+	rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install: %d %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	if state["refreshed"] != false {
+		t.Fatalf("a missing rebuilder reported refreshed=true: %v", state)
+	}
+	if state["tools_rebuilt"] != false {
+		t.Fatalf("tools_rebuilt true without a rebuilder: %v", state)
+	}
+	msg, _ := state["tool_layer_error"].(string)
+	if !strings.Contains(msg, "工具层未重建") {
+		t.Fatalf("the response does not say the tool layer was not rebuilt: %q", msg)
+	}
+}
+
+// A rebuild that fails must be reported the same way, not swallowed after the table changed.
+func TestPluginInstallReportsAFailedToolLayerRebuild(t *testing.T) {
+	env := newPluginTestEnv(t, true)
+	env.tools.err = fmt.Errorf("注册表拒绝该配方")
+
+	rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("install: %d %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	msg, _ := state["tool_layer_error"].(string)
+	if !strings.Contains(msg, "注册表拒绝该配方") || state["refreshed"] != false {
+		t.Fatalf("a failed rebuild was not reported: %v", state)
+	}
+}
+
+func TestPluginToolUnitSwitchRebuildsTheToolLayer(t *testing.T) {
+	env := newPluginTestEnv(t, true)
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	before := env.tools.calls
+
+	rec := env.do(t, http.MethodPost, "/api/plugins/units/tool/pandoc/enabled", `{"enabled":false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("disable: %d %s", rec.Code, rec.Body.String())
+	}
+	if env.tools.calls != before+1 {
+		t.Fatalf("switching a tool unit rebuilt the layer %d extra time(s), want 1", env.tools.calls-before)
+	}
+	if got := decodeState(t, rec)["tools_rebuilt"]; got != true {
+		t.Fatalf("the switch response does not report the rebuild: %v", got)
+	}
+}
+
+// The per-kind served verdict, walked from the kind list itself: a kind added to plugin.Kinds
+// without deciding how it is served fails here rather than shipping a field that quietly lies.
+func TestEveryKindReportsItsActualServedState(t *testing.T) {
+	served := map[plugin.Kind]bool{
+		plugin.KindRole: true, plugin.KindAgent: true, plugin.KindSkill: true, plugin.KindTool: true,
+	}
+	for _, kind := range plugin.Kinds {
+		isServed, reason := unitServed(plugin.Unit{Kind: kind})
+		if served[kind] {
+			if !isServed || reason != "" {
+				t.Errorf("kind %q: served=%v reason=%q, want served with no reason", kind, isServed, reason)
+			}
+			continue
+		}
+		if isServed || strings.TrimSpace(reason) == "" {
+			t.Errorf("kind %q: served=%v reason=%q, want not-served with a stated reason", kind, isServed, reason)
+		}
 	}
 }
