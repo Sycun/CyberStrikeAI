@@ -1032,31 +1032,40 @@ P4 硬网络边界、P4 内嵌 CPython、P5 registry / 气隙包 / 引爆自动�
 以及 **§10 的 9 个决策项一个都没有被裁决**（其中 1、4、5、6 直接决定 P4/P5 的形态）。
 因此**目标未达成**，本表就是"还差什么"的清单。
 
-### 12.2 未提交状态：先决定这件事，再决定下一轮做什么
+### 12.2 交付方式：二开分叉，任务结束推自己的 fork，不提 PR
 
-`git log -1` 仍指向重构前的 `470eb5e`，**全部改动（约 260 个路径）只存在于工作区**。
-一次 `git checkout .` / `git clean -fd` / 误删目录都会把它们一次性抹掉，且无法从 git 恢复。
-我没有提交，因为授权要求是"commit 需要明确批准"。请二选一（或给我别的指示）：
+**曾经的风险**（这一版报告写完时的状态）：`git log -1` 还指向重构前的 `470eb5e`，
+全部改动（约 260 个路径）只存在于工作区——一次 `git checkout .` / `git clean -fd` 就不可恢复，
+而我当时没有提交权限。
 
-```bash
-# A. 常规：在本地分支上提交（历史可回退，最稳）
-git switch -c refactor/capability-platform && git add -A && git commit
+**现已按用户的明确授权解决**：这是从 `AIPentest/CyberStrikeAI` 拉下来做二开的分叉，
+每轮任务结束上传到用户自己的 GitHub，**不向任何仓库提 PR**（除非用户明确说要）。落地口径：
 
-# B. 不动分支历史，只给工作区做一个可回收的快照（随时能丢）
-git stash create        # 打印一个 commit 哈希；把它贴给我，我用 update-ref 钉住以防 GC
 ```
+mine    https://github.com/Sycun/CyberStrikeAI.git   # 我的 fork，交付推这里
+origin  https://github.com/AIPentest/CyberStrikeAI.git  # 上游父仓库，只读，永不推
+```
+
+- 提交 `14fde40`（319 路径，+45283/-3235）→ `git push mine main` 是 **fast-forward**
+  （推之前 `git ls-remote` 确认过 `mine/main` 恰等于本地 HEAD `470eb5e`），没有 `--force`、没有改写历史。
+- 复验：`mine/main` = `14fde40`；`origin/main` 仍是 `470eb5e`（未被触碰）；未创建任何 PR。
+- 仓库级 `user.name` / `user.email` 设为 GitHub noreply 身份（`165354365+Sycun@users.noreply.github.com`），
+  只写进 `.git/config`，不动全局配置。
+- 提交前的两道人工检查：`git status --short` 看清包含什么，以及对暂存清单按
+  `config.yaml|.env|*.db|secret|token|credential|*.backup` 过滤（`.gitignore` 已挡运行期数据与本地配置）。
+- 往后的每一轮交付都按这个口径落远端快照；若 `mine/main` 已领先本地，先问用户而不是 force 或 rebase。
 
 ### 12.3 下一轮的第一件事（已排好，直接接着做）
 
-1. 先按 12.2 保住工作区。
-2. 然后做**窄接口的下一层**（任务清单 #18，剩 6 个域）：给 `multiagent.RunDeepAgent` /
+1. 做**窄接口的下一层**（任务清单 #18，剩 6 个域）：给 `multiagent.RunDeepAgent` /
    `RunEinoSingleChatModelAgent` / `agentfinalizer.FromRunResult` / `internal/project` 那 6 处
    声明消费者接口，再窄化对应字段并逐个下调 `concreteDBFields` 基线——每一步都由
    `TestNarrowedStorageStaysNilWithoutADatabase`（typed-nil）与
-   `TestConcreteDBFieldsOnlyShrink`（只降）双向把关。模式已走通**两**遍：
-   `conversation.go`（1 个方法 → 单方法接口）与 `audit.go`（8 个存在性查询 →
-   `audit.ResourceExistenceSource` + `AuditStore` 同步补齐，债面 8 → 7）。
-3. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），
+   `TestConcreteDBFieldsOnlyShrink`（只降）双向把关。模式已走通**三**遍：
+   `conversation.go`（1 个方法 → 单方法接口）、`audit.go`（8 个存在性查询 →
+   `audit.ResourceExistenceSource` + `AuditStore` 同步补齐，债面 8 → 7）、
+   `monitor.go`（4 处逃逸只需 1 个方法 → `conversationAccessLookup`，债面 7 → 6）。
+2. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），
    它决定社区制品的攻击面；其余决策项可以在 P4/P5 动工前再定。
 
 ## 附录 A：如何复现本报告的关键数字
