@@ -86,6 +86,29 @@ func TestStatusWithoutNetworkDescribesTheTree(t *testing.T) {
 	}
 }
 
+func TestStatusReportsTheInstallRootInAbsoluteForm(t *testing.T) {
+	requireGit(t)
+	tr := newTree(t)
+
+	// A relative config path gives filepath.Dir as "."; the page must still be able to say
+	// which directory is being updated.
+	t.Chdir(tr.install)
+	snap, err := Status(context.Background(), opts("."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(snap.Root) || filepath.Base(snap.Root) != "install" {
+		t.Errorf("root = %q, want the absolute install directory", snap.Root)
+	}
+
+	if _, err := Status(context.Background(), Options{Root: "  "}); err == nil {
+		t.Error("an empty install root must be an error, not a scan of the process CWD")
+	}
+	if _, err := Rollback(context.Background(), Options{Root: ""}); err == nil {
+		t.Error("rollback must refuse an empty install root for the same reason")
+	}
+}
+
 func TestStatusOnNonGitTreeIsAStateNotAnError(t *testing.T) {
 	requireGit(t)
 	dir := t.TempDir()

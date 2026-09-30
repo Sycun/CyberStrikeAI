@@ -105,6 +105,10 @@ func Apply(ctx context.Context, opts Options, onStep func(Step)) (*Result, error
 	}
 	start := time.Now()
 
+	// A refusal is not the end of the timeline: the page renders these lines, so the first
+	// one says what was looked at even when the answer is "nothing to do".
+	step("preflight", fmt.Sprintf("检查安装目录 %s（分支 %s / 远端 %s / 提交 %s）", snap.Root, snap.Branch, snap.Remote, snap.Commit))
+
 	if !snap.Installed {
 		return nil, &Error{Reason: "not_a_repo", Message: "这个目录不是 git 工作树，无法自动更新"}
 	}
@@ -312,9 +316,9 @@ func untrackedUnder(ctx context.Context, root string, willWrite map[string]bool)
 // before the swap. It refuses unless HEAD is still exactly what the update wrote, so it
 // can never discard work done after that update.
 func Rollback(ctx context.Context, opts Options) (*Result, error) {
-	root := strings.TrimSpace(opts.Root)
-	if root == "" {
-		return nil, fmt.Errorf("update: install root is required")
+	root, err := opts.installRoot()
+	if err != nil {
+		return nil, err
 	}
 	st, ok := readState(root)
 	if !ok {

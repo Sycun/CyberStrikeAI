@@ -18,11 +18,6 @@ func updateCommandIfNeeded(configPath string, check, apply, rollback bool) (bool
 		return false, 0
 	}
 	root := filepath.Dir(configPath)
-	if root == "." {
-		if wd, err := os.Getwd(); err == nil {
-			root = wd
-		}
-	}
 	opts := update.Options{Root: root}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()

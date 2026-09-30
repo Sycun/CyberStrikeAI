@@ -90,6 +90,21 @@ func (o Options) binaryName() string {
 	return o.BinaryName
 }
 
+// installRoot resolves the configured directory to an absolute path. A relative config path
+// arrives as "." from filepath.Dir, and while git answers it correctly the page would show
+// an installation rooted at "." - and an operator reading the refusal cannot tell which
+// directory was actually inspected.
+func (o Options) installRoot() (string, error) {
+	root := strings.TrimSpace(o.Root)
+	if root == "" {
+		return "", fmt.Errorf("update: install root is required")
+	}
+	if abs, err := filepath.Abs(root); err == nil {
+		return abs, nil
+	}
+	return root, nil
+}
+
 // Change is one locally modified or deleted tracked file.
 type Change struct {
 	Path      string `json:"path"`
@@ -185,9 +200,9 @@ func ValidName(s string) bool { return namePattern.MatchString(s) }
 
 // Status reads the install tree without touching the network.
 func Status(ctx context.Context, opts Options) (*Snapshot, error) {
-	root := strings.TrimSpace(opts.Root)
-	if root == "" {
-		return nil, fmt.Errorf("update: install root is required")
+	root, err := opts.installRoot()
+	if err != nil {
+		return nil, err
 	}
 	snap := &Snapshot{
 		Root:            root,
