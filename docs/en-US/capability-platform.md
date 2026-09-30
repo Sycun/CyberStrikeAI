@@ -256,6 +256,11 @@ one identity scheme and one live table:
   identities contain a slash, so the routes split into `:kind/:name` - one escaped segment would
   be unescaped by gin before matching and would never hit. Every mutation republishes the role
   catalog, so the next request already sees the change.
+  A pack that was installed is re-installed into the capability table on the next start-up
+  (`installBundlesFromDisk`, built-ins scanned first so a pack that shadows a shipped identity is
+  still refused by identity), and a pack carrying a recipe rebuilds the tool layer at the end of
+  boot - without that, "install" would only mean "until the next restart". Verified by killing the
+  process once and re-reading the served counts, not by reasoning.
 - For MCP the missing piece was **identity**, not liveness (adding, removing, starting and
   stopping an external server was already hot). `ExternalMCPManager` now reports each server's
   real tool inventory to `internal/app/remote_capabilities.go`, which registers, replaces and

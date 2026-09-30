@@ -526,6 +526,24 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	} else {
 		log.Logger.Info("角色目录已发布", zap.Int("roles", published))
 	}
+	// Boot order is the whole argument for doing this here: the shipped capabilities have to be
+	// in the table *before* the packs on disk are re-installed, so a pack that shadows a shipped
+	// role or skill is refused exactly as the install endpoint refuses it. Installing packs first
+	// would let the pack win the identity and the built-in scan would then refuse to put the
+	// shipped capability back.
+	//
+	// Without this step an installed pack lasts until the next restart, which is not what
+	// "install" means to whoever clicked it: every run path reads the capability table, and the
+	// table is rebuilt from disk at start-up.
+	if installed, refused := installBundlesFromDisk(pluginTable, filepath.Join(configDir, "bundles"), log.Logger); installed > 0 || len(refused) > 0 {
+		// Republish so the packs' roles reach the served catalog in this same boot, rather than
+		// waiting for somebody to install or unplug something.
+		if published, err := roleHandler.Reload(); err != nil {
+			log.Logger.Warn("能力包装入后刷新角色目录失败", zap.Error(err))
+		} else {
+			log.Logger.Info("角色目录已按能力表重新发布", zap.Int("roles", published), zap.Int("bundles", installed))
+		}
+	}
 	// The one-click extend surface. It is confined to <configDir>/bundles, and it drives the same
 	// table the run paths read, so an install here is live on the next request. A pack that
 	// contributes tool recipes goes through configHandler's tool-layer rebuild - the same sequence
@@ -675,6 +693,21 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		}
 		return nil
 	})
+
+	// The recipe list is read from the capability table, so a pack that ships one has to be
+	// rebuilt into it before the first request. Without this the tool unit sits in the table while
+	// the tool surface was built from tools_dir at config load, and the pack's recipe only appears
+	// after somebody presses 应用配置 - which is "installed" reading as "in effect", the exact
+	// thing this layer exists to prevent. It runs here, after every registrar is wired, because
+	// rebuilding clears the MCP tool table and refills it.
+	if bundled := bundleOwnedToolUnits(pluginTable); bundled > 0 {
+		if err := configHandler.Tools.Rebuild(); err != nil {
+			log.Logger.Error("能力包的配方未能装入工具层，POST /config/apply 可重试",
+				zap.Int("bundled_recipes", bundled), zap.Error(err))
+		} else {
+			log.Logger.Info("能力包的配方已随启动装入工具层", zap.Int("bundled_recipes", bundled))
+		}
+	}
 
 	// 设置路由（使用 App 实例以便动态获取 handler）
 	setupRoutes(routeDeps{

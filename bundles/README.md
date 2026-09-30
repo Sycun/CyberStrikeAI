@@ -68,6 +68,21 @@ agent 走 `agents.LoadMarkdownAgentPaths`、配方走 `RecipeSpecs`（缺能力�
 写侧只有一把串行化的锁。并发的读与换不会互相撕开——这条性质不是论证出来的，
 是把快照改成原地写之后 `TestConcurrentReadersNeverTear` 在 `-race` 下当场报出来的。
 
+"不需要重启"还得不等于"活不到下次重启"。能力表是在启动时从磁盘重建的，所以
+`<configDir>/bundles` 里的包必须在启动过程中被**重新装入**（`installBundlesFromDisk`），
+否则一个人装过的东西会在下一次重启后凭空消失——那已经不是"安装"而是"本次会话"。
+装入顺序是有条件的：**先把内置能力扫进表，再装包**，这样一个想冒充内置角色的包会被按身份
+拒掉（与安装接口同样的拒绝规则），而不是因为它先加载就抢走了内置的身份。
+带配方的包还要多一步：所有 registrar 接好之后按表重建一次工具层，
+否则包里的配方在表里、却不在 MCP 工具面上，要等谁按一下"应用配置"才出现。
+
+真机验过（两次启动，中间只 kill 进程）：
+第一次冷启动 `roles/agents/skills/tools = 17/20/27/139`（四个包都在表里且被服务）→
+重启后不做任何安装调用仍是 `17/20/27/139`，`semgrep` 还在工具清单里，
+包提供的 agent 依然以 `read_only` 出现在管理台。
+门禁：`TestBundlesOnDiskAreReinstalledAtBoot`（含冒充包被拒、损坏包被报出、
+运行路径真的看得见）与 `make wiring-check` 里对 `installBundlesFromDisk` 的 AST 断言。
+
 各 kind 离"装完就被服务"还差多远，逐个说清（不写"已全部插件化"这种话）：
 
 | kind | 单元进表 | 运行路径读表 | 一键安装 API |

@@ -3,7 +3,9 @@ package app
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/plugin"
@@ -98,4 +100,79 @@ func resolveUnderConfig(dir, configDir, fallback string) string {
 		return name
 	}
 	return filepath.Join(configDir, name)
+}
+
+// installBundlesFromDisk re-installs the packs that live under <configDir>/bundles.
+//
+// Without this an installed capability lasts until the next restart, which is not what
+// "install" means to the person who clicked it: every run path reads the table, and the table is
+// rebuilt from disk at start-up. A pack on disk is therefore part of the installation, not a
+// session.
+//
+// The built-in scan runs first on purpose. Identity is what makes the merge safe, so a pack that
+// shadows a shipped capability must be refused here exactly as the install endpoint refuses it,
+// rather than winning because it happened to load before the built-in scan could object.
+//
+// A pack that cannot be read is reported and skipped: one half-written bundle.yaml must not stop
+// the server from booting, and must not be able to take the *other* packs' capabilities away.
+func installBundlesFromDisk(table *plugin.Table, root string, logger *zap.Logger) (int, []string) {
+	if table == nil || strings.TrimSpace(root) == "" {
+		return 0, nil
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0, nil // no bundles directory is a normal state, not a failure
+	}
+	var installed int
+	var refused []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		dir := filepath.Join(root, name)
+		bundle, err := loadBundleForScan(dir)
+		if err != nil {
+			refused = append(refused, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		if err := table.InstallBundle(bundle); err != nil {
+			refused = append(refused, fmt.Sprintf("%s: %v", name, err))
+			continue
+		}
+		installed++
+	}
+	if logger != nil && (installed > 0 || len(refused) > 0) {
+		logger.Info("能力包已从磁盘重新装入能力表",
+			zap.String("root", root), zap.Int("installed", installed), zap.Int("refused", len(refused)))
+		for _, r := range refused {
+			logger.Warn("能力包未能装入，其余包与内置能力不受影响", zap.String("bundle", r))
+		}
+	}
+	return installed, refused
+}
+
+func loadBundleForScan(dir string) (*plugin.Bundle, error) {
+	m, err := plugin.LoadManifestDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	return m.Resolve()
+}
+
+// bundleOwnedToolUnits counts the recipes that came from a pack rather than from tools_dir.
+//
+// The built-in ones are already in the live tool list, because config.Load scanned tools_dir
+// before the table existed; only a pack's recipe needs the table-driven rebuild at start-up.
+func bundleOwnedToolUnits(table *plugin.Table) int {
+	if table == nil {
+		return 0
+	}
+	var n int
+	for _, u := range table.Units(plugin.KindTool) {
+		if u.Bundle != "" {
+			n++
+		}
+	}
+	return n
 }

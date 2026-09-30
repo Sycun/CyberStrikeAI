@@ -31,6 +31,8 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 	remoteObservers := 0
 	scanned := 0
 	scannedCalled := 0
+	bundlesInstalled := 0
+	bootToolRebuilds := 0
 	pluginCalls := 0
 	pluginWithoutToolLayer := 0
 	for _, entry := range entries {
@@ -50,13 +52,28 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
 			if !ok {
-				// A bare call in this package: the capability scan, which lives here.
-				if id, isIdent := call.Fun.(*ast.Ident); isIdent && id.Name == "scanBuiltInCapabilities" {
-					scannedCalled++
+				// A bare call in this package: the capability scan and the boot re-install of the
+				// packs on disk, both of which live here.
+				if id, isIdent := call.Fun.(*ast.Ident); isIdent {
+					switch id.Name {
+					case "scanBuiltInCapabilities":
+						scannedCalled++
+					case "installBundlesFromDisk":
+						bundlesInstalled++
+					}
 				}
 				return true
 			}
 			switch sel.Sel.Name {
+			case "Rebuild":
+				// The boot-time tool-layer rebuild for packs that ship a recipe. Missing it is
+				// silent: the recipe sits in the table and stays invisible to every run until
+				// somebody presses 应用配置.
+				if s, ok := sel.X.(*ast.SelectorExpr); ok {
+					if id, isIdent := s.X.(*ast.Ident); isIdent && id.Name == "configHandler" && s.Sel.Name == "Tools" {
+						bootToolRebuilds++
+					}
+				}
 			case "InstallSettingsStore":
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "handler" {
 					installed++
@@ -111,6 +128,14 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 		t.Fatalf("scanBuiltInCapabilities is never called: the table would be empty, and preferring it " +
 			"over Eino's backend would take every shipped skill away from a run")
 	}
+	if bundlesInstalled < 1 {
+		t.Fatalf("installBundlesFromDisk is never called: a pack somebody installed would exist only " +
+			"until the next restart, because the table is rebuilt from disk at start-up")
+	}
+	if bootToolRebuilds < 1 {
+		t.Fatalf("configHandler.Tools.Rebuild() is never called at boot: a pack that ships a recipe " +
+			"would be in the table but not on the tool surface until POST /config/apply runs")
+	}
 	if published < 1 {
 		t.Fatalf("no role catalog publish in assembly: the store would be installed but empty, so "+
 			"the roles API and every run path would serve nothing (files scanned: %d)", scanned)
@@ -124,9 +149,9 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 			"ever execute it (pass the configHandler, which owns RebuildToolLayer)")
 	}
 	t.Logf("assembly wiring: %d files scanned, 1 live-store install, 1 table install, "+
-		"1 remote inventory observer, %d capability scan call(s), %d catalog publish call(s), "+
-		"1 plug-in handler with its tool-layer rebuilder",
-		scanned, scannedCalled, published)
+		"1 remote inventory observer, %d capability scan call(s), %d bundle re-install call(s), "+
+		"%d catalog publish call(s), 1 plug-in handler with its tool-layer rebuilder",
+		scanned, scannedCalled, bundlesInstalled, published)
 }
 
 func moduleRootForWiringTest(t *testing.T) string {
