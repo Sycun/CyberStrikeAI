@@ -3477,12 +3477,7 @@ function refreshSystemReadyMessageBubbles() {
     const text = getChatWelcomeText();
     const welcome = document.querySelector('.chat-welcome-empty-state-title');
     if (welcome) updateChatWelcomeTitle(welcome);
-    const escapeHtmlLocal = (s) => {
-        if (!s) return '';
-        const div = document.createElement('div');
-        div.textContent = s;
-        return div.innerHTML;
-    };
+        function escapeHtmlLocal(s) { return CSAI.escapeHtml(s); }
     let formattedContent;
     if (typeof window.csMarkdownSanitize !== 'undefined') {
         formattedContent = window.csMarkdownSanitize.formatMarkdownToHtml(text, { profile: 'chat' });
@@ -3573,12 +3568,7 @@ function addMessage(role, content, mcpExecutionIds = null, progressId = null, cr
 
     // 解析 Markdown 或 HTML 格式
     let formattedContent;
-    const escapeHtml = (text) => {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    };
+        function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
     // 助手消息中的已知中文错误前缀做国际化替换（后端固定返回中文）
     let displayContent = content;

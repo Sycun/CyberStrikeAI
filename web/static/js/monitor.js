@@ -607,12 +607,7 @@ function applyEinoTimelineRole(item, data) {
     }
 }
 
-function escapeHtmlLocal(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = String(text);
-    return div.innerHTML;
-}
+function escapeHtmlLocal(text) { return CSAI.escapeHtml(text); }
 
 function escapeJsString(text) {
     return JSON.stringify(String(text == null ? '' : text));

@@ -1327,16 +1327,9 @@ function runBatchProbeWebshellConnections() {
     });
 }
 
-function escapeHtml(s) {
-    if (!s) return '';
-    const div = document.createElement('div');
-    div.textContent = s;
-    return div.innerHTML;
-}
+function escapeHtml(s) { return CSAI.escapeHtml(s); }
 
-function escapeHtmlAttr(s) {
-    return escapeHtml(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
+function escapeHtmlAttr(s) { return CSAI.escapeHtml(s); }
 
 function webshellFinalizationReasonLabel(reason, status) {
     var key = String(reason || status || '').trim();

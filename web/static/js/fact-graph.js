@@ -164,9 +164,7 @@
             .replace(/'/g, '&apos;');
     }
 
-    function escapeHtml(str) {
-        return escapeXml(str);
-    }
+        function escapeHtml(str) { return CSAI.escapeHtml(str); }
 
     function buildStatusBadge(confidence) {
         const conf = (confidence || '').toLowerCase();

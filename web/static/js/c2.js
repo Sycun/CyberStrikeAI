@@ -631,12 +631,7 @@
         return v.toFixed(digits) + ' ' + units[i];
     }
 
-    function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+        function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
     function escapeAttr(text) {
         return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');

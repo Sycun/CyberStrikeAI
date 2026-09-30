@@ -2511,14 +2511,7 @@ function formatProjectTime(t, fallback) {
     return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function escapeHtml(s) {
-    if (s == null) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
+function escapeHtml(s) { return CSAI.escapeHtml(s); }
 
 function escapeAttr(s) {
     return escapeHtml(s).replace(/'/g, '&#39;');

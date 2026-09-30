@@ -175,13 +175,7 @@ function showWechatBoundUI(wechat) {
     }
 }
 
-function escapeHtml(text) {
-    return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
+function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
 /** 扫码绑定进行中 */
 function showWechatScanUI() {

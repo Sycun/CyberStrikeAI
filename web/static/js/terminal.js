@@ -453,13 +453,7 @@
         }
     }
 
-    function escapeHtml(s) {
-        return String(s)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
+        function escapeHtml(s) { return CSAI.escapeHtml(s); }
 
     function refreshTerminalI18n() {
         // 语言切换后更新标签与容器 title；已打开的终端内容不强制清屏，以免丢失会话输出

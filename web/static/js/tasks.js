@@ -100,12 +100,7 @@ function batchQueueRunSingleTaskDisabledReason(queue, task) {
 
 // HTML转义函数（如果未定义）
 if (typeof escapeHtml === 'undefined') {
-    function escapeHtml(text) {
-        if (text == null) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+        function escapeHtml(text) { return CSAI.escapeHtml(text); }
 }
 
 function escapeJsString(text) {

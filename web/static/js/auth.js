@@ -643,11 +643,7 @@ function formatDuration(ms) {
     }
 }
 
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
 function escapeJsString(text) {
     return JSON.stringify(String(text == null ? '' : text));
