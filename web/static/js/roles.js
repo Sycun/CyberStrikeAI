@@ -548,15 +548,11 @@ function closeRoleSelectionPanel() {
 // 转义HTML
 function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsString(text) {
-    return JSON.stringify(String(text == null ? '' : text));
-}
+function escapeJsString(text) { return CSAI.escapeJsString(text); }
 
 function escapeAttr(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsStringAttr(text) {
-    return escapeAttr(escapeJsString(text));
-}
+function escapeJsStringAttr(text) { return CSAI.escapeJsStringAttr(text); }
 
 // 刷新角色列表
 async function refreshRoles() {

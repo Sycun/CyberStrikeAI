@@ -2515,13 +2515,9 @@ function escapeHtml(s) { return CSAI.escapeHtml(s); }
 
 function escapeAttr(s) { return CSAI.escapeHtml(s); }
 
-function escapeJsString(text) {
-    return JSON.stringify(String(text == null ? '' : text));
-}
+function escapeJsString(text) { return CSAI.escapeJsString(text); }
 
-function escapeJsStringAttr(text) {
-    return escapeAttr(escapeJsString(text));
-}
+function escapeJsStringAttr(text) { return CSAI.escapeJsStringAttr(text); }
 
 function getChatProjectSelection() {
     const convId = window.currentConversationId;

@@ -1002,15 +1002,11 @@ function formatDescription(text) {
 // HTML转义
 function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsString(text) {
-    return JSON.stringify(String(text == null ? '' : text));
-}
+function escapeJsString(text) { return CSAI.escapeJsString(text); }
 
 function escapeAttr(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsStringAttr(text) {
-    return escapeAttr(escapeJsString(text));
-}
+function escapeJsStringAttr(text) { return CSAI.escapeJsStringAttr(text); }
 
 // ID转义（用于HTML ID属性）
 function escapeId(text) {

@@ -609,15 +609,11 @@ function applyEinoTimelineRole(item, data) {
 
 function escapeHtmlLocal(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsString(text) {
-    return JSON.stringify(String(text == null ? '' : text));
-}
+function escapeJsString(text) { return CSAI.escapeJsString(text); }
 
 function escapeAttrLocal(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsStringAttr(text) {
-    return escapeAttrLocal(escapeJsString(text));
-}
+function escapeJsStringAttr(text) { return CSAI.escapeJsStringAttr(text); }
 
 function formatTimelinePlainTextHtml(text) {
     return '<pre class="timeline-plain-text">' + escapeHtml(text == null ? '' : String(text)) + '</pre>';

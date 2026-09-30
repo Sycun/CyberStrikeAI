@@ -32,4 +32,18 @@
     // Name kept distinct from the per-file escapeHtmlAttr helpers so the parity test can
     // tell "delegating to the canonical implementation" from "still has its own".
     window.CSAI.escapeHtmlAttr = escapeHtml;
+
+    // A JavaScript string literal destined for an inline handler, and that same literal
+    // escaped for the attribute around it. Kept separate from escapeHtml on purpose: they
+    // escape for different target languages, and the composition order is what makes the
+    // result safe - JSON.stringify first (so quotes and backslashes become JS), then the
+    // HTML escaper (so the attribute's own quotes survive). Eight files each had a
+    // byte-identical copy of these two, which is duplication worth owning in one place even
+    // when the implementations are already correct.
+    function escapeJsString(value) {
+        return JSON.stringify(String(value === null || value === undefined ? '' : value));
+    }
+
+    window.CSAI.escapeJsString = escapeJsString;
+    window.CSAI.escapeJsStringAttr = function (value) { return escapeHtml(escapeJsString(value)); };
 })();

@@ -652,15 +652,11 @@ function formatDuration(ms) {
 
 function escapeHtml(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsString(text) {
-    return JSON.stringify(String(text == null ? '' : text));
-}
+function escapeJsString(text) { return CSAI.escapeJsString(text); }
 
 function escapeAttr(text) { return CSAI.escapeHtml(text); }
 
-function escapeJsStringAttr(text) {
-    return escapeAttr(escapeJsString(text));
-}
+function escapeJsStringAttr(text) { return CSAI.escapeJsStringAttr(text); }
 
 /** @param {string} text @param {{ profile?: 'chat'|'timeline' }} [options] */
 function formatMarkdown(text, options) {

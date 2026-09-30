@@ -41,7 +41,7 @@ function balancedBody(src, openBrace) {
 // modal closers (initProjectsModalEscape) instead of escapers, so the name rule only guards
 // the ones that were converted, while the entity-literal test below is name-independent and
 // is what actually stops a new duplicate HTML escaper from appearing.
-const UNIFIED_ESCAPERS = /^(?:esc|escapeHtml|escapeHtmlLocal|escapeHtmlAttr|escapeAttr|escapeAttrLocal|assetEscapeAttr|chatFilesEscapeAttr|presetDataAttr|escapeAIChannelHtml|settingsEscapeAttr|htmlEscape)$/;
+const UNIFIED_ESCAPERS = /^(?:esc|escapeHtml|escapeHtmlLocal|escapeHtmlAttr|escapeAttr|escapeAttrLocal|assetEscapeAttr|chatFilesEscapeAttr|presetDataAttr|escapeAIChannelHtml|settingsEscapeAttr|htmlEscape|escapeJsString|escapeJsStringAttr)$/;
 const DECLARATION = /(?:function|const)\s+([A-Za-z0-9_]+)\s*(?:=\s*)?\(([^)]*)\)\s*(?:=>\s*)?\{/g;
 
 test('the canonical escaper escapes everything a text node or a quoted attribute needs', () => {
@@ -78,7 +78,9 @@ test('no file keeps its own HTML escaper', () => {
 			assert.notStrictEqual(body, null, `${name}: unbalanced ${match[1]}`);
 			// A delegation may keep that page's own guard - dashboard.js renders non-strings as
 			// empty - but it must not contain any escaping logic of its own.
-			if (!/CSAI\.escapeHtml/.test(body) || /\.replace\(|&amp;|&quot;|&#39;/.test(body)) {
+			// Any CSAI escape helper counts as delegating; the two JS-literal ones must not be
+			// folded into the HTML one, because they escape for different target languages.
+			if (!/CSAI\.escape/.test(body) || /\.replace\(/.test(body)) {
 				offenders.push(`${name}: ${match[1]}`);
 			}
 			delegating++;
@@ -160,7 +162,10 @@ test('the escapers that used to differ now behave the same', () => {
 			const body = balancedBody(src, src.indexOf('{', match.index + match[0].length - 1));
 			seen++;
 			assert.ok(!/\.replace\(/.test(body || ''), `${name}: ${match[1]} hand-rolls escaping again`);
-			assert.match(body || '', /CSAI\.escapeHtml/, `${name}: ${match[1]} must delegate`);
+			// These files also carry the JS-literal helper, whose canonical form is
+			// CSAI.escapeJsString - so the assertion is "delegates to some CSAI escaper", not
+			// "delegates to the HTML one".
+			assert.match(body || '', /CSAI\.escape/, `${name}: ${match[1]} must delegate`);
 		}
 		assert.ok(seen >= 1, `${name} lost its escaper helpers, which means the scan is broken`);
 	}
