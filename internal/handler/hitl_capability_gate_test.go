@@ -60,7 +60,7 @@ func TestTwoHandlersOneStoreIsRaceFree(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 300; j++ {
-				if got := agentHandler.hitl(); len(got.ToolWhitelist) == 0 {
+				if got := agentHandler.hitlSnapshot(); len(got.ToolWhitelist) == 0 {
 					t.Error("reader observed an emptied whitelist")
 					return
 				}
@@ -73,7 +73,7 @@ func TestTwoHandlersOneStoreIsRaceFree(t *testing.T) {
 	// The legacy fallback must still work for handlers constructed without a store.
 	legacy := &AgentHandler{config: &config.Config{}, logger: zap.NewNop()}
 	legacy.publishHitl(func(hitl *config.HitlConfig) { hitl.DefaultMode = "off" })
-	if legacy.hitl().DefaultMode != "off" {
+	if legacy.hitlSnapshot().DefaultMode != "off" {
 		t.Fatal("store-less handler lost its write path")
 	}
 }

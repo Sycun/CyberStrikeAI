@@ -190,6 +190,10 @@ type AgentHandler struct {
 	// hitlQueue 是中断队列的读取/权限/审计日志面，从本 handler 里搬出去的 9 个方法住在
 	// hitl_queue.go：它只需要域存储、会话可见性判断、保留期配置和审计服务四样东西。
 	hitlQueue *HITLQueue
+	// hitlPolicy is the approval-configuration surface (see hitl_policy.go): the endpoints that
+	// say how approvals behave, split off because they are edited while nothing is running,
+	// unlike the queue and the run path that waits on a decision.
+	hitlPolicy *HitlPolicy
 	// finalizer 是"跑完的一轮怎么收尾"：判定终态、落库、取消悬挂的工具执行、以及自动续跑。
 	// 搬出去的第二族，见 finalization_helpers.go 顶部的说明。
 	finalizer *runFinalizer
@@ -218,6 +222,11 @@ type AgentHandler struct {
 }
 
 // SetAudit wires platform audit logging.
+// HitlPolicy hands the approval-configuration endpoints to the route table. Paths and the
+// names callers see are unchanged by this split; only the object answering them moved off
+// AgentHandler, which is why the golden route table does not move either.
+func (h *AgentHandler) HitlPolicy() *HitlPolicy { return h.hitlPolicy }
+
 func (h *AgentHandler) SetAudit(s *audit.Service) {
 	h.audit = s
 	// The HITL queue records its own deletions, so it takes the same service. Assigning the field
@@ -225,6 +234,9 @@ func (h *AgentHandler) SetAudit(s *audit.Service) {
 	// setter the wiring must remember is one that can be forgotten.
 	if h.hitlQueue != nil {
 		h.hitlQueue.audit = s
+	}
+	if h.hitlPolicy != nil {
+		h.hitlPolicy.setAudit(s)
 	}
 }
 
@@ -324,6 +336,8 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 	// literal rather than inside it; it takes the narrowed storage and the agent's one cancel
 	// method, not the handler as a whole.
 	handler.finalizer = newRunFinalizer(db, logger, agent, handler)
+	handler.hitlPolicy = NewHitlPolicy(handler, handler.hitlManager, handler.hitlQueue, logger)
+
 	if err := handler.hitlManager.EnsureSchema(); err != nil {
 		logger.Warn("初始化 HITL 表失败", zap.Error(err))
 	}
@@ -345,21 +359,21 @@ func (h *AgentHandler) SetAgentsMarkdownDir(absDir string) {
 
 func (h *AgentHandler) hitlEffectiveDefaultReviewer() string {
 	if h != nil && h.config != nil {
-		return normalizeHitlReviewer(h.hitl().EffectiveDefaultReviewer())
+		return normalizeHitlReviewer(h.hitlSnapshot().EffectiveDefaultReviewer())
 	}
 	return "human"
 }
 
 func (h *AgentHandler) hitlEffectiveDefaultMode() string {
 	if h != nil && h.config != nil {
-		return normalizeHitlDefaultMode(h.hitl().EffectiveDefaultMode())
+		return normalizeHitlDefaultMode(h.hitlSnapshot().EffectiveDefaultMode())
 	}
 	return "off"
 }
 
 func (h *AgentHandler) hitlEffectiveDefaultTimeoutSeconds() int {
 	if h != nil && h.config != nil {
-		timeout := h.hitl().EffectiveDefaultTimeoutSeconds()
+		timeout := h.hitlSnapshot().EffectiveDefaultTimeoutSeconds()
 		if timeout < 0 {
 			return 0
 		}

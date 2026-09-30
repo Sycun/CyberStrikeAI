@@ -43,4 +43,10 @@ func (h *AgentHandler) SetHitlConfigSaver(s HitlConfigSaver) {
 		return
 	}
 	h.hitlSavers = hitlConfigSavers{whitelist: s, strategy: s, defaultReviewer: s}
+	if h.hitlPolicy != nil {
+		// Forwarded, not copied at construction: the policy answers "persistence unavailable"
+		// from the same value the run path uses, so the two cannot disagree about whether a
+		// write channel exists.
+		h.hitlPolicy.setSavers(h.hitlSavers)
+	}
 }

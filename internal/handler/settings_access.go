@@ -39,7 +39,10 @@ func (h *ConfigHandler) hitl() config.HitlConfig {
 	return h.config.Hitl
 }
 
-func (h *AgentHandler) hitl() config.HitlConfig {
+// hitlSnapshot is the live HITL configuration: the published runtime snapshot when the
+// settings store is attached, config.yaml's own value otherwise. Named so the approval
+// policy can read it through an interface instead of reaching into the handler.
+func (h *AgentHandler) hitlSnapshot() config.HitlConfig {
 	if h == nil {
 		return config.HitlConfig{}
 	}
@@ -72,3 +75,7 @@ func (h *AgentHandler) publishHitl(mutate func(hitl *config.HitlConfig)) {
 	}
 	mutate(&h.config.Hitl)
 }
+
+// settingsConfigured reports whether a configuration was loaded at all. An endpoint that
+// reads defaults must be able to say "not configured" rather than inventing one.
+func (h *AgentHandler) settingsConfigured() bool { return h != nil && h.config != nil }

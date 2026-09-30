@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"cyberstrike-ai/internal/capability"
-	"cyberstrike-ai/internal/config"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -251,7 +250,7 @@ func (h *AgentHandler) hitlConfigGlobalToolWhitelist() []string {
 	if h == nil || h.config == nil {
 		return multiagent.MergeHitlExemptMetaTools(nil)
 	}
-	raw := h.hitl().ToolWhitelist
+	raw := h.hitlSnapshot().ToolWhitelist
 	seen := make(map[string]struct{})
 	out := make([]string, 0, len(raw)+len(multiagent.HitlExemptMetaTools))
 	for _, t := range raw {
@@ -913,88 +912,12 @@ type hitlConfigReq struct {
 	HITLRequest
 }
 
-func (h *AgentHandler) GetHITLConversationConfig(c *gin.Context) {
-	conversationID := strings.TrimSpace(c.Param("conversationId"))
-	if conversationID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "conversationId is required"})
-		return
-	}
-	if !h.hitlQueue.hitlConversationAllowed(c, conversationID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
-		return
-	}
-	cfg, err := h.loadHITLConversationConfig(conversationID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if !hitlStoredConfigEffective(cfg) {
-		if pendMode, ok := h.hitlManager.PendingHITLInterruptMode(conversationID); ok {
-			cfg2 := *cfg
-			cfg2.Enabled = true
-			cfg2.Mode = normalizeHitlMode(pendMode)
-			if cfg2.TimeoutSeconds < 0 {
-				cfg2.TimeoutSeconds = 0
-			}
-			cfg = &cfg2
-		}
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"conversationId":          conversationID,
-		"hitl":                    cfg,
-		"defaultMode":             h.hitlEffectiveDefaultMode(),
-		"defaultReviewer":         h.hitlEffectiveDefaultReviewer(),
-		"defaultTimeoutSeconds":   h.hitlEffectiveDefaultTimeoutSeconds(),
-		"hitlGlobalToolWhitelist": h.hitlConfigGlobalToolWhitelist(),
-	})
-}
-
-func (h *AgentHandler) UpsertHITLConversationConfig(c *gin.Context) {
-	var req hitlConfigReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if !h.hitlQueue.hitlConversationAllowed(c, req.ConversationID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
-		return
-	}
-	req.Mode = normalizeHitlMode(req.Mode)
-	req.Reviewer = normalizeHitlReviewer(req.Reviewer)
-	if strings.TrimSpace(req.Reviewer) == "" {
-		req.Reviewer = h.hitlEffectiveDefaultReviewer()
-	}
-	if err := h.hitlManager.SaveConversationConfig(req.ConversationID, &req.HITLRequest); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if h.hitlSavers.whitelist != nil && len(req.SensitiveTools) > 0 {
-		if err := h.hitlSavers.whitelist.MergeHitlToolWhitelistIntoConfig(req.SensitiveTools); err != nil {
-			h.logger.Warn("HITL 会话配置已保存，但合并工具白名单到 config.yaml 失败", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "会话配置已保存，但写入 config.yaml 失败: " + err.Error(),
-			})
-			return
-		}
-	}
-	h.hitlManager.ActivateConversation(req.ConversationID, h.hitlRequestWithMergedConfigWhitelist(&req.HITLRequest))
-	c.JSON(http.StatusOK, gin.H{"ok": true})
-}
-
 type mergeHitlGlobalWhitelistReq struct {
 	SensitiveTools []string `json:"sensitiveTools"`
 }
 
 type setHitlGlobalWhitelistReq struct {
 	ToolWhitelist []string `json:"toolWhitelist"`
-}
-
-// GetHITLGlobalToolWhitelist 返回 config.yaml 中的全局免审批工具白名单。
-func (h *AgentHandler) GetHITLGlobalToolWhitelist(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"toolWhitelist":   h.hitlConfigGlobalToolWhitelist(),
-		"defaultReviewer": h.hitlEffectiveDefaultReviewer(),
-	})
 }
 
 type setHitlDefaultReviewerReq struct {
@@ -1005,148 +928,4 @@ type setHitlDefaultConfigReq struct {
 	Mode           string `json:"mode"`
 	Reviewer       string `json:"reviewer"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
-}
-
-func (h *AgentHandler) hitlDefaultConfigResponse() gin.H {
-	backend, model := h.hitlAuditEngineInfo()
-	return gin.H{
-		"defaultMode":             h.hitlEffectiveDefaultMode(),
-		"defaultReviewer":         h.hitlEffectiveDefaultReviewer(),
-		"defaultTimeoutSeconds":   h.hitlEffectiveDefaultTimeoutSeconds(),
-		"hitlGlobalToolWhitelist": h.hitlConfigGlobalToolWhitelist(),
-		"auditBackend":            backend,
-		"auditModel":              model,
-	}
-}
-
-// GetHITLDefaultConfig 返回 config.yaml 中的全局默认人机协同配置。
-func (h *AgentHandler) GetHITLDefaultConfig(c *gin.Context) {
-	c.JSON(http.StatusOK, h.hitlDefaultConfigResponse())
-}
-
-// UpdateHITLDefaultConfig 将全局默认人机协同配置写入 config.yaml。
-func (h *AgentHandler) UpdateHITLDefaultConfig(c *gin.Context) {
-	if h.hitlSavers.defaultReviewer == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
-		return
-	}
-	var req setHitlDefaultConfigReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	mode := normalizeHitlDefaultMode(req.Mode)
-	reviewer := normalizeHitlReviewer(req.Reviewer)
-	timeoutSeconds := req.TimeoutSeconds
-	if timeoutSeconds < 0 {
-		timeoutSeconds = 0
-	}
-	if err := h.hitlSavers.defaultReviewer.UpdateHitlDefaultConfig(mode, reviewer, timeoutSeconds); err != nil {
-		h.logger.Warn("写入 HITL 默认配置到 config.yaml 失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	publishedTimeout := timeoutSeconds
-	h.publishHitl(func(hitl *config.HitlConfig) {
-		hitl.DefaultMode = mode
-		hitl.DefaultReviewer = reviewer
-		hitl.DefaultTimeoutSeconds = &publishedTimeout
-	})
-	if h.audit != nil {
-		h.audit.RecordOK(c, "hitl", "default_config_update", "HITL 全局默认配置更新", "hitl_config", "default", nil)
-	}
-	out := h.hitlDefaultConfigResponse()
-	out["ok"] = true
-	c.JSON(http.StatusOK, out)
-}
-
-// GetHITLDefaultReviewer 返回 config.yaml 中的全局默认审批方。
-func (h *AgentHandler) GetHITLDefaultReviewer(c *gin.Context) {
-	c.JSON(http.StatusOK, h.hitlDefaultConfigResponse())
-}
-
-// UpdateHITLDefaultReviewer 将全局默认审批方写入 config.yaml（未选会话时切换审批方）。
-func (h *AgentHandler) UpdateHITLDefaultReviewer(c *gin.Context) {
-	if h.hitlSavers.defaultReviewer == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
-		return
-	}
-	var req setHitlDefaultReviewerReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	reviewer := normalizeHitlReviewer(req.Reviewer)
-	if err := h.hitlSavers.defaultReviewer.UpdateHitlDefaultReviewer(reviewer); err != nil {
-		h.logger.Warn("写入 HITL 默认审批方到 config.yaml 失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	h.publishHitl(func(hitl *config.HitlConfig) {
-		hitl.DefaultReviewer = reviewer
-	})
-	if h.audit != nil {
-		h.audit.RecordOK(c, "hitl", "default_reviewer_update", "HITL 全局默认审批方更新", "hitl_config", "default_reviewer", nil)
-	}
-	out := h.hitlDefaultConfigResponse()
-	out["ok"] = true
-	c.JSON(http.StatusOK, out)
-}
-
-// SetHITLGlobalToolWhitelist 整表替换 config.yaml 中的全局免审批工具白名单。
-func (h *AgentHandler) SetHITLGlobalToolWhitelist(c *gin.Context) {
-	if h.hitlSavers.whitelist == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
-		return
-	}
-	var req setHitlGlobalWhitelistReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if err := h.hitlSavers.whitelist.SetHitlToolWhitelist(req.ToolWhitelist); err != nil {
-		h.logger.Warn("写入 HITL 工具白名单到 config.yaml 失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	if h.audit != nil {
-		h.audit.RecordOK(c, "hitl", "tool_whitelist_update", "HITL 全局白名单更新", "hitl_config", "tool_whitelist", nil)
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"ok":                        true,
-		"toolWhitelist":             h.hitlConfigGlobalToolWhitelist(),
-		"hitlGlobalToolWhitelist":   h.hitlConfigGlobalToolWhitelist(),
-		"hitlGlobalWhitelistMerged": false,
-	})
-}
-
-// MergeHITLGlobalToolWhitelist 无会话 ID 时将侧栏提交的免审批工具合并进 config.yaml（与 PUT /hitl/config 中白名单落盘规则一致）。
-func (h *AgentHandler) MergeHITLGlobalToolWhitelist(c *gin.Context) {
-	if h.hitlSavers.whitelist == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
-		return
-	}
-	var req mergeHitlGlobalWhitelistReq
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if len(req.SensitiveTools) == 0 {
-		c.JSON(http.StatusOK, gin.H{
-			"ok":                        true,
-			"hitlGlobalToolWhitelist":   h.hitlConfigGlobalToolWhitelist(),
-			"hitlGlobalWhitelistMerged": false,
-		})
-		return
-	}
-	if err := h.hitlSavers.whitelist.MergeHitlToolWhitelistIntoConfig(req.SensitiveTools); err != nil {
-		h.logger.Warn("合并 HITL 工具白名单到 config.yaml 失败", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"ok":                        true,
-		"hitlGlobalToolWhitelist":   h.hitlConfigGlobalToolWhitelist(),
-		"hitlGlobalWhitelistMerged": true,
-	})
 }

@@ -40,7 +40,7 @@ import (
 // the map below - it has no ambition to be a handler; if it grows into one, it gets a ceiling then.
 
 const (
-	agentHandlerMethodCeiling = 112
+	agentHandlerMethodCeiling = 102
 	agentHandlerFileCeiling   = 21
 	setterCeiling             = 64
 )
