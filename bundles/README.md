@@ -139,6 +139,11 @@ enabled: true          # 读得到，但装包时不生效——开关是单元�
 `TestPluginInstallDeclaresMCPServerWithoutStartingIt` 与 `TestPluginConsoleReportsAShadowedMCPServer`
 （控制台与表同源）。
 
+随仓库的四个示例包**没有**带 `mcp/` 单元：一个命令不存在、连不上的服务器只会让 MCP 页多一行
+错误状态，而装包时它本来也不启动。要示范这一类能力请用真存在的服务器（本仓库的
+`cmd/mcp-stdio` 就是一个可选目标，前提是先构建出那个二进制）。契约由测试夹具承担，
+`make wiring-check` 里那三条 MCP 测试覆盖的就是这种声明。
+
 ## 外部 MCP 工具也有身份
 
 远端服务器本来就支持热增删（`/api/external-mcp/*`），缺的是**身份**：所有远端工具过去一起过
