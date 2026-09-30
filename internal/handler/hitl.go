@@ -645,7 +645,7 @@ func (h *AgentHandler) waitHITLApproval(runCtx context.Context, cancelRun contex
 			"payload":        payload,
 		})
 		ad := h.auditAgentReview(runCtx, cfg.Mode, toolName, payload)
-		if s, storeErr := h.hitlStoreOrErr(); storeErr == nil {
+		if s, storeErr := h.hitlQueue.hitlStoreOrErr(); storeErr == nil {
 			if decErr := s.RecordAgentDecision(p.InterruptID, ad.Decision, ad.Comment, time.Now()); decErr != nil {
 				h.logger.Warn("保存审计 Agent HITL 决策失败", zap.Error(decErr), zap.String("interruptId", p.InterruptID))
 			}
@@ -794,7 +794,7 @@ func (h *AgentHandler) ListHITLPending(c *gin.Context) {
 	f := hitlFilterFromRequest(c)
 	f.Access = hitlAccessFromRequest(c)
 	f.Limit, f.Offset = pageSize, offset
-	items, total, err := h.listHitlInterrupts(store.InterruptsAwaitingHuman, f)
+	items, total, err := h.hitlQueue.listHitlInterrupts(store.InterruptsAwaitingHuman, f)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -819,7 +819,7 @@ func (h *AgentHandler) DecideHITLInterrupt(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "hitl manager unavailable"})
 		return
 	}
-	if !h.hitlInterruptAllowed(c, req.InterruptID) {
+	if !h.hitlQueue.hitlInterruptAllowed(c, req.InterruptID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
@@ -847,11 +847,11 @@ func (h *AgentHandler) DismissHITLInterrupt(c *gin.Context) {
 		c.JSON(500, gin.H{"error": "hitl manager unavailable"})
 		return
 	}
-	if !h.hitlInterruptAllowed(c, req.InterruptID) {
+	if !h.hitlQueue.hitlInterruptAllowed(c, req.InterruptID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
-	s, storeErr := h.hitlStoreOrErr()
+	s, storeErr := h.hitlQueue.hitlStoreOrErr()
 	if storeErr != nil {
 		c.JSON(500, gin.H{"error": storeErr.Error()})
 		return
@@ -919,7 +919,7 @@ func (h *AgentHandler) GetHITLConversationConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "conversationId is required"})
 		return
 	}
-	if !h.hitlConversationAllowed(c, conversationID) {
+	if !h.hitlQueue.hitlConversationAllowed(c, conversationID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
@@ -955,7 +955,7 @@ func (h *AgentHandler) UpsertHITLConversationConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if !h.hitlConversationAllowed(c, req.ConversationID) {
+	if !h.hitlQueue.hitlConversationAllowed(c, req.ConversationID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}

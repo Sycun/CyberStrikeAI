@@ -617,7 +617,7 @@ manifest 与已批准版本相同 → 只做自动重扫；任何**新增**能�
 refactor-ratchet 的规矩先实测，**两个数字都比报告写的多**（遍历域：`internal/handler` 全部非测试文件，
 接收者=所有带方法接收者的类型，判据来源=`go/ast` 的 `FuncDecl`，不是 grep）：
 
-- `AgentHandler`：**130 个方法 / 23 个文件**。
+- `AgentHandler`：**130 个方法 / 23 个文件**（起点；分解第一刀之后是 122/22，见下一小节）。
 - `internal/handler` 里 `Set*` 注入方法：**64 个，分布在 21 个接收者类型上**（报告记 26，低估）。
   其中 **`SetAudit` 有 18 份逐字相同的副本**——`h.audit` 引用 198 处，`if h.audit != nil` 手写守卫 **89 处**。
 - 其余大接收者：`RobotHandler` 68 方法/2 文件、`ConfigHandler` 45/3、`BatchTaskManager` 40/1、
@@ -671,6 +671,38 @@ refactor-ratchet 的规矩先实测，**两个数字都比报告写的多**（�
 
 **复现**：`make wiring-check`（或 `go test -count=1 -run 'TestEveryAuditableHandlerIsAuditBound|TestBindAuditReachesTheSetter' ./internal/app/`）、
 `make layering-check`。
+
+### P6 `AgentHandler` 分解第一刀 —— 中断队列读面 9 个方法搬进 `HITLQueue`
+
+上一节把水位钉成 130 方法/23 文件的门禁；这一刀是门禁之后**第一次真的把方法搬出去**：
+
+- 搬的是 `hitl_logs.go` 里那 9 个方法（`ListHITLLogs`/`DeleteHITLLogs`/`GetHITLLog` 三个端点 +
+  `hitlStoreOrErr`/`listHitlInterrupts`/`hitlRetentionDays`/`filterAllowedHitlInterruptIDs`/
+  `hitlInterruptAllowed`/`hitlConversationAllowed` 六个内部构件），新文件 `hitl_queue.go` 上的
+  `HITLQueue` 只带**四样状态**：HITL 域存储、一个 `UserCanAccessResource` 的会话可见性判断
+  （单方法接口 `conversationAccessSource`，不是 `*database.DB`——不然就是刚归零的裸句柄又搬家）、
+  保留期配置、审计服务。留在 `hitl_logs.go` 的是请求↔store 的翻译函数（包级，无状态）。
+- **为什么这一族该走**：`hitl.go` 那 20 个方法是决策/终止/超时这条运行链路，跟 agent run loop 的
+  任务、会话、SSE 状态绑在一起；而读队列/权限/日志这一族只碰上面四样东西。
+  判据不是"文件多大"，是"共享了多少状态"。
+- **setter 计数不升**：`HITLQueue` 没有 `SetAudit` 方法，`AgentHandler.SetAudit` 直接给它同包的字段赋值。
+  整包 `Set*` 仍是 64（18 个 handler 一份 `SetAudit` 的重复这次没有变成 19 份）。
+  新协作对象的访问面是 `agentHandler.HITLQueue()`，`routes_hitl.go` 三条路由改挂在它身上——
+  **方法名与路径都没动，所以 278 条路由 golden 仍逐条相同**（`TestRouteTableMatchesGolden` 当场过）。
+- 水位：`AgentHandler` **130 → 122 方法、23 → 22 文件**，两条上限当场收紧；
+  探针：给 `AgentHandler` 再加一个方法 → `AgentHandler: 123 methods > ceiling 122`，撤销后复验绿。
+- 过程里被测试抓到一个**真行为差异**：`hitl_endpoints_test.go` 用结构体字面量手搓 `AgentHandler`，
+  搬走之后 `hitlQueue` 是 nil → `DELETE /hitl/logs` 回 500 `hitl store unavailable`。
+  修法是把测试改成按生产路径构造（`newHITLQueue(...)`），**没有**改成"访问器里惰性构造"——
+  惰性初始化会在并发请求下写同一个字段，是把一个可见的失败换成一个偶发的数据竞争。
+- 我自己还犯了一次值得写下来的错：撤销那个探针时用了 `git checkout HEAD -- internal/handler/agent.go`，
+  而这个文件本轮**本来就有合法改动**，于是三处编辑一起被冲掉；靠"撤销后立刻 `grep` 关键标识 +
+  `git diff` 对照本轮意图"才当场发现。**撤销注入物必须用精确编辑删掉那几行**，
+  或者事先 `git diff > /tmp/patch`；对已经改过的文件执行任何 `git checkout` 都是破坏性操作。
+
+**复现**：`make layering-check`（三条只降门禁 + Eino + 裸句柄硬零）、
+`go test -count=1 -run 'TestRouteTableMatchesGolden' ./internal/app/`、
+`go test -count=1 -run 'TestHITL' ./internal/handler/`。
 
 ### 门禁复现命令
 
@@ -1035,8 +1067,10 @@ handler 字段随即窄化，债面 **6 → 3**（`knowledge.go` 的死字段与
   **没有任何结构体再持有 `*database.DB` 或 `*sql.DB`**（19 → 0；18 个域换成各自的窄接口字段，
   另 1 个是没人读的死字段，直接删。见 §11「P6 数据层第五片」与 §12.1 表）；
   `internal/database` 那 361 个方法本身也按域继续切）、
-  `AgentHandler` 分解（**水位已实测并进门禁**：130 方法/23 文件、`internal/handler` 整包 64 个 `Set*`；
-  已落地 1 处内聚塌陷 + 1 道审计注入完整性门禁，见 §11「P6 `AgentHandler` 分解」；
+  `AgentHandler` 分解（**水位实测 + 门禁 + 第一刀已落**：起点 130 方法/23 文件，
+  现已搬到 **122 方法/22 文件**——中断队列读面 9 个方法进 `HITLQueue`，见 §11「分解第一刀」；
+  `internal/handler` 整包 64 个 `Set*` 未增；
+  另落地 1 处内聚塌陷 + 1 道审计注入完整性门禁，见 §11「P6 `AgentHandler` 分解」；
   报告原记的"19 个文件/26 处 SetXxx"是低估）、Eino 收口至 ≤1 包（**已进门禁并在收**：
   引入包 11→6、适配边界之外债面 8 包/100 文件 → 3 包/96 文件，见 §11「P6 Eino 收敛」）、session 事件溯源。
   （provider catalog 代码生成**已完成**，见 §11「P6 Provider 方言目录代码生成」。）
@@ -1062,7 +1096,8 @@ handler 字段随即窄化，债面 **6 → 3**（`knowledge.go` 的死字段与
 | P6 常规解耦 | **部分**：`setupRoutes` 分域、Provider 方言 + 目录代码生成、数据层 5 个 Store 面、**handler 层不再持有任何数据库句柄**（18 个域用各自的窄接口 + 1 个死字段删除）、handler 裸 SQL 0、Eino 6 包（适配外 3 包）、`AgentHandler` 水位与审计注入门禁 | `make layering-check` + `make wiring-check`；`go test -count=1 -v -run TestHandlerLayerHoldsNoGodObject ./internal/layering/` 报 `0 structs hold *database.DB, 18 hold their own store interface, 990 struct fields scanned` |
 | §6.1 社区知识控制 | **代码层已落**（围栏 + 入库拒绝 + 装配点守卫）；是否按运行期不可信处理仍待裁决（决策项 4） | `go test -count=1 ./internal/contentpolicy/` |
 
-**没有做成的事**（不假装完成）：`AgentHandler` 分解本体（130 方法/23 文件仍是原样，只多了门禁与一处塌陷）、
+**没有做成的事**（不假装完成）：`AgentHandler` 分解本体（122 方法/22 文件，仍是全仓最大的类型；
+只搬出了中断队列读面那一族，见 §11「分解第一刀」）、
 剩余 3 个域的窄接口（阻塞理由 = `h.db` 逃逸进别包签名，已逐个列出）、Eino 收到 ≤1 包、
 session 事件溯源、逐文件 ES 模块、`internal/database` 361 个方法继续按域切、
 P4 硬网络边界、P4 内嵌 CPython、P5 registry / 气隙包 / 引爆自动化、
@@ -1096,13 +1131,15 @@ origin  https://github.com/AIPentest/CyberStrikeAI.git  # 上游父仓库，只�
 
 1. **窄接口的下一层（原任务 #18）已完成**：handler 层持有裸句柄的结构体 **3 → 0**，
    判据也从"只许降"翻成硬零 `TestHandlerLayerHoldsNoGodObject` + 形状门禁
-   `TestNarrowedFieldsAreOnlyAssignedThroughNarrow`。下一步换目标：
-   **`AgentHandler` 分解本体**——实测 130 个方法/23 个文件，其中 HITL 一族就占 **40 个方法/8 个文件**
-   （`hitl.go` 20、`hitl_logs.go` 9、`hitl_audit_agent.go` 5、`hitl_context.go` 3、
-   `hitl_execution.go`/`hitl_config_savers.go`/`hitl_audit_backend.go`/`batch_hitl.go` 各 1），
-   是最值得先切的内聚块。已有的三条只降门禁
-   （方法数 130、文件数 23、整包 setter 64）会把它锁住：搬走得让数字下降，塞回来会红。
+   `TestNarrowedFieldsAreOnlyAssignedThroughNarrow`。**`AgentHandler` 分解第一刀也已落**：
+   中断队列读面 9 个方法进 `HITLQueue`，水位 **130 → 122 方法、23 → 22 文件**，
+   两条上限已收紧并探针验红（见 §11「分解第一刀」）。
+   下一刀继续这一族：HITL 剩下的 **32 个方法/7 个文件**（`hitl.go` 20、`hitl_audit_agent.go` 5、
+   `hitl_context.go` 3，`hitl_execution.go`/`hitl_config_savers.go`/`hitl_audit_backend.go`/
+   `batch_hitl.go` 各 1），它们与 agent run loop 共享任务/会话/SSE 状态，
+   切之前要先决定"运行链路"和"审批链路"的边界在哪；
    做法沿用本轮验证过的顺序：先给被搬方法依赖的跨域调用声明消费者接口，再移方法，再降基线、复跑探针。
+   三条只降门禁（方法数 122、文件数 22、整包 setter 64）会把它锁住：搬走得让数字下降，塞回来会红。
 2. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），
    它决定社区制品的攻击面；其余决策项可以在 P4/P5 动工前再定。
 2. 需要你插队的只有一件：**§10 决策项 1**（`agent:local-execute` 是否作为阻断项立即处理），

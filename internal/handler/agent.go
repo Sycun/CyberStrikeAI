@@ -187,6 +187,9 @@ type AgentHandler struct {
 	db    database.AgentStore
 	// hitlStore 是 hitl_interrupts 的域存储：HTTP 层不再在这个表上裸写 SQL。
 	hitlStore *store.HITL
+	// hitlQueue 是中断队列的读取/权限/审计日志面，从本 handler 里搬出去的 9 个方法住在
+	// hitl_queue.go：它只需要域存储、会话可见性判断、保留期配置和审计服务四样东西。
+	hitlQueue *HITLQueue
 	// sessions 是 messages 的域存储：异常收尾改写助手消息内容走它，不在 HTTP 层拼 SQL。
 	sessions *store.Session
 	// settings 发布运行期配置快照；与 ConfigHandler 共用同一个存储，
@@ -214,6 +217,18 @@ type AgentHandler struct {
 // SetAudit wires platform audit logging.
 func (h *AgentHandler) SetAudit(s *audit.Service) {
 	h.audit = s
+	// The HITL queue records its own deletions, so it takes the same service. Assigning the field
+	// rather than adding a second SetAudit keeps the injection-setter count going down: every
+	// setter the wiring must remember is one that can be forgotten.
+	if h.hitlQueue != nil {
+		h.hitlQueue.audit = s
+	}
+}
+
+// HITLQueue exposes the interrupt read surface so route registration can point straight at it;
+// the agent run loop keeps calling the same helpers through h.hitlQueue.
+func (h *AgentHandler) HITLQueue() *HITLQueue {
+	return h.hitlQueue
 }
 
 // TaskManager 返回 Agent 任务管理器（供 MCP 监控页终止 Eino execute 等）。
@@ -290,6 +305,7 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 		agent:            agent,
 		db:               database.Narrow[database.AgentStore](db),
 		hitlStore:        newHITLStore(db),
+		hitlQueue:        newHITLQueue(database.Narrow[database.AgentStore](db), newHITLStore(db), cfg),
 		sessions:         newSessionStore(db),
 		logger:           logger,
 		tasks:            tm,

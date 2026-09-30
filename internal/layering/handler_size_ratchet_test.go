@@ -12,18 +12,24 @@ import (
 // numbers were low. Measured on this tree, after collapsing the three HITL config savers
 // into one injection point:
 //
-//	AgentHandler: 130 methods across 23 files
+//	AgentHandler: 130 methods across 23 files at the start of the decomposition
 //	Set* methods in internal/handler: 64 across 21 receiver types,
-//	13 of which are the same SetAudit repeated handler by handler
+//	18 of which are the same SetAudit repeated handler by handler
 //
-// Those become the ceilings. A decomposition is only real if the number goes down and stays
+// Those became the ceilings. The first real cut moved the HITL interrupt read surface (nine
+// methods: the log endpoints, the queue query, the permission checks, the retention setting) onto
+// its own collaborator in hitl_queue.go, which is why the numbers below are 122/22 rather than
+// 130/23 - and why the setter ceiling did not move: the collaborator takes the audit service as a
+// field assigned by AgentHandler.SetAudit instead of declaring a nineteenth Set* method.
+//
+// A decomposition is only real if the number goes down and stays
 // down, and "stays down" needs a gate - otherwise the next feature that needs a handle on
 // something adds one more method to the biggest type because that is the path of least
 // resistance, and the doc's diagnosis quietly becomes worse.
 
 const (
-	agentHandlerMethodCeiling = 130
-	agentHandlerFileCeiling   = 23
+	agentHandlerMethodCeiling = 122
+	agentHandlerFileCeiling   = 22
 	setterCeiling             = 64
 )
 

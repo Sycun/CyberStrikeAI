@@ -116,7 +116,7 @@ func (h *AgentHandler) recordHitlToolExecutionResult(conversationID, toolCallID,
 	if interruptID == "" {
 		return
 	}
-	s, err := h.hitlStoreOrErr()
+	s, err := h.hitlQueue.hitlStoreOrErr()
 	if err != nil {
 		return
 	}

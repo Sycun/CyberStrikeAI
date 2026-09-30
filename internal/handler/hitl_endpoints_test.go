@@ -37,6 +37,7 @@ func newHITLEndpointHandler(t *testing.T) (*AgentHandler, *database.DB) {
 	h := &AgentHandler{
 		db:          db,
 		hitlStore:   store.NewHITL(db.DB),
+		hitlQueue:   newHITLQueue(database.Narrow[database.AgentStore](db), store.NewHITL(db.DB), &config.Config{}),
 		hitlManager: manager,
 		config:      &config.Config{},
 		logger:      zap.NewNop(),
@@ -77,9 +78,11 @@ func hitlEndpointRouter(h *AgentHandler, session *security.Session) *gin.Engine 
 		c.Next()
 	})
 	router.GET("/api/hitl/pending", h.ListHITLPending)
-	router.GET("/api/hitl/logs", h.ListHITLLogs)
-	router.GET("/api/hitl/logs/:id", h.GetHITLLog)
-	router.DELETE("/api/hitl/logs", h.DeleteHITLLogs)
+	// Same wiring as internal/app/routes_hitl.go: the log surface lives on the extracted
+	// collaborator now, so this contract test exercises the object production actually serves.
+	router.GET("/api/hitl/logs", h.HITLQueue().ListHITLLogs)
+	router.GET("/api/hitl/logs/:id", h.HITLQueue().GetHITLLog)
+	router.DELETE("/api/hitl/logs", h.HITLQueue().DeleteHITLLogs)
 	router.POST("/api/hitl/dismiss", h.DismissHITLInterrupt)
 	return router
 }
