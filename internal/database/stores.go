@@ -80,6 +80,17 @@ var _ AssetStore = (*DB)(nil)
 type AttackChainStore interface {
 	DeleteAttackChain(conversationID string) error
 	GetConversation(id string) (*Conversation, error)
+	// The rest reaches this surface through attackchain.NewBuilder, which declares its own Store
+	// (a fourth case of the generation blind spot: interfaces built from direct h.db.X calls miss
+	// anything the handler hands to a helper as an argument). Keep it aligned with attackchain.Store.
+	ConversationHasToolProcessDetails(conversationID string) (bool, error)
+	GetAgentTrace(conversationID string) (traceInputJSON, assistantOutput string, err error)
+	GetMessages(conversationID string) ([]Message, error)
+	GetProcessDetailsByConversation(conversationID string) (map[string][]ProcessDetail, error)
+	LoadAttackChainEdges(conversationID string) ([]AttackChainEdge, error)
+	LoadAttackChainNodes(conversationID string) ([]AttackChainNode, error)
+	SaveAttackChainEdge(conversationID, edgeID, sourceNodeID, targetNodeID, edgeType string, weight int) error
+	SaveAttackChainNode(conversationID, nodeID, nodeType, nodeName, toolExecutionID, metadata string, riskScore int) error
 }
 
 var _ AttackChainStore = (*DB)(nil)

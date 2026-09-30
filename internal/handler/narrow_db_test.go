@@ -24,11 +24,19 @@ var narrowedHandlers = []struct {
 	build func(db *database.DB) interface{}
 }{
 	{"AssetHandler", func(db *database.DB) interface{} { return NewAssetHandler(db, zap.NewNop()) }},
+	{"AttackChainHandler", func(db *database.DB) interface{} {
+		return NewAttackChainHandler(db, nil, zap.NewNop())
+	}},
 	{"AuditHandler", func(db *database.DB) interface{} { return NewAuditHandler(db, nil, zap.NewNop()) }},
 	{"RBACHandler", func(db *database.DB) interface{} { return NewRBACHandler(db, zap.NewNop()) }},
 	{"VulnerabilityHandler", func(db *database.DB) interface{} { return NewVulnerabilityHandler(db, zap.NewNop()) }},
 	{"ConversationHandler", func(db *database.DB) interface{} { return NewConversationHandler(db, zap.NewNop()) }},
 	{"MonitorHandler", func(db *database.DB) interface{} { return NewMonitorHandler(nil, nil, db, zap.NewNop()) }},
+	{"BatchTaskManager", func(db *database.DB) interface{} {
+		m := NewBatchTaskManager(zap.NewNop())
+		m.SetDB(db)
+		return m
+	}},
 	{"NotificationHandler", func(db *database.DB) interface{} { return NewNotificationHandler(db, nil, zap.NewNop()) }},
 	{"OpenAPIHandler", func(db *database.DB) interface{} { return NewOpenAPIHandler(db, zap.NewNop(), nil, nil) }},
 	{"RobotHandler", func(db *database.DB) interface{} { return NewRobotHandler(&config.Config{}, db, nil, zap.NewNop()) }},
@@ -66,7 +74,7 @@ func storageField(t *testing.T, built interface{}) reflect.Value {
 }
 
 func TestNarrowedStorageStaysNilWithoutADatabase(t *testing.T) {
-	if len(narrowedHandlers) < 13 {
+	if len(narrowedHandlers) < 15 {
 		t.Fatalf("only %d narrowed handlers listed, the inventory is stale", len(narrowedHandlers))
 	}
 	for _, entry := range narrowedHandlers {

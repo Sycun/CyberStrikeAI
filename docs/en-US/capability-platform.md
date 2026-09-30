@@ -217,23 +217,29 @@ table (noted in `config.go`).
   `store.Vulnerability` and `store.Execution`, so the transport layer assembles **no SQL at all**
   (it started at 49), and the HITL/session/notification-read tables are pinned to a single writer
   by a repository-wide ownership test; **the narrow interfaces are no longer paper contracts** -
-  thirteen domains now hold their own store interface as the field type, taking `internal/handler` from
-  19 structs holding `*database.DB` down to 6 (per-file ceilings plus an only-up narrowed-store floor,
+  fifteen domains now hold their own store interface as the field type, and `internal/handler` is down
+  from 19 structs holding `*database.DB` to 3 (per-file ceilings plus an only-up narrowed-store floor,
   in `make layering-check`). Every one of those fields is assigned through `database.Narrow`, which is
   load-bearing rather than cosmetic: `var store AssetStore = (*DB)(nil)` is a *non-nil* interface, so a
   plain assignment would permanently invert all 64 `if h.db == nil` degradation guards in the transport
   layer - and that compiles, with every enabled-path test still green. This was not argued from theory:
   my first substitution matched only the single-spaced `db: db,` and missed five aligned assignments,
   and `TestRobotModeRejectsUnavailableMultiAgent` panicked on `(*DB).GetRobotSessionBinding` with a nil
-  receiver. The 6 remaining domains are blocked for a measured reason rather than queue order - their
+  receiver. The 3 remaining structs are blocked for a measured reason rather than queue order - their
   `h.db` escapes into another package's signature (`multiagent.RunDeepAgent` /
   `RunEinoSingleChatModelAgent`, `agentfinalizer.FromRunResult`, six calls into `internal/project` and
-  `internal/attackchain`, a workflow runner struct literal) - so those functions need consumer
-  interfaces first. That layer has now been crossed three times: `conversation.go`'s two shared history
-  renderers turned out to need exactly one method and now take a one-method interface, and
-  `audit.go`'s single escape `audit.ApplyResourceAvailability` - which needs eight existence lookups -
-  now declares `audit.ResourceExistenceSource`, with `AuditStore` widened to match so the handler's
-  narrowed field still satisfies it),
+  `internal/attackchain`, `workflowrunner.RunArgs.DB`) - so those functions need consumer interfaces
+  first. That layer has now been crossed four times: `conversation.go`'s two shared history renderers
+  needed exactly one method; `audit.go`'s single escape `audit.ApplyResourceAvailability` needed eight
+  existence lookups and now declares `audit.ResourceExistenceSource`; `monitor.go`'s four escapes were
+  two local helpers needing one method each; and `attackchain.go`'s `attackchain.NewBuilder(h.db, …)`
+  became `attackchain.Store` (nine methods), which also stops *that package* from holding the
+  361-method object. Each time the handler's own interface was widened to a superset, because a
+  generated-from-direct-calls surface always misses the escaped receiver. Two counter-examples are
+  worth as much: `batch_task_manager.go` has 22 methods on `m.db` and zero escapes, so swapping its
+  field type compiled first try - the interface had been generated from its real surface - and
+  `knowledge.go`'s field was **never read at all**, so the honest fix was to delete the field and the
+  constructor parameter rather than invent a store for a dead dependency),
   event-sourced sessions, and `AgentHandler` decomposition -
   which is now measured and gated instead of being a hunch (the provider catalog is generated and
   byte-gated: `internal/provider/publish.go` renders it into `docs/zh-CN/provider-catalog.md` plus

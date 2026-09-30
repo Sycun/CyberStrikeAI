@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/audit"
-	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/knowledge"
 
 	"github.com/gin-gonic/gin"
@@ -20,7 +19,6 @@ type KnowledgeHandler struct {
 	manager   *knowledge.Manager
 	retriever *knowledge.Retriever
 	indexer   *knowledge.Indexer
-	db        *database.DB
 	logger    *zap.Logger
 	audit     *audit.Service
 }
@@ -35,14 +33,12 @@ func NewKnowledgeHandler(
 	manager *knowledge.Manager,
 	retriever *knowledge.Retriever,
 	indexer *knowledge.Indexer,
-	db *database.DB,
 	logger *zap.Logger,
 ) *KnowledgeHandler {
 	return &KnowledgeHandler{
 		manager:   manager,
 		retriever: retriever,
 		indexer:   indexer,
-		db:        db,
 		logger:    logger,
 	}
 }

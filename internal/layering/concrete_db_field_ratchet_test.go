@@ -13,8 +13,11 @@ import (
 // Before this ratchet existed the handler layer carried 19 of these. Narrowing one means swapping
 // the field for that handler's own interface from internal/database/stores.go and constructing it
 // with database.Narrow - see internal/handler/narrow_db_test.go for why the helper is mandatory
-// rather than a plain assignment. Thirteen are gone (19 held at the start of this ratchet, 6 remain);
-// the comment beside each remaining entry is the
+// rather than a plain assignment. 19 of these existed when the ratchet started and 3 remain:
+// fifteen were narrowed to a consumer interface, and knowledge.go's was deleted outright - a dead
+// field that only ever held the god object (its handler never read it, so the honest fix was to
+// drop the field and the constructor parameter, not to invent a store for it). The comment
+// beside each remaining entry is the
 // reason it cannot go today.
 //
 // agent.go is the biggest block because its handle escapes into multiagent.RunDeepAgent /
@@ -25,17 +28,14 @@ import (
 // internal/attackchain), workflow.go (into a workflow runner struct literal) and attackchain.go are
 // the same story one level down.
 var concreteDBFields = map[string]int{
-	"internal/handler/agent.go":              1,
-	"internal/handler/attackchain.go":        1,
-	"internal/handler/batch_task_manager.go": 1,
-	"internal/handler/knowledge.go":          1,
-	"internal/handler/project.go":            1,
-	"internal/handler/workflow.go":           1,
+	"internal/handler/agent.go":    1,
+	"internal/handler/project.go":  1,
+	"internal/handler/workflow.go": 1,
 }
 
 // narrowedStoreFloor is how many handler structs hold a consumer-shaped store interface today.
 // It only ever goes up; a drop means a domain was widened back to *database.DB.
-const narrowedStoreFloor = 13
+const narrowedStoreFloor = 15
 
 func TestConcreteDBFieldsOnlyShrink(t *testing.T) {
 	byFile, err := FieldTypesByFile(moduleRoot(t), "internal/handler")

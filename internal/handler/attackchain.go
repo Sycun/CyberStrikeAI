@@ -16,7 +16,7 @@ import (
 
 // AttackChainHandler 攻击链处理器
 type AttackChainHandler struct {
-	db           *database.DB
+	db           database.AttackChainStore
 	logger       *zap.Logger
 	openAIConfig *config.OpenAIConfig
 	mu           sync.RWMutex // 保护 openAIConfig 的并发访问
@@ -27,7 +27,7 @@ type AttackChainHandler struct {
 // NewAttackChainHandler 创建新的攻击链处理器
 func NewAttackChainHandler(db *database.DB, openAIConfig *config.OpenAIConfig, logger *zap.Logger) *AttackChainHandler {
 	return &AttackChainHandler{
-		db:           db,
+		db:           database.Narrow[database.AttackChainStore](db),
 		logger:       logger,
 		openAIConfig: openAIConfig,
 	}

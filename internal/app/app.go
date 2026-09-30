@@ -295,7 +295,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		knowledge.RegisterKnowledgeTool(mcpServer, knowledgeRetriever, knowledgeManager, log.Logger)
 
 		// 创建知识库API处理器
-		knowledgeHandler = handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, db, log.Logger)
+		knowledgeHandler = handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, log.Logger)
 		bindAudit(knowledgeHandler, auditSvc)
 		log.Logger.Info("知识库模块初始化完成", zap.Bool("handler_created", knowledgeHandler != nil))
 
@@ -1756,7 +1756,7 @@ func initializeKnowledge(
 	knowledge.RegisterKnowledgeTool(mcpServer, knowledgeRetriever, knowledgeManager, logger)
 
 	// 创建知识库API处理器
-	knowledgeHandler := handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, db, logger)
+	knowledgeHandler := handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, logger)
 	if app != nil && app.auditSvc != nil {
 		bindAudit(knowledgeHandler, app.auditSvc)
 	}

@@ -95,7 +95,7 @@ type BatchTaskQueue struct {
 
 // BatchTaskManager 批量任务管理器
 type BatchTaskManager struct {
-	db             *database.DB
+	db             database.BatchTaskStore
 	logger         *zap.Logger
 	queues         map[string]*BatchTaskQueue
 	taskCancels    map[string]map[string]context.CancelFunc // queueID -> taskID -> 取消函数
@@ -166,7 +166,9 @@ func (m *BatchTaskManager) IsQueueExecutorActive(queueID string) bool {
 func (m *BatchTaskManager) SetDB(db *database.DB) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.db = db
+	// Narrow, not a plain assignment: m.db is an interface now, and storing a nil *DB in it would
+	// make the ten `if m.db != nil` guards below take the "database present" branch by accident.
+	m.db = database.Narrow[database.BatchTaskStore](db)
 }
 
 // normalizeBatchQueueConcurrency 规范化队列并发数。

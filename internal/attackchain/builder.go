@@ -20,9 +20,26 @@ import (
 	"go.uber.org/zap"
 )
 
+// Store is the persistence surface a Builder needs: the chain's own read/write side plus the
+// conversation evidence it reconstructs nodes from. Declared here because this package is the
+// consumer - handing a builder the 361-method *database.DB would let it reach any table, which is
+// the coupling the report's P6 asks to remove. internal/database/stores.go keeps AttackChainStore a
+// superset of it, so the handler can pass its own narrowed field straight in.
+type Store interface {
+	ConversationHasToolProcessDetails(conversationID string) (bool, error)
+	DeleteAttackChain(conversationID string) error
+	GetAgentTrace(conversationID string) (traceInputJSON, assistantOutput string, err error)
+	GetMessages(conversationID string) ([]database.Message, error)
+	GetProcessDetailsByConversation(conversationID string) (map[string][]database.ProcessDetail, error)
+	LoadAttackChainEdges(conversationID string) ([]database.AttackChainEdge, error)
+	LoadAttackChainNodes(conversationID string) ([]database.AttackChainNode, error)
+	SaveAttackChainEdge(conversationID, edgeID, sourceNodeID, targetNodeID, edgeType string, weight int) error
+	SaveAttackChainNode(conversationID, nodeID, nodeType, nodeName, toolExecutionID, metadata string, riskScore int) error
+}
+
 // Builder 攻击链构建器
 type Builder struct {
-	db           *database.DB
+	db           Store
 	logger       *zap.Logger
 	openAIClient *openai.Client
 	openAIConfig *config.OpenAIConfig
@@ -43,7 +60,7 @@ type Chain struct {
 }
 
 // NewBuilder 创建新的攻击链构建器
-func NewBuilder(db *database.DB, openAIConfig *config.OpenAIConfig, logger *zap.Logger) *Builder {
+func NewBuilder(db Store, openAIConfig *config.OpenAIConfig, logger *zap.Logger) *Builder {
 	transport := &http.Transport{
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 10,

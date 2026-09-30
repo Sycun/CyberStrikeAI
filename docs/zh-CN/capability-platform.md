@@ -183,15 +183,15 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   通知摘要里另外两个域（漏洞最近条目、执行失败条目）也已进 `store.Vulnerability` 与 `store.Execution`，
   **handler 裸 SQL 归零**（起点 49），
   且 HITL/会话/通知已读三张表已由全仓归属测试钉住唯一写入者。
-  **窄接口已不只是契约**：13 个域的存储字段类型换成了自己的消费者接口
+  **窄接口已不只是契约**：15 个域的存储字段类型换成了自己的消费者接口
   （`AssetStore`/`AuditStore`/`ChatUploadsStore`/`ConfigStore`/`ConversationStore`/`MonitorStore`/`NotificationStore`/`OpenAPIStore`/
   `RBACStore`/`RobotStore`/`SkillsStore`/`VulnerabilityStore`/`WebShellStore`），
-  `internal/handler` 里 `*database.DB` 结构体字段 **19 → 6**（分文件基线 + 只升的窄接口下限双门禁，
+  `internal/handler` 里 `*database.DB` 结构体字段 **19 → 3**（分文件基线 + 只升的窄接口下限双门禁，
   `make layering-check`）。构造一律走 `database.Narrow`——它把 nil 指针映射成 nil 接口，
   否则 `var store AssetStore = (*DB)(nil)` 是**非 nil 接口**，传输层 64 处 `if h.db == nil`
   的降级分支会永久走错，而这一切编译通过、启用路径测试全绿；这条陷阱不是论证出来的，
   是我第一版正则漏掉 5 处对齐赋值后由 `TestRobotModeRejectsUnavailableMultiAgent` 直接 panic 抓出来的。
-  剩下 6 个域卡在自己的 `h.db` **逃逸进别包签名**（`multiagent.RunDeepAgent`、
+  剩下 3 个域卡在自己的 `h.db` **逃逸进别包签名**（`multiagent.RunDeepAgent`、
   `agentfinalizer.FromRunResult`、`internal/project` 的 6 处等），要先给那些函数声明接口）、
   `AgentHandler` 分解（**水位已实测并进门禁**：130 个方法/23 个文件，
   `internal/handler` 整包 64 个 `Set*` 注入方法分布在 21 个接收者类型上，其中 `SetAudit` 有
