@@ -48,7 +48,14 @@ type updateJob struct {
 	Result   *update.Result `json:"result,omitempty"`
 	Failure  *update.Error  `json:"failure,omitempty"`
 	Restart  bool           `json:"restartRequested"`
-	done     chan struct{}
+}
+
+// view copies a job for transport, because its fields are written by the job's own
+// goroutine: a response must never serialize the live struct. Callers hold h.mu.
+func (j *updateJob) view() *updateJob {
+	out := *j
+	out.Steps = append([]update.Step{}, j.Steps...)
+	return &out
 }
 
 // NewUpdateHandler takes the audit service as a constructor argument rather than through
@@ -154,16 +161,13 @@ func (h *UpdateHandler) Rollback(c *gin.Context) {
 func (h *UpdateHandler) startJob(restart bool) (*updateJob, bool) {
 	h.mu.Lock()
 	if h.active != "" {
-		job := h.jobs[h.active]
-		h.mu.Unlock()
-		return job, false
+		return h.jobs[h.active].view(), false
 	}
 	job := &updateJob{
 		ID:      fmt.Sprintf("upd-%d", time.Now().UnixNano()),
 		State:   "running",
 		Started: time.Now().Format(time.RFC3339),
 		Restart: restart,
-		done:    make(chan struct{}),
 	}
 	h.jobs[job.ID] = job
 	h.order = append(h.order, job.ID)
@@ -175,6 +179,7 @@ func (h *UpdateHandler) startJob(restart bool) (*updateJob, bool) {
 		}
 	}
 	h.active = job.ID
+	snapshot := job.view()
 	h.mu.Unlock()
 
 	// The update outlives its HTTP request on purpose: the caller gets a handle, and a
@@ -182,7 +187,6 @@ func (h *UpdateHandler) startJob(restart bool) (*updateJob, bool) {
 	// working tree has moved there is no going back, so the context is generous with
 	// time instead of inheriting the request's deadline.
 	go func() {
-		defer close(job.done)
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 		defer cancel()
 
@@ -220,7 +224,7 @@ func (h *UpdateHandler) startJob(restart bool) (*updateJob, bool) {
 		h.active = ""
 		h.mu.Unlock()
 	}()
-	return job, true
+	return snapshot, true
 }
 
 func (h *UpdateHandler) activeJob() *updateJob {
@@ -229,7 +233,10 @@ func (h *UpdateHandler) activeJob() *updateJob {
 	if h.active == "" {
 		return nil
 	}
-	return h.jobs[h.active]
+	if job := h.jobs[h.active]; job != nil {
+		return job.view()
+	}
+	return nil
 }
 
 func (h *UpdateHandler) latest() *updateJob {
@@ -238,7 +245,10 @@ func (h *UpdateHandler) latest() *updateJob {
 	if len(h.order) == 0 {
 		return nil
 	}
-	return h.jobs[h.order[len(h.order)-1]]
+	if job := h.jobs[h.order[len(h.order)-1]]; job != nil {
+		return job.view()
+	}
+	return nil
 }
 
 func (h *UpdateHandler) record(c *gin.Context, action, result, message string, detail map[string]interface{}) {

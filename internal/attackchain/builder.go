@@ -397,27 +397,6 @@ func (b *Builder) buildAgentTraceInput(messages []database.Message) string {
 	return builder.String()
 }
 
-// extractUserInputFromReActInput 从保存的ReAct输入（JSON格式的messages数组）中提取最后一条用户输入
-// func (b *Builder) extractUserInputFromReActInput(reactInputJSON string) string {
-// 	// reactInputJSON是JSON格式的ChatMessage数组，需要解析
-// 	var messages []map[string]interface{}
-// 	if err := json.Unmarshal([]byte(reactInputJSON), &messages); err != nil {
-// 		b.logger.Warn("解析ReAct输入JSON失败", zap.Error(err))
-// 		return ""
-// 	}
-
-// 	// 从后往前查找最后一条user消息
-// 	for i := len(messages) - 1; i >= 0; i-- {
-// 		if role, ok := messages[i]["role"].(string); ok && strings.EqualFold(role, "user") {
-// 			if content, ok := messages[i]["content"].(string); ok {
-// 				return content
-// 			}
-// 		}
-// 	}
-
-// 	return ""
-// }
-
 // formatAgentTraceInputFromJSON 将 JSON 轨迹转为可读文本（会先按当前任务轮次裁剪）。
 func (b *Builder) formatAgentTraceInputFromJSON(reactInputJSON string) string {
 	trimmed := agent.ExtractLastUserTurnTraceJSON(reactInputJSON)
