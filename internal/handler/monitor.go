@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -885,6 +886,13 @@ func (h *MonitorHandler) DeleteExecution(c *gin.Context) {
 		// 先获取执行记录信息（用于更新统计）
 		exec, err := h.db.GetToolExecution(id)
 		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				// 只有「这行不存在」才等于「已经删过了」。把读库失败也报成 200 success，运维者会
+				// 以为一条仍然存在的记录已经没了，而它还在统计里，且谁都不会去查这次故障。
+				h.logger.Error("读取执行记录失败", zap.Error(err), zap.String("executionId", id))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "读取执行记录失败: " + err.Error()})
+				return
+			}
 			// 如果找不到记录，可能已经被删除，直接返回成功
 			h.logger.Warn("执行记录不存在，可能已被删除", zap.String("executionId", id), zap.Error(err))
 			c.JSON(http.StatusOK, gin.H{"message": "执行记录不存在或已被删除"})
