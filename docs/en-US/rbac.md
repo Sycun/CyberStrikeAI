@@ -74,6 +74,7 @@ Permissions use `module:action`. Common actions are `read`, `write`, `delete`, a
 | WebShell | `webshell:read`, `webshell:write`, `webshell:delete` |
 | C2 | `c2:read`, `c2:write`, `c2:delete` |
 | MCP | `mcp:read`, `mcp:execute`, `mcp:write`, `mcp:external:execute` |
+| Capability plug-ins | `plugins:read`, `plugins:write`, `plugins:install` |
 | Knowledge | `knowledge:read`, `knowledge:write`, `knowledge:delete` |
 | Skills | `skills:read`, `skills:write`, `skills:delete` |
 | Markdown Agents | `agents:read`, `agents:write`, `agents:delete` |
@@ -100,6 +101,10 @@ Important distinctions:
 - `mcp:external:execute` allows Agent calls to external MCP tools and currently also requires `all` scope.
 - `fofa:execute` is kept for backward compatibility, but it now protects the Reconnaissance page for FOFA, ZoomEye, Quake, and Shodan searches.
 - `mcp:write` manages external MCP configuration; it is separate from external tool execution.
+- Capability plug-ins are three permissions: `plugins:read` lists what is installed,
+  `plugins:write` enables/disables or detaches a single unit, and `plugins:install` installs or
+  uninstalls a whole bundle. Installing is broken out because a bundle changes what the agent can
+  do, and that should not come bundled with the right to edit one skill.
 - `robot:write` manages robot configuration and the test endpoint. Chatbot conversations use the bound user or configured service account's business permissions.
 
 ---

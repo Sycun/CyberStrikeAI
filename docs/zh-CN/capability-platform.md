@@ -195,6 +195,14 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
 - 角色一侧已经接通到运行路径：写 = 「写文件 → 进表 → 发布新快照」，读 = `currentRoles(h.config)`
   （`internal/handler/live_config.go`），装配漏装活配置快照会让 `make wiring-check` 变红——
   而这个漏接**编译得过、启用路径测试也全绿**，所以它必须是门禁。
+- 一键安装的接口已经在了：`GET /api/plugins`（含每单元的 `served`、`generation`、`drift`）、
+  `POST /api/plugins/install`、`DELETE /api/plugins/bundles/{id}`、
+  `POST /api/plugins/units/{kind}/{name}/enabled`、`DELETE /api/plugins/units/{kind}/{name}`。
+  安装只允许从 `<configDir>/bundles` 里挑（`../`、绝对路径一律 400）；单元身份含斜杠，
+  所以路由拆成 `:kind/:name` 两段（单段会被 gin 在匹配前解掉转义而命中不到）。
+  每次变更都会顺带重发角色目录，装完下一个请求就生效。
+- 一个包声明了 tool 配方而运行路径还不从表里读工具时，接口返回 `served:false` 并写明原因，
+  **不把它算作已生效**：让"装好了"读起来像"能用了"就是这一层存在的理由的反面。
 - skill 一侧同样接通了，并且是**换了实现**才接通的：Eino 自带的 backend 只接受一个 `BaseDir`，
   所以能力包里的 skill 结构上不可能被读到。`internal/einoskill` 改为用能力表实现那个两方法接口
   （不建符号链接、不复制别人的文件），`internal/multiagent` 在有表时优先用它。

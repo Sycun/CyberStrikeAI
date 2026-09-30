@@ -81,6 +81,7 @@ AI 测试角色不是安全授权边界。即使选择了“渗透测试”角�
 | WebShell | `webshell:read`、`webshell:write`、`webshell:delete` |
 | C2 | `c2:read`、`c2:write`、`c2:delete` |
 | MCP | `mcp:read`、`mcp:execute`、`mcp:write`、`mcp:external:execute` |
+| 能力插件 | `plugins:read`、`plugins:write`、`plugins:install` |
 | 知识库 | `knowledge:read`、`knowledge:write`、`knowledge:delete` |
 | Skills | `skills:read`、`skills:write`、`skills:delete` |
 | Markdown Agents | `agents:read`、`agents:write`、`agents:delete` |
@@ -108,6 +109,9 @@ AI 测试角色不是安全授权边界。即使选择了“渗透测试”角�
 - `mcp:execute` 用于访问认证后的 MCP HTTP 入口。
 - `mcp:external:execute` 用于 Agent 调用外部 MCP 工具，当前还要求该权限的 Scope 为 `all`。
 - 管理外部 MCP 配置使用 `mcp:write`，与执行外部工具是两项权限。
+- 能力插件是**三项**：`plugins:read` 看装了什么；`plugins:write` 启停或摘除单个单元；
+  `plugins:install` 安装/卸载整个能力包。安装单列是因为装一个包会改变 Agent 能做什么，
+  不该由"能改某个 skill"的权限顺带取得。
 - `robot:write` 管理机器人配置和测试入口；机器人聊天本身使用绑定用户或服务账号的业务权限。
 
 ---

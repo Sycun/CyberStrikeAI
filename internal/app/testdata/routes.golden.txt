@@ -17,6 +17,8 @@ DELETE /api/knowledge/retrieval-logs/{id}
 DELETE /api/monitor/execution/{id}
 DELETE /api/monitor/executions
 DELETE /api/multi-agent/markdown-agents/{filename}
+DELETE /api/plugins/bundles/{id}
+DELETE /api/plugins/units/{kind}/{name}
 DELETE /api/projects/{id}
 DELETE /api/projects/{id}/fact-edges/{edgeId}
 DELETE /api/projects/{id}/facts/{factId}
@@ -102,6 +104,7 @@ GET /api/multi-agent/markdown-agents
 GET /api/multi-agent/markdown-agents/{filename}
 GET /api/notifications/summary
 GET /api/openapi/spec
+GET /api/plugins
 GET /api/process-details/{id}
 GET /api/projects
 GET /api/projects/dashboard-summary
@@ -206,6 +209,8 @@ POST /api/multi-agent
 POST /api/multi-agent/markdown-agents
 POST /api/multi-agent/stream
 POST /api/notifications/read
+POST /api/plugins/install
+POST /api/plugins/units/{kind}/{name}/enabled
 POST /api/projects
 POST /api/projects/{id}/fact-edges
 POST /api/projects/{id}/facts

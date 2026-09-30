@@ -148,6 +148,20 @@ func permissionForRequest(method, fullPath string) string {
 			return "mcp:read"
 		}
 		return "mcp:write"
+	case strings.HasPrefix(path, "/plugins"):
+		// Plugging a bundle in changes what the running agent is able to do, so installing is
+		// its own permission rather than a flavour of "write": an operator who may edit a
+		// skill must not thereby be able to add a whole role pack.
+		if path == "/plugins/install" || strings.HasPrefix(path, "/plugins/bundles/") {
+			if method == http.MethodGet || method == http.MethodHead {
+				return "plugins:read"
+			}
+			return "plugins:install"
+		}
+		if method == http.MethodGet || method == http.MethodHead {
+			return "plugins:read"
+		}
+		return "plugins:write"
 	case strings.HasPrefix(path, "/attack-chain"):
 		return crudPermission(method, "attackchain")
 	case strings.HasPrefix(path, "/knowledge"):

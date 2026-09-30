@@ -134,6 +134,29 @@ func TestMCPInvocationPermissionIsSeparateFromMCPAdministration(t *testing.T) {
 	}
 }
 
+// Installing a bundle changes what the running agent can do, so it must not be reachable with
+// the permission that only switches an existing capability on or off.
+func TestPluginInstallIsItsOwnPermissionFromUnitToggling(t *testing.T) {
+	cases := []struct {
+		method, path, want string
+	}{
+		{http.MethodGet, "/api/plugins", "plugins:read"},
+		{http.MethodPost, "/api/plugins/install", "plugins:install"},
+		{http.MethodDelete, "/api/plugins/bundles/pack-a", "plugins:install"},
+		{http.MethodPost, "/api/plugins/units/role/CTF/enabled", "plugins:write"},
+		{http.MethodDelete, "/api/plugins/units/role/临时角色", "plugins:write"},
+	}
+	for _, tc := range cases {
+		got := permissionForRequest(tc.method, tc.path)
+		if got != tc.want {
+			t.Errorf("%s %s -> %q, want %q", tc.method, tc.path, got, tc.want)
+		}
+		if _, ok := PermissionCatalog[got]; !ok {
+			t.Errorf("%s %s maps to %q which is not in PermissionCatalog", tc.method, tc.path, got)
+		}
+	}
+}
+
 func TestConfigToolsReadAllowsMCPReadWithoutConfigRead(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

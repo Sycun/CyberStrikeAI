@@ -237,6 +237,16 @@ one identity scheme and one live table:
   a read is `currentRoles(h.config)` (`internal/handler/live_config.go`). If assembly forgets to
   install the live store, `make wiring-check` fails - and that omission **compiles cleanly with the
   enabled-path tests green**, which is why it has to be a gate.
+- The one-click surface exists: `GET /api/plugins` (per-unit `served`, plus `generation` and
+  `drift`), `POST /api/plugins/install`, `DELETE /api/plugins/bundles/{id}`,
+  `POST /api/plugins/units/{kind}/{name}/enabled`, `DELETE /api/plugins/units/{kind}/{name}`.
+  Installs are confined to `<configDir>/bundles` (`../` and absolute paths are 400), and unit
+  identities contain a slash, so the routes split into `:kind/:name` - one escaped segment would
+  be unescaped by gin before matching and would never hit. Every mutation republishes the role
+  catalog, so the next request already sees the change.
+- When a bundle declares a tool recipe that no run path reads from the table yet, the response
+  says `served:false` with the reason instead of counting it as live. Letting "installed" read as
+  "in effect" is the exact failure this layer exists to prevent.
 - Skills are wired through too, and only after **replacing a vendor implementation**: Eino's own
   backend accepts one `BaseDir`, so a skill inside a bundle was structurally unreachable.
   `internal/einoskill` implements that two-method backend over the capability table instead (no

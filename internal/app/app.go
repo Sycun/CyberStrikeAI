@@ -523,6 +523,9 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	} else {
 		log.Logger.Info("角色目录已发布", zap.Int("roles", published))
 	}
+	// The one-click extend surface. It is confined to <configDir>/bundles, and it drives the same
+	// table the run paths read, so an install here is live on the next request.
+	pluginHandler := handler.NewPluginHandler(pluginTable, filepath.Join(configDir, "bundles"), roleHandler, auditSvc, log.Logger)
 	skillsHandler := handler.NewSkillsHandler(cfg, configPath, log.Logger)
 	bindAudit(skillsHandler, auditSvc)
 	fofaHandler := handler.NewFofaHandler(cfg, log.Logger)
@@ -689,6 +692,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		webshellHandler:       webshellHandler,
 		chatUploadsHandler:    chatUploadsHandler,
 		roleHandler:           roleHandler,
+		pluginHandler:         pluginHandler,
 		skillsHandler:         skillsHandler,
 		markdownAgentsHandler: markdownAgentsHandler,
 		fofaHandler:           fofaHandler,
@@ -996,6 +1000,7 @@ type routeDeps struct {
 	webshellHandler       *handler.WebShellHandler
 	chatUploadsHandler    *handler.ChatUploadsHandler
 	roleHandler           *handler.RoleHandler
+	pluginHandler         *handler.PluginHandler
 	skillsHandler         *handler.SkillsHandler
 	markdownAgentsHandler *handler.MarkdownAgentsHandler
 	fofaHandler           *handler.FofaHandler
@@ -1082,6 +1087,7 @@ func setupRoutes(deps routeDeps) {
 	deps.registerRbacRoutes(protected)
 	deps.registerRobotRoutes(protected)
 	deps.registerRoleRoutes(protected)
+	deps.registerPluginRoutes(protected)
 	deps.registerSkillRoutes(protected)
 	deps.registerTaskRoutes(protected)
 	deps.registerTerminalRoutes(protected)

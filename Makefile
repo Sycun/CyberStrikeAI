@@ -109,6 +109,8 @@ wiring-check:
 	## skill：以厂商 backend 为真相源比对 + 装包后立刻可见 + 空 skills_dir 行为不变
 	$(GO) test -count=1 ./internal/einoskill/
 	$(GO) test -count=1 -run 'TestPrepareEinoAgenticSkills' ./internal/multiagent/
+	## 一键安装接口：装完即生效 / 越界路径 400 / 冲突 409 指名 / 启停不动文件 / 包拥有的单元不可摘
+	$(GO) test -count=1 -run 'TestPlugin' ./internal/handler/
 
 .PHONY: ci
 ci: fmt-check vet test-race lint arch-lint layering-check wiring-check

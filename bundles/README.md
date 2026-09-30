@@ -53,11 +53,30 @@ units:
 
 | kind | 单元进表 | 运行路径读表 | 一键安装 API |
 |---|---|---|---|
-| role | ✅ 启动扫描 + 包 | ✅ `currentRoles` → 活配置快照（`internal/handler/live_config.go`） | ⬜ 待接（任务 #22） |
-| skill | ✅ | ✅ `internal/einoskill` 用能力表实现 Eino 的 `skill.Backend` | ⬜ |
-| agent | ✅ | ⬜ 仍按目录重扫（`agents.LoadMarkdownAgentsDir`） | ⬜ |
-| tool | ✅ | ⬜ 仅 `POST /config/apply` 生效 | ⬜ |
+| role | ✅ 启动扫描 + 包 | ✅ `currentRoles` → 活配置快照（`internal/handler/live_config.go`） | ✅ |
+| skill | ✅ | ✅ `internal/einoskill` 用能力表实现 Eino 的 `skill.Backend` | ✅ |
+| agent | ✅ | ⬜ 仍按目录重扫（`agents.LoadMarkdownAgentsDir`） | ✅ 登记，但**未生效**（响应里 `served:false` + 原因） |
+| tool | ✅ | ⬜ 仅 `POST /config/apply` 生效 | ✅ 登记，但未生效（要过审批下限，见下） |
 | mcp | ⬜ 外部 MCP 本来就是热增删，缺的是逐工具授权 | — | ⬜（任务 #20） |
+
+## 接口
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| GET | `/api/plugins` | 已装包 + 独立单元 + `generation` + `drift` + 每单元的 `served` |
+| POST | `/api/plugins/install` | `{"bundle":"<包名>"}` → 装入并立刻生效 |
+| DELETE | `/api/plugins/bundles/{id}` | 卸载（只摘表，不删文件） |
+| POST | `/api/plugins/units/{kind}/{name}/enabled` | 启停单个单元 |
+| DELETE | `/api/plugins/units/{kind}/{name}` | 摘掉一个**扫描得到**的单元（包拥有的会 409） |
+
+`identity` 里带斜杠（`role/CTF`），所以路由拆成 `:kind/:name` 两段 —— 单段会被 gin 在匹配前
+就解掉转义而命中不到。
+
+两点不装作已完成：
+
+- 安装**只能**从 `<configDir>/bundles` 里挑，越界路径（`../`、绝对路径）一律 400。
+- `served:false` 是**响应里的字段**，不是文档里的脚注。一个包声明了 tool 配方而运行路径还不
+  从表里读工具时，接口就说"登记了、没生效"，而不是让"装好了"读起来像"能用了"。
 
 角色这一行是本轮改掉的：`roles/*.yaml` 以前只在 `config.Load` 里解析一次，之后由角色 API
 **无锁原地改**那张 map（连 GET 里都会 `h.config.Roles = make(...)`），八个文件在没同步的情况下读它。

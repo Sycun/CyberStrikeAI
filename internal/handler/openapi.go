@@ -3880,6 +3880,196 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					},
 				},
 			},
+			"/api/plugins": map[string]interface{}{
+				"get": map[string]interface{}{
+					"tags":        []string{"能力插件"},
+					"summary":     "查看已安装的能力包与能力单元",
+					"description": "返回已安装的能力包、由目录扫描登记的独立单元、能力表代数(generation)与源码漂移(drift)；每个单元带 served 标记，标明运行路径是否真的在读它",
+					"operationId": "getPluginState",
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "获取成功",
+						},
+						"503": map[string]interface{}{
+							"description": "能力表不可用",
+						},
+						"401": map[string]interface{}{
+							"description": "未授权",
+						},
+					},
+				},
+			},
+			"/api/plugins/install": map[string]interface{}{
+				"post": map[string]interface{}{
+					"tags":        []string{"能力插件"},
+					"summary":     "安装能力包（一键扩展）",
+					"description": "按 bundles 根目录下的包名安装能力包，安装后立即对后续请求生效，不需要重启；只能引用 <configDir>/bundles 之内的目录，越界路径返回 400；与已存在的身份冲突时返回 409 并指名当前持有者",
+					"operationId": "installPluginBundle",
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"bundle": map[string]interface{}{
+											"type":        "string",
+											"description": "bundles 根目录下的能力包名或其路径",
+										},
+									},
+								},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "安装成功并已生效",
+						},
+						"400": map[string]interface{}{
+							"description": "包名缺失、清单不合法或路径越出 bundles 根目录",
+						},
+						"409": map[string]interface{}{
+							"description": "身份已被其他能力包或内置目录占用",
+						},
+						"401": map[string]interface{}{
+							"description": "未授权",
+						},
+					},
+				},
+			},
+			"/api/plugins/bundles/{id}": map[string]interface{}{
+				"delete": map[string]interface{}{
+					"tags":        []string{"能力插件"},
+					"summary":     "卸载能力包",
+					"description": "把该包安装的全部能力单元从能力表摘掉并立刻反映到运行路径；不删除任何文件（源文件本就留在 bundles/<id>/ 内）",
+					"operationId": "uninstallPluginBundle",
+					"parameters": []map[string]interface{}{
+						{
+							"name":        "id",
+							"in":          "path",
+							"required":    true,
+							"description": "能力包 ID",
+							"schema": map[string]interface{}{
+								"type": "string",
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "卸载成功",
+						},
+						"404": map[string]interface{}{
+							"description": "能力包未安装",
+						},
+						"401": map[string]interface{}{
+							"description": "未授权",
+						},
+					},
+				},
+			},
+			"/api/plugins/units/{kind}/{name}": map[string]interface{}{
+				"delete": map[string]interface{}{
+					"tags":        []string{"能力插件"},
+					"summary":     "从能力表摘除一个扫描得到的能力单元",
+					"description": "只作用于目录扫描登记的单元；能力包拥有的单元由能力表拒绝并返回 409。不删除文件",
+					"operationId": "detachPluginUnit",
+					"parameters": []map[string]interface{}{
+						{
+							"name":        "kind",
+							"in":          "path",
+							"required":    true,
+							"description": "能力类别：role | agent | skill | tool | mcp",
+							"schema": map[string]interface{}{
+								"type": "string",
+							},
+						},
+						{
+							"name":        "name",
+							"in":          "path",
+							"required":    true,
+							"description": "能力单元名称（身份为 kind/name）",
+							"schema": map[string]interface{}{
+								"type": "string",
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "已摘除",
+						},
+						"400": map[string]interface{}{
+							"description": "kind 不在已知类别内或 name 为空",
+						},
+						"404": map[string]interface{}{
+							"description": "单元不存在",
+						},
+						"409": map[string]interface{}{
+							"description": "该单元由某个能力包提供，需先卸载该包",
+						},
+						"401": map[string]interface{}{
+							"description": "未授权",
+						},
+					},
+				},
+			},
+			"/api/plugins/units/{kind}/{name}/enabled": map[string]interface{}{
+				"post": map[string]interface{}{
+					"tags":        []string{"能力插件"},
+					"summary":     "启用或停用单个能力单元",
+					"description": "只改能力表里的启停状态，不改任何源文件；因此包内单元的停用不会污染包的源码摘要(digest)。停用后运行路径不再使用该能力，但列表仍能看到它",
+					"operationId": "enablePluginUnit",
+					"parameters": []map[string]interface{}{
+						{
+							"name":        "kind",
+							"in":          "path",
+							"required":    true,
+							"description": "能力类别：role | agent | skill | tool | mcp",
+							"schema": map[string]interface{}{
+								"type": "string",
+							},
+						},
+						{
+							"name":        "name",
+							"in":          "path",
+							"required":    true,
+							"description": "能力单元名称",
+							"schema": map[string]interface{}{
+								"type": "string",
+							},
+						},
+					},
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"enabled": map[string]interface{}{
+											"type":        "boolean",
+											"description": "true 启用，false 停用",
+										},
+									},
+								},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "已更新",
+						},
+						"400": map[string]interface{}{
+							"description": "kind 非法、name 为空或缺少 enabled",
+						},
+						"404": map[string]interface{}{
+							"description": "单元不存在",
+						},
+						"401": map[string]interface{}{
+							"description": "未授权",
+						},
+					},
+				},
+			},
 			"/api/attack-chain/{conversationId}": map[string]interface{}{
 				"get": map[string]interface{}{
 					"tags":        []string{"攻击链"},
