@@ -12,9 +12,6 @@ import (
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/llm"
 	"cyberstrike-ai/internal/openai"
-
-	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
-	"github.com/cloudwego/eino/schema"
 )
 
 // Client 调用独立 Vision ChatModel（单次 Generate）。
@@ -61,85 +58,20 @@ func (c *Client) Analyze(ctx context.Context, img ImagePayload, question string)
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(img.Bytes)
-	detail := schema.ImageURLDetailLow
-	switch c.cfg.DetailEffective() {
-	case "high":
-		detail = schema.ImageURLDetailHigh
-	case "auto":
-		detail = schema.ImageURLDetailAuto
-	}
-
-	prompt := buildVisionPrompt(question)
-	if llm.IsClaudeProvider(oa.Provider) {
-		nativeModel, err := llm.NewClaudeAgenticModel(
-			ctx,
-			oa,
-			httpClient,
-			oa.MaxCompletionTokensEffective(),
-			nil,
-		)
-		if err != nil {
-			return "", fmt.Errorf("vision native Claude model: %w", err)
-		}
-		resp, err := nativeModel.Generate(ctx, []*schema.AgenticMessage{{
-			Role: schema.AgenticRoleTypeUser,
-			ContentBlocks: []*schema.ContentBlock{
-				schema.NewContentBlock(&schema.UserInputText{Text: prompt}),
-				schema.NewContentBlock(&schema.UserInputImage{
-					Base64Data: b64,
-					MIMEType:   mime,
-					Detail:     detail,
-				}),
-			},
-		}})
-		if err != nil {
-			return "", fmt.Errorf("vision native Claude generate: %w", err)
-		}
-		content, _ := llm.AgenticText(resp)
-		if strings.TrimSpace(content) == "" {
-			return "", fmt.Errorf("vision model returned empty content")
-		}
-		return strings.TrimSpace(content), nil
-	}
-
-	httpClient = openai.NewEinoHTTPClient(&oa, httpClient)
-	maxCompletionTokens := oa.MaxCompletionTokensEffective()
-	modelCfg := &einoopenai.ChatModelConfig{
-		APIKey:              oa.APIKey,
-		BaseURL:             strings.TrimSuffix(oa.BaseURL, "/"),
-		Model:               oa.Model,
-		HTTPClient:          httpClient,
-		MaxCompletionTokens: &maxCompletionTokens,
-	}
-	chatModel, err := einoopenai.NewChatModel(ctx, modelCfg)
+	content, err := llm.DescribeImage(ctx, llm.VisionRequest{
+		OpenAI:               oa,
+		HTTPClient:           httpClient,
+		CompatibleHTTPClient: openai.NewEinoHTTPClient(&oa, httpClient),
+		Prompt:               buildVisionPrompt(question),
+		ImageBase64:          b64,
+		MIMEType:             mime,
+		Detail:               c.cfg.DetailEffective(),
+		MaxCompletionTokens:  oa.MaxCompletionTokensEffective(),
+	})
 	if err != nil {
-		return "", fmt.Errorf("vision chat model: %w", err)
+		return "", err
 	}
-	userMsg := &schema.Message{
-		Role: schema.User,
-		UserInputMultiContent: []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeText, Text: prompt},
-			{
-				Type: schema.ChatMessagePartTypeImageURL,
-				Image: &schema.MessageInputImage{
-					MessagePartCommon: schema.MessagePartCommon{
-						Base64Data: &b64,
-						MIMEType:   mime,
-					},
-					Detail: detail,
-				},
-			},
-		},
-	}
-
-	resp, err := chatModel.Generate(ctx, []*schema.Message{userMsg})
-	if err != nil {
-		return "", fmt.Errorf("vision generate: %w", err)
-	}
-	if resp == nil || strings.TrimSpace(resp.Content) == "" {
-		return "", fmt.Errorf("vision model returned empty content")
-	}
-	return strings.TrimSpace(resp.Content), nil
+	return content, nil
 }
 
 func buildVisionPrompt(question string) string {

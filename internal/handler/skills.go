@@ -23,7 +23,7 @@ type SkillsHandler struct {
 	config     *config.Config
 	configPath string
 	logger     *zap.Logger
-	db         *database.DB // 数据库连接（遗留统计；MCP list/read 已移除）
+	db         database.SkillsStore // 数据库连接（遗留统计；MCP list/read 已移除）
 	audit      *audit.Service
 }
 
@@ -55,7 +55,9 @@ func (h *SkillsHandler) skillsRootAbs() string {
 
 // SetDB 设置数据库连接（用于获取调用统计）
 func (h *SkillsHandler) SetDB(db *database.DB) {
-	h.db = db
+	// Narrow, not a plain assignment: h.db is now an interface, and assigning a nil *DB would
+	// store a non-nil interface whose methods panic - the opposite of the guards below.
+	h.db = database.Narrow[database.SkillsStore](db)
 }
 
 // GetSkills 获取所有skills列表（支持分页和搜索）

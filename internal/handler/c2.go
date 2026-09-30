@@ -958,7 +958,11 @@ func (h *C2Handler) EventStream(c *gin.Context) {
 	)
 	defer h.mgr().EventBus().Unsubscribe(sub.ID)
 
+	stream, sink := newC2EventStream()
+	defer stream.Close()
+
 	c.Stream(func(w io.Writer) bool {
+		sink.use(w)
 		select {
 		case e, ok := <-sub.Ch:
 			if !ok {
@@ -967,8 +971,17 @@ func (h *C2Handler) EventStream(c *gin.Context) {
 			if !h.c2EventAllowed(c, e) {
 				return true
 			}
-			data, _ := json.Marshal(e)
-			fmt.Fprintf(w, "data: %s\n\n", data)
+			data, err := json.Marshal(e)
+			if err != nil {
+				return true
+			}
+			// The frame body is the event itself; its category is what the registry
+			// checks, so an undeclared category is refused instead of reaching a page
+			// that has no branch for it.
+			if err := stream.SendLegacy(e.Category, data); err != nil {
+				h.logger.Warn("C2 事件流丢弃了未登记类别的事件",
+					zap.String("category", e.Category), zap.Error(err))
+			}
 			return true
 		case <-c.Request.Context().Done():
 			return false

@@ -26,6 +26,7 @@ import (
 	"cyberstrike-ai/internal/openai"
 	"cyberstrike-ai/internal/reasoning"
 	"cyberstrike-ai/internal/security"
+	"cyberstrike-ai/internal/store"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -182,8 +183,15 @@ func discardPlanningIfEchoesToolResult(respPlan *responsePlanAgg, toolData inter
 
 // AgentHandler Agent处理器
 type AgentHandler struct {
-	agent            *agent.Agent
-	db               *database.DB
+	agent *agent.Agent
+	db    *database.DB
+	// hitlStore 是 hitl_interrupts 的域存储：HTTP 层不再在这个表上裸写 SQL。
+	hitlStore *store.HITL
+	// sessions 是 messages 的域存储：异常收尾改写助手消息内容走它，不在 HTTP 层拼 SQL。
+	sessions *store.Session
+	// settings 发布运行期配置快照；与 ConfigHandler 共用同一个存储，
+	// 这样两个 handler 不再各自用不同的锁写同一块内存。
+	settings         *SettingsStore
 	logger           *zap.Logger
 	tasks            *AgentTaskManager
 	taskEventBus     *TaskEventBus // 镜像 SSE 事件，供刷新后订阅同一运行中任务
@@ -195,12 +203,12 @@ type AgentHandler struct {
 	}
 	agentsMarkdownDir string // 多代理：Markdown 子 Agent 目录（绝对路径，空则不从磁盘合并）
 	batchCronParser   cron.Parser
-	// hitlWhitelistSaver 侧栏「应用」HITL 时将会话增量白名单合并写入 config.yaml（可选）
-	hitlWhitelistSaver       HitlToolWhitelistSaver
-	hitlStrategySaver        HitlAuditStrategySaver
-	hitlDefaultReviewerSaver HitlDefaultReviewerSaver
-	auditLLM                 *openai.Client
-	audit                    *audit.Service
+	// hitlSavers 是 HITL 落盘的三条通道（会话白名单、审计策略、全局默认）。它们原本是
+	// 三对字段加三个 setter 挂在这个 handler 上；现在一起搬进 hitl_config_savers.go，
+	// 装配点只剩一个，字段计数也不再是 AgentHandler 分解时必须拆开的零碎。
+	hitlSavers hitlConfigSavers
+	auditLLM   *openai.Client
+	audit      *audit.Service
 }
 
 // SetAudit wires platform audit logging.
@@ -260,12 +268,6 @@ func (h *AgentHandler) cancelRunningMCPToolsForConversation(conversationID strin
 	}
 }
 
-// HitlToolWhitelistSaver 合并/设置 HITL 免审批工具到全局配置并落盘
-type HitlToolWhitelistSaver interface {
-	MergeHitlToolWhitelistIntoConfig(add []string) error
-	SetHitlToolWhitelist(tools []string) error
-}
-
 // NewAgentHandler 创建新的Agent处理器
 func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, logger *zap.Logger) *AgentHandler {
 	batchTaskManager := NewBatchTaskManager(logger)
@@ -287,6 +289,8 @@ func NewAgentHandler(agent *agent.Agent, db *database.DB, cfg *config.Config, lo
 	handler := &AgentHandler{
 		agent:            agent,
 		db:               db,
+		hitlStore:        newHITLStore(db),
+		sessions:         newSessionStore(db),
 		logger:           logger,
 		tasks:            tm,
 		taskEventBus:     bus,
@@ -316,39 +320,23 @@ func (h *AgentHandler) SetAgentsMarkdownDir(absDir string) {
 	h.agentsMarkdownDir = strings.TrimSpace(absDir)
 }
 
-// SetHitlToolWhitelistSaver 设置 HITL 白名单落盘（与 ConfigHandler 配合，避免循环引用用接口）
-func (h *AgentHandler) SetHitlToolWhitelistSaver(s HitlToolWhitelistSaver) {
-	h.hitlWhitelistSaver = s
-}
-
-// HitlDefaultReviewerSaver 持久化全局默认人机协同配置到 config.yaml。
-type HitlDefaultReviewerSaver interface {
-	UpdateHitlDefaultConfig(mode, reviewer string, timeoutSeconds int) error
-	UpdateHitlDefaultReviewer(reviewer string) error
-}
-
-// SetHitlDefaultReviewerSaver 设置 HITL 默认配置落盘。
-func (h *AgentHandler) SetHitlDefaultReviewerSaver(s HitlDefaultReviewerSaver) {
-	h.hitlDefaultReviewerSaver = s
-}
-
 func (h *AgentHandler) hitlEffectiveDefaultReviewer() string {
 	if h != nil && h.config != nil {
-		return normalizeHitlReviewer(h.config.Hitl.EffectiveDefaultReviewer())
+		return normalizeHitlReviewer(h.hitl().EffectiveDefaultReviewer())
 	}
 	return "human"
 }
 
 func (h *AgentHandler) hitlEffectiveDefaultMode() string {
 	if h != nil && h.config != nil {
-		return normalizeHitlDefaultMode(h.config.Hitl.EffectiveDefaultMode())
+		return normalizeHitlDefaultMode(h.hitl().EffectiveDefaultMode())
 	}
 	return "off"
 }
 
 func (h *AgentHandler) hitlEffectiveDefaultTimeoutSeconds() int {
 	if h != nil && h.config != nil {
-		timeout := h.config.Hitl.EffectiveDefaultTimeoutSeconds()
+		timeout := h.hitl().EffectiveDefaultTimeoutSeconds()
 		if timeout < 0 {
 			return 0
 		}
@@ -688,21 +676,7 @@ func (h *AgentHandler) appendAssistantMessageNotice(messageID, notice string) er
 	if strings.TrimSpace(messageID) == "" || trimmedNotice == "" {
 		return nil
 	}
-	_, err := h.db.Exec(
-		`UPDATE messages
-		 SET content = CASE
-			WHEN content IS NULL OR TRIM(content) = '' THEN ?
-			WHEN INSTR(content, ?) > 0 THEN content
-			ELSE content || '\n\n' || ?
-		 END,
-		     updated_at = ?
-		 WHERE id = ?`,
-		trimmedNotice,
-		trimmedNotice,
-		trimmedNotice,
-		time.Now(),
-		messageID,
-	)
+	_, err := h.sessionStore().AppendNotice(messageID, trimmedNotice)
 	return err
 }
 
@@ -714,21 +688,7 @@ func (h *AgentHandler) mergeAssistantMessagePartialOnCancel(messageID, partial s
 	if strings.TrimSpace(messageID) == "" || trimmedPartial == "" {
 		return nil
 	}
-	_, err := h.db.Exec(
-		`UPDATE messages
-		 SET content = CASE
-			WHEN content IS NULL OR TRIM(content) = '' OR TRIM(content) = '处理中...' THEN ?
-			WHEN INSTR(content, ?) > 0 THEN content
-			ELSE content || '\n\n' || ?
-		 END,
-		     updated_at = ?
-		 WHERE id = ?`,
-		trimmedPartial,
-		trimmedPartial,
-		trimmedPartial,
-		time.Now(),
-		messageID,
-	)
+	_, err := h.sessionStore().AppendPartialOnCancel(messageID, trimmedPartial)
 	return err
 }
 
@@ -755,7 +715,7 @@ func (h *AgentHandler) finalizeRobotAgentError(ctx context.Context, assistantMes
 	}
 	errMsg := "执行失败: " + multiagent.EinoClientRunErrorMessage(errMA)
 	if assistantMessageID != "" {
-		_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errMsg, time.Now(), assistantMessageID)
+		_ = h.setMessageContent(assistantMessageID, errMsg)
 		_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "error", errMsg, nil)
 	}
 	return "", conversationID, errMA
@@ -950,16 +910,11 @@ func (h *AgentHandler) publishProgressToTaskEventBus(conversationID, eventType, 
 	if h == nil || h.taskEventBus == nil || strings.TrimSpace(conversationID) == "" {
 		return
 	}
-	event := StreamEvent{Type: eventType, Message: message, Data: data}
-	eventJSON, err := json.Marshal(event)
+	line, err := sseBusRecorder.Line(eventType, message, data)
 	if err != nil {
 		return
 	}
-	sseLine := make([]byte, 0, len(eventJSON)+8)
-	sseLine = append(sseLine, []byte("data: ")...)
-	sseLine = append(sseLine, eventJSON...)
-	sseLine = append(sseLine, '\n', '\n')
-	h.taskEventBus.Publish(conversationID, sseLine)
+	h.taskEventBus.Publish(conversationID, line)
 }
 
 func isInternalEinoDiagnosticProgress(eventType, message string, data interface{}) bool {

@@ -1663,7 +1663,8 @@
     "colPerms": "权限",
     "colOwner": "所有者",
     "colGroup": "用户组",
-    "colType": "类型"
+    "colType": "类型",
+    "dirTree": "目录树"
   },
   "mcp": {
     "monitorTitle": "MCP 状态监控",

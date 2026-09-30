@@ -120,8 +120,11 @@ func retrievalResultsToDocuments(results []*RetrievalResult) []*schema.Document 
 			continue
 		}
 		d := &schema.Document{
-			ID:      res.Chunk.ID,
-			Content: res.Chunk.ChunkText,
+			ID: res.Chunk.ID,
+			// Knowledge text is community content feeding an agent that can execute
+			// real actions, so it leaves the retrieval layer privilege-tagged and
+			// fenced: it may inform the answer, it may not steer tool use.
+			Content: res.AdvisoryContent(),
 			MetaData: map[string]any{
 				metaKBItemID:     res.Item.ID,
 				metaKBCategory:   res.Item.Category,

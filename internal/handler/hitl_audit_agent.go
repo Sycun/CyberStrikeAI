@@ -25,12 +25,12 @@ func (h *AgentHandler) auditAgentReview(ctx context.Context, hitlMode, toolName 
 		return hitlDecision{Decision: "reject", Comment: "audit agent: handler unavailable"}
 	}
 	mode := normalizeHitlMode(hitlMode)
-	if h.config != nil && h.config.Hitl.EffectiveAuditBackend() == config.HitlAuditBackendTypeSafe {
+	if h.config != nil && h.hitl().EffectiveAuditBackend() == config.HitlAuditBackendTypeSafe {
 		return h.auditAgentReviewTypeSafe(ctx, mode, toolName, payload)
 	}
 	prompt := config.DefaultHitlAuditAgentPrompt()
 	if h.config != nil {
-		prompt = h.config.Hitl.EffectiveAuditAgentPromptForMode(mode)
+		prompt = h.hitl().EffectiveAuditAgentPromptForMode(mode)
 	}
 	llmCfg := h.auditLLMConfig()
 	if strings.TrimSpace(llmCfg.APIKey) == "" || strings.TrimSpace(llmCfg.Model) == "" {
@@ -109,7 +109,7 @@ func (h *AgentHandler) auditAgentReview(ctx context.Context, hitlMode, toolName 
 
 func (h *AgentHandler) auditLLMConfig() config.OpenAIConfig {
 	if h != nil && h.config != nil {
-		return h.config.Hitl.AuditModelEffective(h.config.OpenAI)
+		return h.hitl().AuditModelEffective(h.config.OpenAI)
 	}
 	return config.OpenAIConfig{}
 }
@@ -118,7 +118,7 @@ func (h *AgentHandler) auditAgentReviewTypeSafe(ctx context.Context, hitlMode, t
 	if h == nil || h.config == nil {
 		return hitlDecision{Decision: "reject", Comment: "audit agent: TypeSafe 未配置"}
 	}
-	baseURL, apiKey, model := h.config.Hitl.TypeSafeConfigEffective()
+	baseURL, apiKey, model := h.hitl().TypeSafeConfigEffective()
 	if apiKey == "" {
 		return hitlDecision{Decision: "reject", Comment: "audit agent: TypeSafe API Key 未配置"}
 	}
@@ -129,7 +129,7 @@ func (h *AgentHandler) auditAgentReviewTypeSafe(ctx context.Context, hitlMode, t
 	defer cancel()
 
 	client := typesafe.NewClient(baseURL, apiKey, model, nil)
-	policy := h.config.Hitl.JevOperatorPolicy(hitlMode)
+	policy := h.hitl().JevOperatorPolicy(hitlMode)
 	result, err := client.SystemOne(callCtx, hitl.BuildJevState(hitlMode, toolName, payload, policy), hitl.JevAuditQuestions(policy))
 	if err != nil {
 		h.logger.Warn("审计 Agent TypeSafe 调用失败", zap.Error(err), zap.String("tool", toolName))
@@ -334,10 +334,10 @@ func (h *AgentHandler) GetHITLAuditStrategy(c *gin.Context) {
 	approvalCustom := false
 	reviewEditCustom := false
 	if h.config != nil {
-		approvalPrompt = h.config.Hitl.EffectiveAuditAgentPromptForMode("approval")
-		reviewEditPrompt = h.config.Hitl.EffectiveAuditAgentPromptForMode("review_edit")
-		approvalCustom = strings.TrimSpace(h.config.Hitl.AuditAgentPrompt) != ""
-		reviewEditCustom = strings.TrimSpace(h.config.Hitl.AuditAgentPromptReviewEdit) != ""
+		approvalPrompt = h.hitl().EffectiveAuditAgentPromptForMode("approval")
+		reviewEditPrompt = h.hitl().EffectiveAuditAgentPromptForMode("review_edit")
+		approvalCustom = strings.TrimSpace(h.hitl().AuditAgentPrompt) != ""
+		reviewEditCustom = strings.TrimSpace(h.hitl().AuditAgentPromptReviewEdit) != ""
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"auditAgentPrompt":                  approvalPrompt,
@@ -350,7 +350,7 @@ func (h *AgentHandler) GetHITLAuditStrategy(c *gin.Context) {
 }
 
 func (h *AgentHandler) UpdateHITLAuditStrategy(c *gin.Context) {
-	if h.hitlStrategySaver == nil {
+	if h.hitlSavers.strategy == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 策略持久化不可用"})
 		return
 	}
@@ -361,7 +361,7 @@ func (h *AgentHandler) UpdateHITLAuditStrategy(c *gin.Context) {
 	}
 	approvalPrompt := strings.TrimSpace(req.AuditAgentPrompt)
 	reviewEditPrompt := strings.TrimSpace(req.AuditAgentPromptReviewEdit)
-	if err := h.hitlStrategySaver.UpdateHitlAuditAgentStrategy(approvalPrompt, reviewEditPrompt); err != nil {
+	if err := h.hitlSavers.strategy.UpdateHitlAuditAgentStrategy(approvalPrompt, reviewEditPrompt); err != nil {
 		h.logger.Warn("保存审计 Agent 提示词失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -369,10 +369,10 @@ func (h *AgentHandler) UpdateHITLAuditStrategy(c *gin.Context) {
 	if h.audit != nil {
 		h.audit.RecordOK(c, "hitl", "audit_strategy_update", "HITL 审计策略更新", "hitl_config", "audit_agent_prompt", nil)
 	}
-	if h.config != nil {
-		h.config.Hitl.AuditAgentPrompt = approvalPrompt
-		h.config.Hitl.AuditAgentPromptReviewEdit = reviewEditPrompt
-	}
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.AuditAgentPrompt = approvalPrompt
+		hitl.AuditAgentPromptReviewEdit = reviewEditPrompt
+	})
 	c.JSON(http.StatusOK, gin.H{
 		"ok":                               true,
 		"auditAgentPrompt":                 config.HitlConfig{AuditAgentPrompt: approvalPrompt}.EffectiveAuditAgentPromptForMode("approval"),
@@ -383,11 +383,3 @@ func (h *AgentHandler) UpdateHITLAuditStrategy(c *gin.Context) {
 }
 
 // HitlAuditStrategySaver 持久化审计 Agent 提示词到 config.yaml。
-type HitlAuditStrategySaver interface {
-	UpdateHitlAuditAgentStrategy(approvalPrompt, reviewEditPrompt string) error
-}
-
-// SetHitlAuditStrategySaver 设置审计策略落盘。
-func (h *AgentHandler) SetHitlAuditStrategySaver(s HitlAuditStrategySaver) {
-	h.hitlStrategySaver = s
-}

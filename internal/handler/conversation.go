@@ -29,7 +29,7 @@ type ConversationTaskStateProvider interface {
 
 // ConversationHandler 对话处理器
 type ConversationHandler struct {
-	db          *database.DB
+	db          database.ConversationStore
 	logger      *zap.Logger
 	audit       *audit.Service
 	taskStopper ConversationTaskStopper
@@ -55,7 +55,7 @@ func (h *ConversationHandler) SetTaskStateProvider(provider ConversationTaskStat
 // NewConversationHandler 创建新的对话处理器
 func NewConversationHandler(db *database.DB, logger *zap.Logger) *ConversationHandler {
 	return &ConversationHandler{
-		db:     db,
+		db:     database.Narrow[database.ConversationStore](db),
 		logger: logger,
 	}
 }
@@ -438,7 +438,15 @@ func (h *ConversationHandler) GetProcessDetail(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"processDetail": out[0]})
 }
 
-func processDetailsToJSON(logger *zap.Logger, db *database.DB, details []database.ProcessDetail, includeToolPayload bool) []map[string]interface{} {
+// toolExecutionArgumentSource is the single storage question the history renderer asks: an
+// interrupted tool_call frame carries no arguments, so it looks up the nearest execution record.
+// Named here rather than taking *database.DB, because the renderer is shared by several handlers
+// and the whole point is that it cannot reach any other table.
+type toolExecutionArgumentSource interface {
+	FindNearestToolExecutionArguments(conversationID, toolName string, at time.Time, window time.Duration) (string, map[string]interface{}, error)
+}
+
+func processDetailsToJSON(logger *zap.Logger, db toolExecutionArgumentSource, details []database.ProcessDetail, includeToolPayload bool) []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(details))
 	for _, d := range details {
 		var data interface{}
@@ -466,7 +474,7 @@ func processDetailsToJSON(logger *zap.Logger, db *database.DB, details []databas
 	return out
 }
 
-func enrichEmptyToolCallArgumentsFromExecution(logger *zap.Logger, db *database.DB, detail database.ProcessDetail, data map[string]interface{}) {
+func enrichEmptyToolCallArgumentsFromExecution(logger *zap.Logger, db toolExecutionArgumentSource, detail database.ProcessDetail, data map[string]interface{}) {
 	if db == nil || detail.EventType != "tool_call" || !toolCallArgumentsEmpty(data) {
 		return
 	}

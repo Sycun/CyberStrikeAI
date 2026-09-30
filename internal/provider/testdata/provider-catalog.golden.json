@@ -1,0 +1,323 @@
+{
+  "vendors": [
+    "anthropic",
+    "claude",
+    "dashscope",
+    "deepseek",
+    "openai",
+    "openai_compatible"
+  ],
+  "rows": [
+    {
+      "Vendor": "anthropic",
+      "API": "anthropic-messages",
+      "BaseURL": "",
+      "ContextWindow": 200000,
+      "MaxTokensDefault": 8192,
+      "Cost": {
+        "Input": 3,
+        "Output": 15,
+        "CacheRead": 0.3,
+        "CacheWrite": 3.75
+      },
+      "Capabilities": {
+        "ThinkingBlocks": true,
+        "ReasoningEffort": false,
+        "ForcedToolChoiceUnsafe": false,
+        "VisionInput": true,
+        "StrictJSONSchema": false,
+        "RejectsDanglingToolCalls": true,
+        "AgenticBackend": true,
+        "StreamCarriesErrorsInBody": true
+      },
+      "Retry": {
+        "RetryableStatus": [
+          408,
+          409,
+          425,
+          429
+        ],
+        "RetryableOn5xx": true,
+        "MaxAttempts": 3,
+        "BackoffStartMillis": 500
+      },
+      "OverflowMarkers": [
+        "prompt is too long",
+        "input is too long",
+        "context_length"
+      ],
+      "DefaultBaseURL": "https://api.anthropic.com",
+      "AliasesTo": "",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "provider_name": "anthropic",
+      "agentic_backend": true,
+      "anthropic_messages": true,
+      "lists_models": false,
+      "capability_flags": [
+        "agentic_backend",
+        "rejects_dangling_tool_calls",
+        "stream_errors_in_body",
+        "thinking_blocks",
+        "vision_input"
+      ]
+    },
+    {
+      "Vendor": "claude",
+      "API": "anthropic-messages",
+      "BaseURL": "",
+      "ContextWindow": 200000,
+      "MaxTokensDefault": 8192,
+      "Cost": {
+        "Input": 3,
+        "Output": 15,
+        "CacheRead": 0.3,
+        "CacheWrite": 3.75
+      },
+      "Capabilities": {
+        "ThinkingBlocks": true,
+        "ReasoningEffort": false,
+        "ForcedToolChoiceUnsafe": false,
+        "VisionInput": true,
+        "StrictJSONSchema": false,
+        "RejectsDanglingToolCalls": true,
+        "AgenticBackend": true,
+        "StreamCarriesErrorsInBody": true
+      },
+      "Retry": {
+        "RetryableStatus": [
+          408,
+          409,
+          425,
+          429
+        ],
+        "RetryableOn5xx": true,
+        "MaxAttempts": 3,
+        "BackoffStartMillis": 500
+      },
+      "OverflowMarkers": [
+        "prompt is too long",
+        "input is too long",
+        "context_length"
+      ],
+      "DefaultBaseURL": "https://api.anthropic.com",
+      "AliasesTo": "",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "provider_name": "claude",
+      "agentic_backend": true,
+      "anthropic_messages": true,
+      "lists_models": false,
+      "capability_flags": [
+        "agentic_backend",
+        "rejects_dangling_tool_calls",
+        "stream_errors_in_body",
+        "thinking_blocks",
+        "vision_input"
+      ]
+    },
+    {
+      "Vendor": "dashscope",
+      "API": "openai-chat",
+      "BaseURL": "",
+      "ContextWindow": 128000,
+      "MaxTokensDefault": 8192,
+      "Cost": {
+        "Input": 0,
+        "Output": 0,
+        "CacheRead": 0,
+        "CacheWrite": 0
+      },
+      "Capabilities": {
+        "ThinkingBlocks": false,
+        "ReasoningEffort": false,
+        "ForcedToolChoiceUnsafe": false,
+        "VisionInput": true,
+        "StrictJSONSchema": false,
+        "RejectsDanglingToolCalls": true,
+        "AgenticBackend": false,
+        "StreamCarriesErrorsInBody": false
+      },
+      "Retry": {
+        "RetryableStatus": [
+          408,
+          409,
+          425,
+          429
+        ],
+        "RetryableOn5xx": true,
+        "MaxAttempts": 3,
+        "BackoffStartMillis": 500
+      },
+      "OverflowMarkers": [
+        "context_length",
+        "range of input length",
+        "input is too long"
+      ],
+      "DefaultBaseURL": "",
+      "AliasesTo": "",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "provider_name": "dashscope",
+      "agentic_backend": false,
+      "anthropic_messages": false,
+      "lists_models": true,
+      "capability_flags": [
+        "rejects_dangling_tool_calls",
+        "vision_input"
+      ]
+    },
+    {
+      "Vendor": "deepseek",
+      "API": "openai-chat",
+      "BaseURL": "",
+      "ContextWindow": 128000,
+      "MaxTokensDefault": 8192,
+      "Cost": {
+        "Input": 0.14,
+        "Output": 0.28,
+        "CacheRead": 0,
+        "CacheWrite": 0
+      },
+      "Capabilities": {
+        "ThinkingBlocks": false,
+        "ReasoningEffort": true,
+        "ForcedToolChoiceUnsafe": false,
+        "VisionInput": false,
+        "StrictJSONSchema": false,
+        "RejectsDanglingToolCalls": true,
+        "AgenticBackend": false,
+        "StreamCarriesErrorsInBody": false
+      },
+      "Retry": {
+        "RetryableStatus": [
+          408,
+          409,
+          425,
+          429
+        ],
+        "RetryableOn5xx": true,
+        "MaxAttempts": 3,
+        "BackoffStartMillis": 500
+      },
+      "OverflowMarkers": [
+        "context_length",
+        "input is too long"
+      ],
+      "DefaultBaseURL": "",
+      "AliasesTo": "",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "provider_name": "deepseek",
+      "agentic_backend": false,
+      "anthropic_messages": false,
+      "lists_models": true,
+      "capability_flags": [
+        "reasoning_effort",
+        "rejects_dangling_tool_calls"
+      ]
+    },
+    {
+      "Vendor": "openai",
+      "API": "openai-chat",
+      "BaseURL": "",
+      "ContextWindow": 400000,
+      "MaxTokensDefault": 16384,
+      "Cost": {
+        "Input": 2.5,
+        "Output": 10,
+        "CacheRead": 0,
+        "CacheWrite": 0
+      },
+      "Capabilities": {
+        "ThinkingBlocks": false,
+        "ReasoningEffort": true,
+        "ForcedToolChoiceUnsafe": false,
+        "VisionInput": true,
+        "StrictJSONSchema": true,
+        "RejectsDanglingToolCalls": true,
+        "AgenticBackend": true,
+        "StreamCarriesErrorsInBody": false
+      },
+      "Retry": {
+        "RetryableStatus": [
+          408,
+          409,
+          425,
+          429
+        ],
+        "RetryableOn5xx": true,
+        "MaxAttempts": 3,
+        "BackoffStartMillis": 500
+      },
+      "OverflowMarkers": [
+        "context_length",
+        "input is too long",
+        "maximum context length"
+      ],
+      "DefaultBaseURL": "https://api.openai.com/v1",
+      "AliasesTo": "",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "provider_name": "openai",
+      "agentic_backend": true,
+      "anthropic_messages": false,
+      "lists_models": true,
+      "capability_flags": [
+        "agentic_backend",
+        "reasoning_effort",
+        "rejects_dangling_tool_calls",
+        "strict_json_schema",
+        "vision_input"
+      ]
+    },
+    {
+      "Vendor": "openai_compatible",
+      "API": "openai-chat",
+      "BaseURL": "",
+      "ContextWindow": 128000,
+      "MaxTokensDefault": 8192,
+      "Cost": {
+        "Input": 0,
+        "Output": 0,
+        "CacheRead": 0,
+        "CacheWrite": 0
+      },
+      "Capabilities": {
+        "ThinkingBlocks": false,
+        "ReasoningEffort": false,
+        "ForcedToolChoiceUnsafe": true,
+        "VisionInput": true,
+        "StrictJSONSchema": false,
+        "RejectsDanglingToolCalls": true,
+        "AgenticBackend": true,
+        "StreamCarriesErrorsInBody": false
+      },
+      "Retry": {
+        "RetryableStatus": [
+          408,
+          409,
+          425,
+          429
+        ],
+        "RetryableOn5xx": true,
+        "MaxAttempts": 3,
+        "BackoffStartMillis": 500
+      },
+      "OverflowMarkers": [
+        "context_length",
+        "input is too long",
+        "prompt is too long",
+        "too many tokens"
+      ],
+      "DefaultBaseURL": "https://api.openai.com/v1",
+      "AliasesTo": "openai",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "provider_name": "openai",
+      "agentic_backend": true,
+      "anthropic_messages": false,
+      "lists_models": true,
+      "capability_flags": [
+        "agentic_backend",
+        "forced_tool_choice_unsafe",
+        "rejects_dangling_tool_calls",
+        "vision_input"
+      ]
+    }
+  ]
+}

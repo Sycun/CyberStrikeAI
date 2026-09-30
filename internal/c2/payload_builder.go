@@ -31,17 +31,28 @@ type PayloadBuilderInput struct {
 type PayloadBuilder struct {
 	manager   *Manager
 	logger    *zap.Logger
-	tmplDir   string // 模板目录，如 internal/c2/payload_templates
+	tmplDir   string // 非空时从该目录读取模板，空则用内嵌副本
 	outputDir string // 输出目录，如 tmp/c2/payloads
 }
 
-// NewPayloadBuilder 创建构建器
-func NewPayloadBuilder(manager *Manager, logger *zap.Logger, tmplDir, outputDir string) *PayloadBuilder {
-	if tmplDir == "" {
-		tmplDir = "internal/c2/payload_templates"
+// defaultPayloadOutputDir anchors payload output to the executable instead of the
+// working directory, so a built payload stays findable after the process is
+// started from somewhere else (the download handler resolves it by stored path).
+func defaultPayloadOutputDir() string {
+	if exe, err := os.Executable(); err == nil && strings.TrimSpace(exe) != "" {
+		if resolved, err := filepath.EvalSymlinks(filepath.Dir(exe)); err == nil {
+			return filepath.Join(resolved, "tmp", "c2", "payloads")
+		}
+		return filepath.Join(filepath.Dir(exe), "tmp", "c2", "payloads")
 	}
+	return filepath.Join("tmp", "c2", "payloads")
+}
+
+// NewPayloadBuilder 创建构建器；tmplDir 传空表示使用 go:embed 内嵌模板，
+// 使二进制在任意工作目录下都能出桩。
+func NewPayloadBuilder(manager *Manager, logger *zap.Logger, tmplDir, outputDir string) *PayloadBuilder {
 	if outputDir == "" {
-		outputDir = "tmp/c2/payloads"
+		outputDir = defaultPayloadOutputDir()
 	}
 	return &PayloadBuilder{
 		manager:   manager,
@@ -91,8 +102,7 @@ func (b *PayloadBuilder) BuildBeacon(in PayloadBuilderInput) (*BuildResult, erro
 	}
 
 	// 读取模板
-	tmplPath := filepath.Join(b.tmplDir, "beacon.go.tmpl")
-	tmplData, err := os.ReadFile(tmplPath)
+	tmplData, err := b.readTemplate("beacon.go.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("read template: %w", err)
 	}
@@ -162,8 +172,7 @@ func (b *PayloadBuilder) BuildBeacon(in PayloadBuilderInput) (*BuildResult, erro
 
 	// 平台相关辅助源文件（如无窗口子进程）
 	for _, name := range []string{"proc_hide_windows.go", "proc_hide_unix.go"} {
-		helperSrc := filepath.Join(b.tmplDir, name+".tmpl")
-		helperData, readErr := os.ReadFile(helperSrc)
+		helperData, readErr := b.readTemplate(name + ".tmpl")
 		if readErr != nil {
 			return nil, fmt.Errorf("read helper %s: %w", name, readErr)
 		}
@@ -262,6 +271,15 @@ func clamp(v, min, max int) int {
 func (b *PayloadBuilder) GetPayloadStoragePath() string {
 	abs, _ := filepath.Abs(b.outputDir)
 	return abs
+}
+
+// readTemplate 读取构建所需的模板；go build 需要磁盘上的真实源文件，
+// 因此内容仍会被写进 workDir，这里只保证“取内容”不依赖 CWD。
+func (b *PayloadBuilder) readTemplate(name string) ([]byte, error) {
+	if b.tmplDir != "" {
+		return os.ReadFile(filepath.Join(b.tmplDir, name))
+	}
+	return payloadTemplates.ReadFile("payload_templates/" + name)
 }
 
 // GetSupportedOSArch 返回支持的操作系统和架构列表

@@ -66,3 +66,16 @@ parameters:
     default: "local"
     position: 4
     format: "positional"
+# Capability manifest: identity, authorization, approval and egress
+# ceiling. The registry is fail-closed - a recipe without this
+# block cannot be executed. See docs/zh-CN/capability-platform-decoupling-research.md
+capability:
+  id: "core.pwntools"
+  version: "1.0.0"
+  class: "destructive"
+  permission: "agent:destructive-execute"
+  approval: "always"
+  runtime: "recipe:exec"
+  grants:
+    - "process.exec(python3)"
+    - "fs.read(*)"

@@ -27,7 +27,7 @@ type MonitorHandler struct {
 	taskManager      *AgentTaskManager
 	agentHandler     *AgentHandler
 	executor         *security.Executor
-	db               *database.DB
+	db               database.MonitorStore
 	logger           *zap.Logger
 	audit            *audit.Service
 	monitorRetention *monitor.Service
@@ -49,7 +49,7 @@ func NewMonitorHandler(mcpServer *mcp.Server, executor *security.Executor, db *d
 		mcpServer:      mcpServer,
 		externalMCPMgr: nil, // 将在创建后设置
 		executor:       executor,
-		db:             db,
+		db:             database.Narrow[database.MonitorStore](db),
 		logger:         logger,
 	}
 }
@@ -310,7 +310,14 @@ func slimToolExecution(exec *mcp.ToolExecution) *mcp.ToolExecution {
 	return slim
 }
 
-func filterToolExecutionsForAccess(executions []*mcp.ToolExecution, access database.RBACListAccess, db *database.DB) []*mcp.ToolExecution {
+// conversationAccessLookup is the single storage question the visibility helpers ask: may this
+// principal see the conversation a tool execution belongs to? Named instead of taking
+// *database.DB so the helpers cannot reach any other table.
+type conversationAccessLookup interface {
+	UserCanAccessResource(userID, scope, resourceType, resourceID string) bool
+}
+
+func filterToolExecutionsForAccess(executions []*mcp.ToolExecution, access database.RBACListAccess, db conversationAccessLookup) []*mcp.ToolExecution {
 	if access.Scope == database.RBACScopeAll {
 		return executions
 	}
@@ -323,7 +330,7 @@ func filterToolExecutionsForAccess(executions []*mcp.ToolExecution, access datab
 	return out
 }
 
-func toolExecutionVisible(exec *mcp.ToolExecution, access database.RBACListAccess, db *database.DB) bool {
+func toolExecutionVisible(exec *mcp.ToolExecution, access database.RBACListAccess, db conversationAccessLookup) bool {
 	if exec == nil || strings.TrimSpace(access.UserID) == "" {
 		return false
 	}

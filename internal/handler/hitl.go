@@ -2,18 +2,19 @@ package handler
 
 import (
 	"context"
+	"cyberstrike-ai/internal/capability"
+	"cyberstrike-ai/internal/config"
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/multiagent"
+	"cyberstrike-ai/internal/store"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -44,67 +45,75 @@ type pendingInterrupt struct {
 }
 
 type HITLManager struct {
-	db     *database.DB
-	logger *zap.Logger
+	// interrupts and sessions are the domain stores that own the SQL this manager
+	// used to write inline. The manager keeps in-memory state (who is waiting, what
+	// has been approved) and delegates every durable read and write.
+	interrupts *store.HITL
+	sessions   *store.Session
+	logger     *zap.Logger
 
 	mu      sync.RWMutex
 	runtime map[string]hitlRuntimeConfig
 	pending map[string]*pendingInterrupt
 	// approvedExec 审批通过、待回写 tool_result 的队列（按会话 FIFO）
 	approvedExec map[string][]hitlApprovedExecTrack
+	// globalWhitelist 是 config.yaml 的免审批工具集（小写）。交集判定的运维者半边，
+	// 只能由运维者写入（配置落盘或管理员 API），请求体无法拓宽。
+	globalWhitelist map[string]bool
+}
+
+// SetGlobalWhitelist replaces the operator-owned half of the exemption
+// intersection. A session request body can never reach this.
+func (m *HITLManager) SetGlobalWhitelist(tools []string) {
+	if m == nil {
+		return
+	}
+	next := builtInHitlExempt()
+	for _, t := range tools {
+		if t = strings.ToLower(strings.TrimSpace(t)); t != "" {
+			next[t] = true
+		}
+	}
+	m.mu.Lock()
+	m.globalWhitelist = next
+	m.mu.Unlock()
+}
+
+// builtInHitlExempt returns the agent-internal meta tools that are always
+// exempt from approval. They are readonly control-plane helpers, not callable
+// capabilities, and the capability registry gives them no approval floor.
+func builtInHitlExempt() map[string]bool {
+	out := map[string]bool{}
+	for _, t := range multiagent.MergeHitlExemptMetaTools(nil) {
+		out[strings.ToLower(strings.TrimSpace(t))] = true
+	}
+	return out
 }
 
 func NewHITLManager(db *database.DB, logger *zap.Logger) *HITLManager {
-	return &HITLManager{
-		db:      db,
-		logger:  logger,
-		runtime: make(map[string]hitlRuntimeConfig),
-		pending: make(map[string]*pendingInterrupt),
+	m := &HITLManager{
+		globalWhitelist: builtInHitlExempt(),
+		logger:          logger,
+		runtime:         make(map[string]hitlRuntimeConfig),
+		pending:         make(map[string]*pendingInterrupt),
 	}
+	if db != nil {
+		m.interrupts = store.NewHITL(db.DB)
+		m.sessions = store.NewSession(db.DB)
+	}
+	return m
 }
 
 func (m *HITLManager) EnsureSchema() error {
-	if _, err := m.db.Exec(`
-CREATE TABLE IF NOT EXISTS hitl_interrupts (
-    id TEXT PRIMARY KEY,
-    conversation_id TEXT NOT NULL,
-    message_id TEXT,
-    mode TEXT NOT NULL,
-    tool_name TEXT NOT NULL,
-    tool_call_id TEXT,
-    payload TEXT,
-    status TEXT NOT NULL,
-    reviewer TEXT NOT NULL DEFAULT 'human',
-    decision TEXT,
-    decision_comment TEXT,
-    created_at DATETIME NOT NULL,
-    decided_at DATETIME
-);`); err != nil {
-		return err
+	if m.interrupts == nil {
+		return errors.New("hitl store unavailable")
 	}
-	_, err := m.db.Exec(`
-CREATE TABLE IF NOT EXISTS hitl_conversation_configs (
-    conversation_id TEXT PRIMARY KEY,
-    enabled INTEGER NOT NULL DEFAULT 0,
-    mode TEXT NOT NULL DEFAULT 'off',
-    sensitive_tools TEXT NOT NULL DEFAULT '[]',
-    timeout_seconds INTEGER NOT NULL DEFAULT 0,
-    updated_at DATETIME NOT NULL
-);`)
+	cancelled, err := m.interrupts.EnsureSchema()
 	if err != nil {
 		return err
 	}
-	m.migrateHitlSchemaColumns()
-
-	// On startup, cancel all orphaned pending interrupts from previous process.
-	// Their in-memory channels are gone, so they can never be resolved.
-	res, err := m.db.Exec(`UPDATE hitl_interrupts SET status='cancelled', decision='reject',
-		decision_comment='process restarted', decided_at=CURRENT_TIMESTAMP, decided_by='system'
-		WHERE status='pending'`)
-	if err != nil {
-		m.logger.Warn("failed to cancel orphaned HITL interrupts", zap.Error(err))
-	} else if n, _ := res.RowsAffected(); n > 0 {
-		m.logger.Info("cancelled orphaned HITL interrupts from previous process", zap.Int64("count", n))
+	if cancelled > 0 {
+		m.logger.Info("cancelled orphaned HITL interrupts from previous process", zap.Int64("count", cancelled))
 	}
 	if err := m.reconcileRestartInterruptedMessages(); err != nil {
 		m.logger.Warn("failed to finalize assistant messages interrupted by process restart", zap.Error(err))
@@ -117,109 +126,25 @@ CREATE TABLE IF NOT EXISTS hitl_conversation_configs (
 // a terminal HITL/process event, or a later message in the same conversation.
 // The evidence requirement avoids rewriting a placeholder that could still be
 // recoverable by another runtime.
+//
+// The store finds and writes the rows; the wording below is this package's
+// contribution, because what the user is told about an interruption is not
+// something the persistence layer should decide.
 func (m *HITLManager) reconcileRestartInterruptedMessages() error {
-	rows, err := m.db.Query(`
-SELECT msg.id, msg.conversation_id,
-       COALESCE((
-           SELECT pd.event_type
-           FROM process_details pd
-           WHERE pd.message_id = msg.id
-             AND pd.event_type IN ('cancelled', 'timeout', 'error')
-           ORDER BY pd.created_at DESC LIMIT 1
-       ), '') AS terminal_event,
-       COALESCE((
-           SELECT hi.status
-           FROM hitl_interrupts hi
-           WHERE hi.message_id = msg.id
-           ORDER BY COALESCE(hi.decided_at, hi.created_at) DESC LIMIT 1
-       ), '') AS hitl_status,
-       COALESCE((
-           SELECT hi.decision
-           FROM hitl_interrupts hi
-           WHERE hi.message_id = msg.id
-           ORDER BY COALESCE(hi.decided_at, hi.created_at) DESC LIMIT 1
-       ), '') AS hitl_decision,
-       COALESCE((
-           SELECT hi.decision_comment
-           FROM hitl_interrupts hi
-           WHERE hi.message_id = msg.id
-           ORDER BY COALESCE(hi.decided_at, hi.created_at) DESC LIMIT 1
-       ), '') AS decision_comment,
-       COALESCE((
-           SELECT MAX(COALESCE(hi.decided_at, hi.created_at))
-           FROM hitl_interrupts hi
-           WHERE hi.message_id = msg.id
-       ), (
-           SELECT MIN(later.created_at)
-           FROM messages later
-           WHERE later.conversation_id = msg.conversation_id
-             AND later.created_at > msg.created_at
-       ), (
-           SELECT MAX(pd.created_at)
-           FROM process_details pd
-           WHERE pd.message_id = msg.id
-       ), msg.updated_at, msg.created_at) AS interrupted_at
-FROM messages msg
-WHERE msg.role = 'assistant'
-  AND TRIM(msg.content) IN ('处理中...', 'Processing...')
-  AND (
-      EXISTS (
-          SELECT 1 FROM hitl_interrupts hi
-          WHERE hi.message_id = msg.id
-            AND (hi.status IN ('cancelled', 'timeout')
-                 OR (hi.status = 'decided' AND hi.decision = 'reject'))
-      )
-      OR EXISTS (
-          SELECT 1 FROM process_details pd
-          WHERE pd.message_id = msg.id
-            AND pd.event_type IN ('cancelled', 'timeout', 'error')
-      )
-      OR EXISTS (
-          SELECT 1 FROM messages later
-          WHERE later.conversation_id = msg.conversation_id
-            AND later.created_at > msg.created_at
-      )
-  )`)
+	if m.sessions == nil {
+		return errors.New("hitl session store unavailable")
+	}
+	candidates, err := m.sessions.InterruptedPlaceholders()
 	if err != nil {
 		return err
 	}
-	type interruptedMessage struct {
-		messageID       string
-		conversationID  string
-		terminalEvent   string
-		hitlStatus      string
-		hitlDecision    string
-		decisionComment string
-		interruptedAt   string
-	}
-	var interrupted []interruptedMessage
-	for rows.Next() {
-		var item interruptedMessage
-		if err := rows.Scan(&item.messageID, &item.conversationID, &item.terminalEvent,
-			&item.hitlStatus, &item.hitlDecision, &item.decisionComment, &item.interruptedAt); err != nil {
-			rows.Close()
-			return err
-		}
-		interrupted = append(interrupted, item)
-	}
-	if err := rows.Close(); err != nil {
-		return err
-	}
-	if len(interrupted) == 0 {
-		return nil
-	}
-
-	tx, err := m.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-	for _, item := range interrupted {
-		eventType := strings.ToLower(strings.TrimSpace(item.terminalEvent))
-		decision := strings.ToLower(strings.TrimSpace(item.hitlDecision))
-		comment := strings.ToLower(strings.TrimSpace(item.decisionComment))
+	updates := make([]store.InterruptedUpdate, 0, len(candidates))
+	for _, item := range candidates {
+		eventType := strings.ToLower(strings.TrimSpace(item.TerminalEvent))
+		decision := strings.ToLower(strings.TrimSpace(item.HITLDecision))
+		comment := strings.ToLower(strings.TrimSpace(item.DecisionComment))
 		if eventType == "" {
-			if strings.EqualFold(strings.TrimSpace(item.hitlStatus), "timeout") || strings.Contains(comment, "timeout") {
+			if strings.EqualFold(strings.TrimSpace(item.HITLStatus), "timeout") || strings.Contains(comment, "timeout") {
 				eventType = "timeout"
 			} else {
 				eventType = "cancelled"
@@ -245,31 +170,17 @@ WHERE msg.role = 'assistant'
 		default:
 			eventType = "cancelled"
 		}
-		detailData, _ := json.Marshal(map[string]string{"reason": reason, "status": eventType})
-		result, err := tx.Exec(`
-UPDATE messages
-SET content = ?, updated_at = ?
-WHERE id = ? AND TRIM(content) IN ('处理中...', 'Processing...')`,
-			notice, item.interruptedAt, item.messageID)
-		if err != nil {
-			return err
-		}
-		updated, _ := result.RowsAffected()
-		if updated == 0 {
-			continue
-		}
-		if _, err := tx.Exec(`
-INSERT INTO process_details (id, message_id, conversation_id, event_type, message, data, created_at)
-SELECT ?, ?, ?, ?, ?, ?, ?
-WHERE NOT EXISTS (
-    SELECT 1 FROM process_details
-    WHERE message_id = ? AND event_type IN ('cancelled', 'timeout', 'error')
-)`, uuid.NewString(), item.messageID, item.conversationID, eventType, notice, string(detailData),
-			item.interruptedAt, item.messageID); err != nil {
-			return err
-		}
+		updates = append(updates, store.InterruptedUpdate{
+			MessageID:      item.MessageID,
+			ConversationID: item.ConversationID,
+			EventType:      eventType,
+			Notice:         notice,
+			Reason:         reason,
+			InterruptedAt:  item.InterruptedAt,
+		})
 	}
-	return tx.Commit()
+	_, err = m.sessions.FinalizeInterruptedPlaceholders(updates)
+	return err
 }
 
 func normalizeHitlMode(mode string) string {
@@ -340,7 +251,7 @@ func (h *AgentHandler) hitlConfigGlobalToolWhitelist() []string {
 	if h == nil || h.config == nil {
 		return multiagent.MergeHitlExemptMetaTools(nil)
 	}
-	raw := h.config.Hitl.ToolWhitelist
+	raw := h.hitl().ToolWhitelist
 	seen := make(map[string]struct{})
 	out := make([]string, 0, len(raw)+len(multiagent.HitlExemptMetaTools))
 	for _, t := range raw {
@@ -390,16 +301,59 @@ func (m *HITLManager) shouldInterrupt(conversationID, toolName string) (hitlRunt
 	m.mu.RLock()
 	cfg, ok := m.runtime[conversationID]
 	m.mu.RUnlock()
+
+	tool := strings.ToLower(strings.TrimSpace(toolName))
+
+	// 能力级审批下限：destructive 类能力无论会话是否开启 HITL、无论任何白名单，
+	// 都必须逐次人工授权。白名单只能缩小审批范围，永远不能拓宽运维者批准的范围。
+	if capabilityRequiresApproval(tool) {
+		if !ok {
+			return hitlRuntimeConfig{Enabled: true}, true
+		}
+		return cfg, true
+	}
+
 	if !ok || !cfg.Enabled {
 		return hitlRuntimeConfig{}, false
 	}
-	// 语义：SensitiveTools 现在作为“白名单（免审批工具）”
-	// 空白名单 => 全部工具都需要审批
+
+	// 免审批判定改为“交集”：工具必须同时出现在会话白名单与 config 全局白名单中
+	// 才可豁免。原先的并集语义允许一次请求体提交就把工具永久免审，是提权通道。
 	if len(cfg.SensitiveTools) == 0 {
 		return cfg, true
 	}
-	_, inWhitelist := cfg.SensitiveTools[strings.ToLower(strings.TrimSpace(toolName))]
-	return cfg, !inWhitelist
+	_, inSessionWhitelist := cfg.SensitiveTools[tool]
+	if !inSessionWhitelist {
+		return cfg, true
+	}
+	if !m.globallyWhitelisted(tool) {
+		return cfg, true
+	}
+	return cfg, false
+}
+
+// globallyWhitelisted reports whether config.yaml lists the tool as exempt. The
+// global list is the operator-owned half of the exemption intersection.
+func (m *HITLManager) globallyWhitelisted(tool string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.globalWhitelist == nil {
+		return false
+	}
+	return m.globalWhitelist[strings.ToLower(strings.TrimSpace(tool))]
+}
+
+// capabilityRequiresApproval 询问能力注册表：该工具是否带有不可豁免的审批下限。
+//
+// 未登记的工具不在这里强制审批：agent 内部元工具（write_file/read_file/glob 等）
+// 本就不是可调用能力，而真正的风险工具会在执行点被注册表 fail-closed 拒绝。
+// 审批下限只针对已声明为 destructive 的能力。
+func capabilityRequiresApproval(toolName string) bool {
+	spec, err := capability.Global().Lookup(toolName)
+	if err != nil {
+		return false
+	}
+	return spec.RequiresHumanDecision()
 }
 
 // NeedsToolApproval 与 Agent 工具层 shouldInterrupt 语义一致：仅当该会话已开启人机协同且工具不在免审批白名单时为 true。
@@ -415,10 +369,20 @@ func (m *HITLManager) CreatePendingInterrupt(conversationID, assistantMessageID,
 	now := time.Now()
 	id := "hitl_" + strings.ReplaceAll(uuid.New().String(), "-", "")
 	reviewer = normalizeHitlReviewer(reviewer)
-	if _, err := m.db.Exec(`INSERT INTO hitl_interrupts
-		(id, conversation_id, message_id, mode, tool_name, tool_call_id, payload, status, reviewer, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-		id, conversationID, assistantMessageID, mode, toolName, toolCallID, payload, reviewer, now); err != nil {
+	if m.interrupts == nil {
+		return nil, errors.New("hitl store unavailable")
+	}
+	if err := m.interrupts.CreateInterrupt(store.NewInterrupt{
+		ID:             id,
+		ConversationID: conversationID,
+		MessageID:      assistantMessageID,
+		Mode:           mode,
+		ToolName:       toolName,
+		ToolCallID:     toolCallID,
+		Payload:        payload,
+		Reviewer:       reviewer,
+		CreatedAt:      now,
+	}); err != nil {
 		return nil, err
 	}
 	// 刷新页面后侧栏依赖 DB 配置；若仅内存 Activate 未落库，会导致「有待审批却显示关闭」
@@ -466,16 +430,11 @@ func (m *HITLManager) ensureConversationHITLModePersisted(conversationID, interr
 
 // PendingHITLInterruptMode 返回该会话最新一条 pending 中断的协同模式（用于 GET 配置时与库内「关闭」状态对齐）。
 func (m *HITLManager) PendingHITLInterruptMode(conversationID string) (string, bool) {
-	if strings.TrimSpace(conversationID) == "" {
+	if strings.TrimSpace(conversationID) == "" || m.interrupts == nil {
 		return "", false
 	}
-	var mode string
-	err := m.db.QueryRow(`SELECT mode FROM hitl_interrupts WHERE conversation_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1`, conversationID).
-		Scan(&mode)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", false
-		}
+	mode, found, err := m.interrupts.LatestPendingMode(conversationID)
+	if err != nil || !found {
 		return "", false
 	}
 	mode = strings.TrimSpace(mode)
@@ -530,43 +489,36 @@ func (m *HITLManager) SaveConversationConfig(conversationID string, req *HITLReq
 	if !req.Enabled {
 		mode = "off"
 	}
-	tools, _ := json.Marshal(req.SensitiveTools)
-	timeout := req.TimeoutSeconds
-	if timeout < 0 {
-		timeout = 0
+	if m.interrupts == nil {
+		return errors.New("hitl store unavailable")
 	}
-	_, err := m.db.Exec(`INSERT INTO hitl_conversation_configs
-		(conversation_id, enabled, mode, reviewer, sensitive_tools, timeout_seconds, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(conversation_id) DO UPDATE SET
-		enabled=excluded.enabled, mode=excluded.mode, reviewer=excluded.reviewer, sensitive_tools=excluded.sensitive_tools, timeout_seconds=excluded.timeout_seconds, updated_at=excluded.updated_at`,
-		conversationID, boolToInt(req.Enabled), mode, normalizeHitlReviewer(req.Reviewer), string(tools), timeout, time.Now())
-	return err
+	return m.interrupts.SaveConversationConfig(conversationID, store.ConversationConfig{
+		Enabled:        req.Enabled,
+		Mode:           mode,
+		Reviewer:       normalizeHitlReviewer(req.Reviewer),
+		SensitiveTools: req.SensitiveTools,
+		TimeoutSeconds: req.TimeoutSeconds,
+	})
 }
 
 func (m *HITLManager) LoadConversationConfig(conversationID string) (*HITLRequest, error) {
-	var enabledInt int
-	var mode, reviewer, toolsJSON string
-	var timeout int
-	err := m.db.QueryRow(`SELECT enabled, mode, COALESCE(reviewer,'human'), sensitive_tools, timeout_seconds FROM hitl_conversation_configs WHERE conversation_id = ?`, conversationID).
-		Scan(&enabledInt, &mode, &reviewer, &toolsJSON, &timeout)
-	if errors.Is(err, sql.ErrNoRows) {
-		return &HITLRequest{Enabled: false, Mode: "off", Reviewer: "human", SensitiveTools: []string{}, TimeoutSeconds: 0}, nil
+	absent := &HITLRequest{Enabled: false, Mode: "off", Reviewer: "human", SensitiveTools: []string{}, TimeoutSeconds: 0}
+	if m.interrupts == nil {
+		return absent, nil
+	}
+	stored, found, err := m.interrupts.ConversationConfig(conversationID)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !found) {
+		return absent, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if timeout < 0 {
-		timeout = 0
-	}
-	tools := make([]string, 0)
-	_ = json.Unmarshal([]byte(toolsJSON), &tools)
 	return &HITLRequest{
-		Enabled:        enabledInt == 1,
-		Mode:           mode,
-		Reviewer:       normalizeHitlReviewer(reviewer),
-		SensitiveTools: tools,
-		TimeoutSeconds: timeout,
+		Enabled:        stored.Enabled,
+		Mode:           stored.Mode,
+		Reviewer:       normalizeHitlReviewer(stored.Reviewer),
+		SensitiveTools: stored.SensitiveTools,
+		TimeoutSeconds: stored.TimeoutSeconds,
 	}, nil
 }
 
@@ -574,12 +526,10 @@ func (m *HITLManager) HasConversationConfig(conversationID string) (bool, error)
 	if strings.TrimSpace(conversationID) == "" {
 		return false, nil
 	}
-	var one int
-	err := m.db.QueryRow(`SELECT 1 FROM hitl_conversation_configs WHERE conversation_id = ? LIMIT 1`, conversationID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
+	if m.interrupts == nil {
 		return false, nil
 	}
-	return err == nil, err
+	return m.interrupts.HasConversationConfig(conversationID)
 }
 
 func (m *HITLManager) waitDecision(ctx context.Context, p *pendingInterrupt, timeout time.Duration) (hitlDecision, error) {
@@ -600,17 +550,14 @@ func (m *HITLManager) waitDecision(ctx context.Context, p *pendingInterrupt, tim
 		if p.Mode != "review_edit" && len(d.EditedArguments) > 0 {
 			d.EditedArguments = nil
 		}
-		_, _ = m.db.Exec(`UPDATE hitl_interrupts SET status='decided', decision=?, decision_comment=?, decided_at=?, decided_by='human' WHERE id=?`,
-			d.Decision, d.Comment, time.Now(), p.InterruptID)
+		_ = m.interrupts.Resolve(p.InterruptID, store.Resolution{Status: "decided", Decision: d.Decision, Comment: d.Comment, DecidedBy: "human", At: time.Now()})
 		return d, nil
 	case <-timeoutCh:
 		comment := "HITL timeout auto-reject for safety"
-		_, _ = m.db.Exec(`UPDATE hitl_interrupts SET status='timeout', decision='reject', decision_comment=?, decided_at=?, decided_by='system' WHERE id=?`,
-			comment, time.Now(), p.InterruptID)
+		_ = m.interrupts.Resolve(p.InterruptID, store.Resolution{Status: "timeout", Decision: "reject", Comment: comment, DecidedBy: "system", At: time.Now()})
 		return hitlDecision{Decision: "reject", Comment: comment}, nil
 	case <-ctx.Done():
-		_, _ = m.db.Exec(`UPDATE hitl_interrupts SET status='cancelled', decision='reject', decision_comment='task cancelled', decided_at=?, decided_by='system' WHERE id=?`,
-			time.Now(), p.InterruptID)
+		_ = m.interrupts.Resolve(p.InterruptID, store.Resolution{Status: "cancelled", Decision: "reject", Comment: "task cancelled", DecidedBy: "system", At: time.Now()})
 		return hitlDecision{Decision: "reject", Comment: "task cancelled"}, ctx.Err()
 	}
 }
@@ -619,6 +566,7 @@ func (h *AgentHandler) activateHITLForConversation(conversationID string, req *H
 	if h.hitlManager == nil {
 		return
 	}
+	h.hitlManager.SetGlobalWhitelist(h.hitlConfigGlobalToolWhitelist())
 	if req == nil {
 		cfg, err := h.loadHITLConversationConfig(conversationID)
 		if err == nil {
@@ -697,9 +645,11 @@ func (h *AgentHandler) waitHITLApproval(runCtx context.Context, cancelRun contex
 			"payload":        payload,
 		})
 		ad := h.auditAgentReview(runCtx, cfg.Mode, toolName, payload)
-		now := time.Now()
-		_, _ = h.db.Exec(`UPDATE hitl_interrupts SET status='decided', decision=?, decision_comment=?, decided_at=?, decided_by='audit_agent' WHERE id=?`,
-			ad.Decision, ad.Comment, now, p.InterruptID)
+		if s, storeErr := h.hitlStoreOrErr(); storeErr == nil {
+			if decErr := s.RecordAgentDecision(p.InterruptID, ad.Decision, ad.Comment, time.Now()); decErr != nil {
+				h.logger.Warn("保存审计 Agent HITL 决策失败", zap.Error(decErr), zap.String("interruptId", p.InterruptID))
+			}
+		}
 		emitHITL("hitl_audit_agent", "审计 Agent 已裁决", map[string]interface{}{
 			"conversationId": conversationID,
 			"interruptId":    p.InterruptID,
@@ -840,35 +790,16 @@ func (h *AgentHandler) handleHITLToolCall(runCtx context.Context, cancelRun cont
 }
 
 func (h *AgentHandler) ListHITLPending(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	if page < 1 {
-		page = 1
-	}
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
-	pageSize = int(math.Max(1, math.Min(float64(pageSize), 200)))
-	offset := (page - 1) * pageSize
-	q, args := h.buildHitlListQuery(false)
-	q, args = h.appendHitlListFilters(q, args, c)
-	q, args = appendConversationAccessSQL(q, args, "conversation_id", notificationAccessFromContext(c))
-	total, err := h.countHitlQuery(q, args)
+	page, pageSize, offset := hitlListPaging(c)
+	f := hitlFilterFromRequest(c)
+	f.Access = hitlAccessFromRequest(c)
+	f.Limit, f.Offset = pageSize, offset
+	items, total, err := h.listHitlInterrupts(store.InterruptsAwaitingHuman, f)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	q += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-	args = append(args, pageSize, offset)
-	rows, err := h.db.Query(q, args...)
-	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
-		return
-	}
-	defer rows.Close()
-	items, err := h.scanHitlInterruptRows(rows)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "pageSize": pageSize, "total": total})
+	c.JSON(http.StatusOK, gin.H{"items": hitlInterruptMaps(items), "page": page, "pageSize": pageSize, "total": total})
 }
 
 type hitlDecisionReq struct {
@@ -920,14 +851,16 @@ func (h *AgentHandler) DismissHITLInterrupt(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
-	res, err := h.db.Exec(`UPDATE hitl_interrupts SET status='cancelled', decision='reject',
-		decision_comment='dismissed by user', decided_at=CURRENT_TIMESTAMP, decided_by='human'
-		WHERE id=? AND status='pending'`, req.InterruptID)
+	s, storeErr := h.hitlStoreOrErr()
+	if storeErr != nil {
+		c.JSON(500, gin.H{"error": storeErr.Error()})
+		return
+	}
+	n, err := s.Dismiss(req.InterruptID, "dismissed by user")
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
-	n, _ := res.RowsAffected()
 	if n == 0 {
 		c.JSON(404, gin.H{"error": "interrupt not found or already resolved"})
 		return
@@ -1035,8 +968,8 @@ func (h *AgentHandler) UpsertHITLConversationConfig(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if h.hitlWhitelistSaver != nil && len(req.SensitiveTools) > 0 {
-		if err := h.hitlWhitelistSaver.MergeHitlToolWhitelistIntoConfig(req.SensitiveTools); err != nil {
+	if h.hitlSavers.whitelist != nil && len(req.SensitiveTools) > 0 {
+		if err := h.hitlSavers.whitelist.MergeHitlToolWhitelistIntoConfig(req.SensitiveTools); err != nil {
 			h.logger.Warn("HITL 会话配置已保存，但合并工具白名单到 config.yaml 失败", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": "会话配置已保存，但写入 config.yaml 失败: " + err.Error(),
@@ -1093,7 +1026,7 @@ func (h *AgentHandler) GetHITLDefaultConfig(c *gin.Context) {
 
 // UpdateHITLDefaultConfig 将全局默认人机协同配置写入 config.yaml。
 func (h *AgentHandler) UpdateHITLDefaultConfig(c *gin.Context) {
-	if h.hitlDefaultReviewerSaver == nil {
+	if h.hitlSavers.defaultReviewer == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
 		return
 	}
@@ -1108,16 +1041,17 @@ func (h *AgentHandler) UpdateHITLDefaultConfig(c *gin.Context) {
 	if timeoutSeconds < 0 {
 		timeoutSeconds = 0
 	}
-	if err := h.hitlDefaultReviewerSaver.UpdateHitlDefaultConfig(mode, reviewer, timeoutSeconds); err != nil {
+	if err := h.hitlSavers.defaultReviewer.UpdateHitlDefaultConfig(mode, reviewer, timeoutSeconds); err != nil {
 		h.logger.Warn("写入 HITL 默认配置到 config.yaml 失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if h.config != nil {
-		h.config.Hitl.DefaultMode = mode
-		h.config.Hitl.DefaultReviewer = reviewer
-		h.config.Hitl.DefaultTimeoutSeconds = &timeoutSeconds
-	}
+	publishedTimeout := timeoutSeconds
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.DefaultMode = mode
+		hitl.DefaultReviewer = reviewer
+		hitl.DefaultTimeoutSeconds = &publishedTimeout
+	})
 	if h.audit != nil {
 		h.audit.RecordOK(c, "hitl", "default_config_update", "HITL 全局默认配置更新", "hitl_config", "default", nil)
 	}
@@ -1133,7 +1067,7 @@ func (h *AgentHandler) GetHITLDefaultReviewer(c *gin.Context) {
 
 // UpdateHITLDefaultReviewer 将全局默认审批方写入 config.yaml（未选会话时切换审批方）。
 func (h *AgentHandler) UpdateHITLDefaultReviewer(c *gin.Context) {
-	if h.hitlDefaultReviewerSaver == nil {
+	if h.hitlSavers.defaultReviewer == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
 		return
 	}
@@ -1143,14 +1077,14 @@ func (h *AgentHandler) UpdateHITLDefaultReviewer(c *gin.Context) {
 		return
 	}
 	reviewer := normalizeHitlReviewer(req.Reviewer)
-	if err := h.hitlDefaultReviewerSaver.UpdateHitlDefaultReviewer(reviewer); err != nil {
+	if err := h.hitlSavers.defaultReviewer.UpdateHitlDefaultReviewer(reviewer); err != nil {
 		h.logger.Warn("写入 HITL 默认审批方到 config.yaml 失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if h.config != nil {
-		h.config.Hitl.DefaultReviewer = reviewer
-	}
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.DefaultReviewer = reviewer
+	})
 	if h.audit != nil {
 		h.audit.RecordOK(c, "hitl", "default_reviewer_update", "HITL 全局默认审批方更新", "hitl_config", "default_reviewer", nil)
 	}
@@ -1161,7 +1095,7 @@ func (h *AgentHandler) UpdateHITLDefaultReviewer(c *gin.Context) {
 
 // SetHITLGlobalToolWhitelist 整表替换 config.yaml 中的全局免审批工具白名单。
 func (h *AgentHandler) SetHITLGlobalToolWhitelist(c *gin.Context) {
-	if h.hitlWhitelistSaver == nil {
+	if h.hitlSavers.whitelist == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
 		return
 	}
@@ -1170,7 +1104,7 @@ func (h *AgentHandler) SetHITLGlobalToolWhitelist(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.hitlWhitelistSaver.SetHitlToolWhitelist(req.ToolWhitelist); err != nil {
+	if err := h.hitlSavers.whitelist.SetHitlToolWhitelist(req.ToolWhitelist); err != nil {
 		h.logger.Warn("写入 HITL 工具白名单到 config.yaml 失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1188,7 +1122,7 @@ func (h *AgentHandler) SetHITLGlobalToolWhitelist(c *gin.Context) {
 
 // MergeHITLGlobalToolWhitelist 无会话 ID 时将侧栏提交的免审批工具合并进 config.yaml（与 PUT /hitl/config 中白名单落盘规则一致）。
 func (h *AgentHandler) MergeHITLGlobalToolWhitelist(c *gin.Context) {
-	if h.hitlWhitelistSaver == nil {
+	if h.hitlSavers.whitelist == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "HITL 配置持久化不可用"})
 		return
 	}
@@ -1205,7 +1139,7 @@ func (h *AgentHandler) MergeHITLGlobalToolWhitelist(c *gin.Context) {
 		})
 		return
 	}
-	if err := h.hitlWhitelistSaver.MergeHitlToolWhitelistIntoConfig(req.SensitiveTools); err != nil {
+	if err := h.hitlSavers.whitelist.MergeHitlToolWhitelistIntoConfig(req.SensitiveTools); err != nil {
 		h.logger.Warn("合并 HITL 工具白名单到 config.yaml 失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -1215,11 +1149,4 @@ func (h *AgentHandler) MergeHITLGlobalToolWhitelist(c *gin.Context) {
 		"hitlGlobalToolWhitelist":   h.hitlConfigGlobalToolWhitelist(),
 		"hitlGlobalWhitelistMerged": true,
 	})
-}
-
-func boolToInt(v bool) int {
-	if v {
-		return 1
-	}
-	return 0
 }

@@ -1,0 +1,1493 @@
+{
+  "agent": [
+    "cancelled",
+    "conversation",
+    "done",
+    "eino_agent_reply",
+    "eino_agent_reply_stream_delta",
+    "eino_agent_reply_stream_end",
+    "eino_agent_reply_stream_start",
+    "eino_context_overflow_retry",
+    "eino_empty_response_continue",
+    "eino_model_failover",
+    "eino_model_retry",
+    "eino_pending_orphaned",
+    "eino_run_retry",
+    "eino_stream_error",
+    "eino_trace_end",
+    "eino_trace_error",
+    "eino_trace_run",
+    "eino_trace_start",
+    "eino_usage_summary",
+    "error",
+    "finalization_auto_continue",
+    "finalization_check",
+    "finalization_pending_tools_cancelled",
+    "heartbeat",
+    "hitl_audit_agent",
+    "hitl_audit_agent_started",
+    "hitl_interrupt",
+    "hitl_rejected",
+    "hitl_resumed",
+    "iteration",
+    "iteration_limit_reached",
+    "message_saved",
+    "model_output_rejected",
+    "progress",
+    "reasoning_chain",
+    "reasoning_chain_stream_delta",
+    "reasoning_chain_stream_end",
+    "reasoning_chain_stream_start",
+    "response",
+    "response_delta",
+    "response_start",
+    "thinking",
+    "thinking_stream_delta",
+    "thinking_stream_end",
+    "thinking_stream_start",
+    "tool_call",
+    "tool_calls_detected",
+    "tool_result",
+    "tool_result_delta",
+    "user_interrupt_continue",
+    "workflow_agent_output",
+    "workflow_branch_skipped",
+    "workflow_branch_taken",
+    "workflow_done",
+    "workflow_hitl_checkpoint",
+    "workflow_hitl_rejected",
+    "workflow_hitl_resumed",
+    "workflow_hitl_waiting",
+    "workflow_node_result",
+    "workflow_node_start",
+    "workflow_paused",
+    "workflow_start",
+    "workflow_tool_start"
+  ],
+  "terminal": [
+    "err",
+    "exit",
+    "out"
+  ],
+  "sources": [
+    {
+      "Name": "cancelled",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "cancelled",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "conversation",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "conversation",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "err",
+      "File": "terminal_stream_windows.go",
+      "Line": 48,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "error",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "task_lifecycle.go",
+      "Line": 31,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "exit",
+      "File": "terminal_stream_unix.go",
+      "Line": 21,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "exit",
+      "File": "terminal_stream_unix.go",
+      "Line": 45,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "exit",
+      "File": "terminal_stream_windows.go",
+      "Line": 17,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "exit",
+      "File": "terminal_stream_windows.go",
+      "Line": 22,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "exit",
+      "File": "terminal_stream_windows.go",
+      "Line": 26,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "exit",
+      "File": "terminal_stream_windows.go",
+      "Line": 64,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "batch_queue_executor.go",
+      "Line": 309,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "heartbeat",
+      "File": "sse_keepalive.go",
+      "Line": 73,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "hitl_audit_agent",
+      "File": "hitl.go",
+      "Line": 653,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "hitl_audit_agent_started",
+      "File": "hitl.go",
+      "Line": 637,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "hitl_interrupt",
+      "File": "hitl.go",
+      "Line": 696,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "hitl_rejected",
+      "File": "hitl.go",
+      "Line": 667,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "hitl_rejected",
+      "File": "hitl.go",
+      "Line": 738,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "hitl_resumed",
+      "File": "hitl.go",
+      "Line": 680,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "hitl_resumed",
+      "File": "hitl.go",
+      "Line": 752,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "message_saved",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "message_saved",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "out",
+      "File": "terminal_stream_unix.go",
+      "Line": 32,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "out",
+      "File": "terminal_stream_windows.go",
+      "Line": 41,
+      "Mode": "struct",
+      "Stream": "terminal"
+    },
+    {
+      "Name": "progress",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "agent_stream.go",
+      "Line": 97,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "batch_queue_executor.go",
+      "Line": 311,
+      "Mode": "literal",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "task_lifecycle.go",
+      "Line": 35,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "cancelled",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 312,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "cancelled",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 320,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "cancelled",
+      "File": "internal/handler/workflow_integration.go",
+      "Line": 127,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "conversation",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 64,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "conversation",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 75,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "internal/handler/agent.go",
+      "Line": 1443,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 33,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 34,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "internal/handler/task_lifecycle.go",
+      "Line": 26,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "internal/handler/workflow_integration.go",
+      "Line": 88,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "done",
+      "File": "internal/workflow/nodes.go",
+      "Line": 235,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply",
+      "File": "internal/multiagent/eino_sub_agent_reply_emitter.go",
+      "Line": 93,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply_stream_delta",
+      "File": "internal/handler/agent.go",
+      "Line": 1542,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply_stream_delta",
+      "File": "internal/multiagent/eino_sub_agent_reply_emitter.go",
+      "Line": 56,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply_stream_end",
+      "File": "internal/handler/agent.go",
+      "Line": 1370,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply_stream_end",
+      "File": "internal/multiagent/eino_sub_agent_reply_emitter.go",
+      "Line": 72,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply_stream_start",
+      "File": "internal/handler/agent.go",
+      "Line": 1541,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply_stream_start",
+      "File": "internal/multiagent/eino_sub_agent_reply_emitter.go",
+      "Line": 48,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_context_overflow_retry",
+      "File": "internal/multiagent/eino_context_overflow_retry.go",
+      "Line": 83,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_empty_response_continue",
+      "File": "internal/handler/eino_empty_response_continue.go",
+      "Line": 57,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_model_failover",
+      "File": "internal/multiagent/eino_model_resilience.go",
+      "Line": 528,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_model_retry",
+      "File": "internal/multiagent/eino_native_model_retry_progress.go",
+      "Line": 25,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_pending_orphaned",
+      "File": "internal/multiagent/eino_run_completion_handler.go",
+      "Line": 61,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_run_retry",
+      "File": "internal/multiagent/eino_transient_run_retry_handler.go",
+      "Line": 136,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_stream_error",
+      "File": "internal/multiagent/eino_stream_error_handler.go",
+      "Line": 60,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_end",
+      "File": "internal/einoobserve/attach.go",
+      "Line": 258,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_end",
+      "File": "internal/handler/agent.go",
+      "Line": 1539,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_error",
+      "File": "internal/einoobserve/attach.go",
+      "Line": 304,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_error",
+      "File": "internal/handler/agent.go",
+      "Line": 1540,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_run",
+      "File": "internal/einoobserve/attach.go",
+      "Line": 62,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_run",
+      "File": "internal/handler/agent.go",
+      "Line": 1537,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_start",
+      "File": "internal/einoobserve/attach.go",
+      "Line": 208,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_trace_start",
+      "File": "internal/handler/agent.go",
+      "Line": 1538,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_usage_summary",
+      "File": "internal/multiagent/eino_run_usage_accumulator.go",
+      "Line": 94,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 32,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 33,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "internal/handler/task_lifecycle.go",
+      "Line": 31,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "internal/handler/workflow_integration.go",
+      "Line": 77,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "internal/multiagent/eino_adk_run_loop.go",
+      "Line": 211,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "internal/multiagent/eino_run_cancellation_handler.go",
+      "Line": 46,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "internal/multiagent/eino_run_error_handler.go",
+      "Line": 118,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_auto_continue",
+      "File": "internal/handler/finalization_auto_continue.go",
+      "Line": 57,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "internal/handler/batch_queue_executor.go",
+      "Line": 309,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 378,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 386,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "internal/handler/workflow_integration.go",
+      "Line": 176,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_pending_tools_cancelled",
+      "File": "internal/handler/finalization_auto_continue.go",
+      "Line": 111,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "iteration",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 169,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "iteration",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 176,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "iteration",
+      "File": "internal/multiagent/eino_run_progress_tracker.go",
+      "Line": 135,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "iteration",
+      "File": "internal/multiagent/runner.go",
+      "Line": 966,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "iteration",
+      "File": "internal/workflow/nodes.go",
+      "Line": 240,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "iteration_limit_reached",
+      "File": "internal/multiagent/eino_run_error_handler.go",
+      "Line": 63,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "message_saved",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 77,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "message_saved",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 88,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "model_output_rejected",
+      "File": "internal/handler/agent.go",
+      "Line": 944,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/handler/agent.go",
+      "Line": 946,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 102,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 113,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/multiagent/eino_checkpoint_resume_handler.go",
+      "Line": 65,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/multiagent/eino_initial_iterator_start_handler.go",
+      "Line": 48,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/multiagent/eino_run_cancellation_handler.go",
+      "Line": 40,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/multiagent/eino_run_progress_tracker.go",
+      "Line": 89,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/multiagent/eino_turn_loop_event_bridge.go",
+      "Line": 79,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/multiagent/eino_turn_loop_iterator_starter.go",
+      "Line": 149,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "progress",
+      "File": "internal/multiagent/runner.go",
+      "Line": 114,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain",
+      "File": "internal/handler/agent.go",
+      "Line": 1511,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain",
+      "File": "internal/multiagent/eino_reasoning_stream_emitter.go",
+      "Line": 103,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain_stream_delta",
+      "File": "internal/handler/agent.go",
+      "Line": 1479,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain_stream_delta",
+      "File": "internal/multiagent/eino_reasoning_stream_emitter.go",
+      "Line": 70,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain_stream_end",
+      "File": "internal/handler/agent.go",
+      "Line": 1450,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain_stream_end",
+      "File": "internal/multiagent/eino_reasoning_stream_emitter.go",
+      "Line": 84,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain_stream_start",
+      "File": "internal/handler/agent.go",
+      "Line": 1457,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "reasoning_chain_stream_start",
+      "File": "internal/multiagent/eino_reasoning_stream_emitter.go",
+      "Line": 62,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "internal/handler/agent.go",
+      "Line": 1438,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "internal/handler/batch_queue_executor.go",
+      "Line": 311,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 382,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 390,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "internal/handler/workflow_integration.go",
+      "Line": 191,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response",
+      "File": "internal/workflow/nodes.go",
+      "Line": 235,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response_delta",
+      "File": "internal/handler/agent.go",
+      "Line": 1406,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response_delta",
+      "File": "internal/multiagent/eino_main_response_stream_emitter.go",
+      "Line": 42,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response_delta",
+      "File": "internal/workflow/nodes.go",
+      "Line": 235,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response_start",
+      "File": "internal/handler/agent.go",
+      "Line": 1381,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response_start",
+      "File": "internal/multiagent/eino_main_response_stream_emitter.go",
+      "Line": 62,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "response_start",
+      "File": "internal/workflow/nodes.go",
+      "Line": 235,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "thinking",
+      "File": "internal/handler/agent.go",
+      "Line": 1511,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "thinking_stream_delta",
+      "File": "internal/handler/agent.go",
+      "Line": 1479,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "thinking_stream_end",
+      "File": "internal/handler/agent.go",
+      "Line": 1450,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "thinking_stream_start",
+      "File": "internal/handler/agent.go",
+      "Line": 1457,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "tool_call",
+      "File": "internal/handler/agent.go",
+      "Line": 1139,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "tool_call",
+      "File": "internal/multiagent/runner.go",
+      "Line": 1033,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "tool_calls_detected",
+      "File": "internal/multiagent/runner.go",
+      "Line": 995,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "tool_result",
+      "File": "internal/handler/agent.go",
+      "Line": 1139,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "tool_result",
+      "File": "internal/multiagent/eino_pending_tool_calls.go",
+      "Line": 112,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "tool_result",
+      "File": "internal/multiagent/eino_tool_result_progress_emitter.go",
+      "Line": 150,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "tool_result_delta",
+      "File": "internal/handler/agent.go",
+      "Line": 1161,
+      "Mode": "handled",
+      "Stream": "agent"
+    },
+    {
+      "Name": "user_interrupt_continue",
+      "File": "internal/handler/eino_single_agent.go",
+      "Line": 269,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "user_interrupt_continue",
+      "File": "internal/handler/multi_agent.go",
+      "Line": 277,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "user_interrupt_continue",
+      "File": "internal/multiagent/eino_turn_loop_iterator_starter.go",
+      "Line": 141,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_agent_output",
+      "File": "internal/workflow/nodes.go",
+      "Line": 199,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_branch_skipped",
+      "File": "internal/workflow/node_exec.go",
+      "Line": 141,
+      "Mode": "assigned",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_branch_taken",
+      "File": "internal/workflow/node_exec.go",
+      "Line": 141,
+      "Mode": "assigned",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_done",
+      "File": "internal/workflow/eino_compile.go",
+      "Line": 233,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_done",
+      "File": "internal/workflow/runner.go",
+      "Line": 204,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_hitl_checkpoint",
+      "File": "internal/workflow/nodes.go",
+      "Line": 324,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_hitl_rejected",
+      "File": "internal/workflow/eino_compile.go",
+      "Line": 175,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_hitl_rejected",
+      "File": "internal/workflow/runner.go",
+      "Line": 156,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_hitl_resumed",
+      "File": "internal/workflow/eino_compile.go",
+      "Line": 189,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_hitl_resumed",
+      "File": "internal/workflow/runner.go",
+      "Line": 169,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_hitl_waiting",
+      "File": "internal/workflow/eino_compile.go",
+      "Line": 77,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_node_result",
+      "File": "internal/workflow/node_exec.go",
+      "Line": 106,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_node_start",
+      "File": "internal/workflow/node_exec.go",
+      "Line": 49,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_paused",
+      "File": "internal/workflow/runner.go",
+      "Line": 126,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_start",
+      "File": "internal/workflow/runner.go",
+      "Line": 78,
+      "Mode": "conduit",
+      "Stream": "agent"
+    },
+    {
+      "Name": "workflow_tool_start",
+      "File": "internal/workflow/nodes.go",
+      "Line": 71,
+      "Mode": "conduit",
+      "Stream": "agent"
+    }
+  ],
+  "consumed": [
+    "cancelled",
+    "conversation",
+    "done",
+    "eino_agent_reply",
+    "eino_agent_reply_stream_delta",
+    "eino_agent_reply_stream_end",
+    "eino_agent_reply_stream_start",
+    "eino_empty_response_continue",
+    "eino_model_failover",
+    "eino_model_retry",
+    "eino_pending_orphaned",
+    "eino_run_retry",
+    "eino_stream_error",
+    "eino_trace_end",
+    "eino_trace_error",
+    "eino_trace_run",
+    "eino_trace_start",
+    "eino_usage_summary",
+    "error",
+    "finalization_auto_continue",
+    "finalization_check",
+    "finalization_pending_tools_cancelled",
+    "heartbeat",
+    "hitl_audit_agent",
+    "hitl_audit_agent_started",
+    "hitl_interrupt",
+    "hitl_rejected",
+    "hitl_resumed",
+    "iteration",
+    "iteration_limit_reached",
+    "message_saved",
+    "progress",
+    "reasoning_chain",
+    "reasoning_chain_stream_delta",
+    "reasoning_chain_stream_end",
+    "reasoning_chain_stream_start",
+    "response",
+    "response_delta",
+    "response_start",
+    "thinking",
+    "thinking_stream_delta",
+    "thinking_stream_end",
+    "thinking_stream_start",
+    "tool_call",
+    "tool_calls_detected",
+    "tool_result",
+    "tool_result_delta",
+    "user_interrupt_continue",
+    "warning",
+    "workflow_agent_output",
+    "workflow_branch_skipped",
+    "workflow_branch_taken",
+    "workflow_done",
+    "workflow_hitl_checkpoint",
+    "workflow_hitl_rejected",
+    "workflow_hitl_resumed",
+    "workflow_hitl_waiting",
+    "workflow_node_result",
+    "workflow_node_start",
+    "workflow_paused",
+    "workflow_start",
+    "workflow_tool_start"
+  ],
+  "detailConsumed": [
+    "cancelled",
+    "eino_agent_reply",
+    "eino_empty_response_continue",
+    "eino_run_retry",
+    "eino_usage_summary",
+    "error",
+    "hitl_audit_agent",
+    "hitl_audit_agent_started",
+    "hitl_interrupt",
+    "hitl_rejected",
+    "hitl_resumed",
+    "iteration",
+    "knowledge_retrieval",
+    "model_output_rejected",
+    "planning",
+    "progress",
+    "reasoning_chain",
+    "thinking",
+    "timeout",
+    "tool_call",
+    "tool_calls_detected",
+    "tool_result",
+    "user_interrupt_continue",
+    "workflow_agent_output",
+    "workflow_agent_start",
+    "workflow_branch_skipped",
+    "workflow_branch_taken",
+    "workflow_done",
+    "workflow_hitl_checkpoint",
+    "workflow_hitl_waiting",
+    "workflow_node_result",
+    "workflow_node_start",
+    "workflow_paused",
+    "workflow_start",
+    "workflow_tool_start"
+  ],
+  "c2Consumed": [
+    "session",
+    "task"
+  ],
+  "persisted": [
+    "cancelled",
+    "eino_agent_reply",
+    "error",
+    "finalization_check",
+    "knowledge_retrieval",
+    "planning",
+    "thinking",
+    "timeout"
+  ],
+  "persistedSources": [
+    {
+      "Name": "cancelled",
+      "File": "database/conversation.go",
+      "Line": 1296,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "cancelled",
+      "File": "handler/batch_queue_executor.go",
+      "Line": 402,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "cancelled",
+      "File": "handler/eino_single_agent.go",
+      "Line": 310,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "cancelled",
+      "File": "handler/hitl.go",
+      "Line": 173,
+      "Mode": "local",
+      "Stream": "detail"
+    },
+    {
+      "Name": "cancelled",
+      "File": "handler/hitl.go",
+      "Line": 630,
+      "Mode": "local",
+      "Stream": "detail"
+    },
+    {
+      "Name": "cancelled",
+      "File": "handler/multi_agent.go",
+      "Line": 318,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "cancelled",
+      "File": "handler/workflow_integration.go",
+      "Line": 125,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "cancelled",
+      "File": "handler/workflow_integration.go",
+      "Line": 266,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "eino_agent_reply",
+      "File": "database/conversation.go",
+      "Line": 1296,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "eino_agent_reply",
+      "File": "handler/agent.go",
+      "Line": 1374,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "eino_empty_response_continue",
+      "File": "handler/agent.go",
+      "Line": 1554,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "database/conversation.go",
+      "Line": 1296,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "error",
+      "File": "handler/agent.go",
+      "Line": 741,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "error",
+      "File": "handler/batch_queue_executor.go",
+      "Line": 419,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "error",
+      "File": "handler/eino_single_agent.go",
+      "Line": 346,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "error",
+      "File": "handler/multi_agent.go",
+      "Line": 354,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "error",
+      "File": "handler/workflow_integration.go",
+      "Line": 155,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "finalization_auto_continue",
+      "File": "handler/agent.go",
+      "Line": 1554,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "database/conversation.go",
+      "Line": 1296,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "handler/finalization_helpers.go",
+      "Line": 88,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "finalization_check",
+      "File": "handler/finalization_helpers.go",
+      "Line": 132,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "finalization_pending_tools_cancelled",
+      "File": "handler/agent.go",
+      "Line": 1554,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "knowledge_retrieval",
+      "File": "database/conversation.go",
+      "Line": 1296,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "knowledge_retrieval",
+      "File": "handler/agent.go",
+      "Line": 1322,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "planning",
+      "File": "handler/agent.go",
+      "Line": 1075,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "thinking",
+      "File": "database/conversation.go",
+      "Line": 1296,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "thinking",
+      "File": "handler/agent.go",
+      "Line": 1121,
+      "Mode": "local",
+      "Stream": "detail"
+    },
+    {
+      "Name": "timeout",
+      "File": "database/conversation.go",
+      "Line": 1296,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    },
+    {
+      "Name": "timeout",
+      "File": "handler/eino_single_agent.go",
+      "Line": 327,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "timeout",
+      "File": "handler/hitl.go",
+      "Line": 173,
+      "Mode": "local",
+      "Stream": "detail"
+    },
+    {
+      "Name": "timeout",
+      "File": "handler/hitl.go",
+      "Line": 630,
+      "Mode": "local",
+      "Stream": "detail"
+    },
+    {
+      "Name": "timeout",
+      "File": "handler/multi_agent.go",
+      "Line": 335,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "timeout",
+      "File": "handler/workflow_integration.go",
+      "Line": 140,
+      "Mode": "literal",
+      "Stream": "detail"
+    },
+    {
+      "Name": "user_interrupt_continue",
+      "File": "handler/agent.go",
+      "Line": 1554,
+      "Mode": "forwarded",
+      "Stream": "agent"
+    }
+  ]
+}

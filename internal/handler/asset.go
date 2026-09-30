@@ -14,7 +14,7 @@ import (
 )
 
 type AssetHandler struct {
-	db     *database.DB
+	db     database.AssetStore
 	logger *zap.Logger
 }
 
@@ -24,7 +24,7 @@ const (
 )
 
 func NewAssetHandler(db *database.DB, logger *zap.Logger) *AssetHandler {
-	return &AssetHandler{db: db, logger: logger}
+	return &AssetHandler{db: database.Narrow[database.AssetStore](db), logger: logger}
 }
 
 func assetAccess(c *gin.Context) database.RBACListAccess {

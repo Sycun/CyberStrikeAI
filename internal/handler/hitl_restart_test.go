@@ -3,10 +3,10 @@ package handler
 import (
 	"database/sql"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/store"
 
 	"go.uber.org/zap"
 )
@@ -214,23 +214,14 @@ func TestAuditAgentInterruptIsNotHumanPendingWork(t *testing.T) {
 		t.Fatal("human interrupt should enter the human pending queue")
 	}
 
-	query, args := (&AgentHandler{}).buildHitlListQuery(false)
-	if len(args) != 0 {
-		t.Fatalf("unexpected pending query args: %v", args)
-	}
-	if !strings.Contains(query, "COALESCE(reviewer,'human') = 'human'") {
-		t.Fatalf("pending query must filter out audit-agent work: %s", query)
-	}
-	rows, err := db.Query(query)
+	humanPending, pendingTotal, err := store.NewHITL(db.DB).List(store.InterruptsAwaitingHuman, store.InterruptFilter{Access: store.Access{Scope: store.ScopeAll}})
 	if err != nil {
 		t.Fatalf("query human pending interrupts: %v", err)
 	}
-	defer rows.Close()
-	items, err := (&AgentHandler{}).scanHitlInterruptRows(rows)
-	if err != nil {
-		t.Fatalf("scan human pending interrupts: %v", err)
+	if pendingTotal != 1 || len(humanPending) != 1 {
+		t.Fatalf("human pending total = %d items %d, want exactly one", pendingTotal, len(humanPending))
 	}
-	if len(items) != 1 || items[0]["id"] != human.InterruptID || items[0]["reviewer"] != "human" {
-		t.Fatalf("unexpected human pending result: %#v", items)
+	if humanPending[0].ID != human.InterruptID || humanPending[0].Reviewer != "human" {
+		t.Fatalf("unexpected human pending result: %+v", humanPending)
 	}
 }

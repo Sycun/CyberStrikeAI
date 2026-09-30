@@ -18,3 +18,16 @@ parameters:
       额外的 Spectral 参数，例如 `--ruleset`, `--format`, `--fail-severity` 等。
     required: false
     format: "positional"
+# Capability manifest: identity, authorization, approval and egress
+# ceiling. The registry is fail-closed - a recipe without this
+# block cannot be executed. See docs/zh-CN/capability-platform-decoupling-research.md
+capability:
+  id: "core.api-schema-analyzer"
+  version: "1.0.0"
+  class: "readonly"
+  permission: "agent:execute"
+  approval: "never"
+  runtime: "recipe:exec"
+  grants:
+    - "process.exec(spectral)"
+    - "fs.read(workspace)"

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -672,8 +671,10 @@ func (m *AgentTaskManager) FinishTaskRun(conversationID, runID, finalStatus stri
 	}
 	if (cleanupErr == nil || unconfirmed) && bus != nil {
 		// Subscribers must receive completion only after local processes are reaped.
-		payload, _ := json.Marshal(StreamEvent{Type: "done", Data: map[string]interface{}{"conversationId": conversationID, "runId": runID, "status": finalStatus, "cleanupError": cleanupMessage}})
-		bus.Publish(conversationID, append(append([]byte("data: "), payload...), '\n', '\n'))
+		payload, ok := mirrorLine("done", "", map[string]interface{}{"conversationId": conversationID, "runId": runID, "status": finalStatus, "cleanupError": cleanupMessage})
+		if ok {
+			bus.Publish(conversationID, payload)
+		}
 		bus.CloseConversation(conversationID)
 	}
 

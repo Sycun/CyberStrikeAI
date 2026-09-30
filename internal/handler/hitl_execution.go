@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"cyberstrike-ai/internal/capability"
 	"encoding/json"
 	"strings"
 	"time"
@@ -44,6 +45,8 @@ func (m *HITLManager) TrackApprovedHitlExecution(interruptID, conversationID, to
 		ToolName:       strings.TrimSpace(toolName),
 		ToolCallID:     strings.TrimSpace(toolCallID),
 	})
+	// 人工通过 = 释放这一次调用的审批下限。单次使用、短时效，下一次调用必须重新审批。
+	capability.GlobalApprovals().Grant(conversationID, strings.TrimSpace(toolName), 1)
 }
 
 func (m *HITLManager) popApprovedInterruptForTool(conversationID, toolCallID, toolName string) string {
@@ -106,27 +109,31 @@ func mergeHitlPayloadExecutionResult(payloadJSON string, exec hitlExecutionResul
 }
 
 func (h *AgentHandler) recordHitlToolExecutionResult(conversationID, toolCallID, toolName string, success bool, result string) {
-	if h == nil || h.hitlManager == nil || h.db == nil {
+	if h == nil || h.hitlManager == nil {
 		return
 	}
 	interruptID := h.hitlManager.popApprovedInterruptForTool(conversationID, toolCallID, toolName)
 	if interruptID == "" {
 		return
 	}
-	var payloadJSON string
-	err := h.db.QueryRow(`SELECT payload FROM hitl_interrupts WHERE id = ?`, interruptID).Scan(&payloadJSON)
+	s, err := h.hitlStoreOrErr()
 	if err != nil {
 		return
 	}
-	merged, err := mergeHitlPayloadExecutionResult(payloadJSON, hitlExecutionResult{
+	exec := hitlExecutionResult{
 		Success:    success,
 		Result:     strings.TrimSpace(result),
 		ToolName:   strings.TrimSpace(toolName),
 		ToolCallID: strings.TrimSpace(toolCallID),
 		RecordedAt: time.Now(),
-	})
-	if err != nil {
-		return
 	}
-	_, _ = h.db.Exec(`UPDATE hitl_interrupts SET payload = ? WHERE id = ?`, merged, interruptID)
+	// The merge runs inside the store's transaction: two approvals resolving in
+	// parallel must not both read the old payload and drop one execution result.
+	_ = s.MutatePayload(interruptID, func(current string) (string, bool, error) {
+		merged, mergeErr := mergeHitlPayloadExecutionResult(current, exec)
+		if mergeErr != nil {
+			return "", false, mergeErr
+		}
+		return merged, true, nil
+	})
 }

@@ -18,7 +18,6 @@ import (
 	"cyberstrike-ai/internal/einomcp"
 	"cyberstrike-ai/internal/project"
 	"cyberstrike-ai/internal/reasoning"
-	"cyberstrike-ai/internal/security"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/filesystem"
@@ -373,7 +372,7 @@ func RunDeepAgent(
 	if agenticLoc != nil && agenticFSTools {
 		deepBackend = agenticLoc
 		deepShell = &einoStreamingShellWrap{
-			inner:                   security.NewEinoStreamingShell(),
+			inner:                   streamingShell{},
 			invokeNotify:            toolInvokeNotify,
 			einoAgentName:           orchestratorName,
 			outputChunk:             nil,

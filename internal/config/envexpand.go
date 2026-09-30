@@ -53,14 +53,31 @@ func expandEnvVar(s string) string {
 // 展开范围：Command、Args、Env values、URL、Headers values。
 func ExpandConfigEnv(cfg *ExternalMCPServerConfig) {
 	cfg.Command = expandEnvVar(cfg.Command)
-	for i, arg := range cfg.Args {
-		cfg.Args[i] = expandEnvVar(arg)
-	}
-	for k, v := range cfg.Env {
-		cfg.Env[k] = expandEnvVar(v)
-	}
 	cfg.URL = expandEnvVar(cfg.URL)
-	for k, v := range cfg.Headers {
-		cfg.Headers[k] = expandEnvVar(v)
+
+	// The containers are replaced with copies instead of being written in place:
+	// a caller may hold a slice or map that the running MCP manager points at too,
+	// so element-wise writes here were a data race between an API request
+	// expanding config and a connect goroutine building exec.Cmd from it.
+	if cfg.Args != nil {
+		args := make([]string, len(cfg.Args))
+		for i, arg := range cfg.Args {
+			args[i] = expandEnvVar(arg)
+		}
+		cfg.Args = args
+	}
+	if cfg.Env != nil {
+		env := make(map[string]string, len(cfg.Env))
+		for k, v := range cfg.Env {
+			env[k] = expandEnvVar(v)
+		}
+		cfg.Env = env
+	}
+	if cfg.Headers != nil {
+		headers := make(map[string]string, len(cfg.Headers))
+		for k, v := range cfg.Headers {
+			headers[k] = expandEnvVar(v)
+		}
+		cfg.Headers = headers
 	}
 }

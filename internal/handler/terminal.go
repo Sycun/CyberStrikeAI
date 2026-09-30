@@ -3,7 +3,6 @@ package handler
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"os/exec"
@@ -236,22 +235,11 @@ func (h *TerminalHandler) RunCommandStream(c *gin.Context) {
 		cmd.Dir = absCwd
 	}
 
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	c.Writer.WriteHeader(http.StatusOK)
-	flusher, ok := c.Writer.(http.Flusher)
+	emitter, ok := newTerminalEmitter(c)
 	if !ok {
 		cancel()
 		return
 	}
 
-	sendEvent := func(ev streamEvent) {
-		body, _ := json.Marshal(ev)
-		c.SSEvent("", string(body))
-		flusher.Flush()
-	}
-
-	_ = runCommandStreamImpl(cmd, sendEvent, ctx)
+	_ = runCommandStreamImpl(cmd, emitter.send, ctx)
 }

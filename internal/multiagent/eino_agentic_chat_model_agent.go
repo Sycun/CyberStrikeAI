@@ -2,6 +2,7 @@ package multiagent
 
 import (
 	"context"
+	"cyberstrike-ai/internal/contentpolicy"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -29,6 +30,14 @@ type einoAgenticChatModelAgentConfig struct {
 func newEinoAgenticChatModelAgent(ctx context.Context, cfg einoAgenticChatModelAgentConfig) (adk.TypedResumableAgent[*schema.AgenticMessage], error) {
 	if cfg.Model == nil {
 		return nil, fmt.Errorf("eino agentic ChatModelAgent: model is required")
+	}
+	// Instruction is the system-role channel that decides tool use. Community knowledge
+	// is fenced with a privilege tag on its way out of retrieval, so the tag reaching
+	// here means poisoned or mis-wired content is being promoted to an instruction:
+	// refuse rather than run it. This is the structural half of the instruction
+	// hierarchy, not a prompt-level request.
+	if err := contentpolicy.GuardDecisionPath("agent instruction: "+cfg.Name, cfg.Instruction); err != nil {
+		return nil, err
 	}
 	attachAgenticBuiltinActionToolMiddleware(&cfg.ToolsConfig)
 	cfg.Exit = replaceClassicExitTool(cfg.Exit)

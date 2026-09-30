@@ -2,10 +2,11 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
+
+	"cyberstrike-ai/internal/sse"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,12 +25,16 @@ func runSSEKeepalive(c *gin.Context, writeMu *sync.Mutex) func() {
 	if writeMu == nil {
 		return func() {}
 	}
+	// The heartbeat shares the stream's mutex and the stream's writer: two goroutines
+	// writing one ResponseWriter is what produced the chunked-encoding corruption the
+	// comment above describes.
+	writer := sse.NewWriterWithOptions(agentSSE, c.Writer, sse.Options{Lock: writeMu})
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sseKeepaliveLoop(c, stop, writeMu)
+		sseKeepaliveLoop(c, writer, stop)
 	}()
 	var once sync.Once
 	return func() {
@@ -43,7 +48,7 @@ func runSSEKeepalive(c *gin.Context, writeMu *sync.Mutex) func() {
 // sseKeepaliveLoop sends periodic SSE traffic so proxies (e.g. nginx proxy_read_timeout), NATs,
 // and load balancers do not close long-running streams. Some intermediaries ignore comment-only
 // lines, so we send both a comment and a minimal data frame (type heartbeat) per tick.
-func sseKeepaliveLoop(c *gin.Context, stop <-chan struct{}, writeMu *sync.Mutex) {
+func sseKeepaliveLoop(c *gin.Context, writer *sse.Writer, stop <-chan struct{}) {
 	ticker := time.NewTicker(sseKeepaliveInterval)
 	defer ticker.Stop()
 	ctx := c.Request.Context()
@@ -54,24 +59,23 @@ func sseKeepaliveLoop(c *gin.Context, stop <-chan struct{}, writeMu *sync.Mutex)
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			writeMu.Lock()
 			if sseShuttingDown(stop, ctx) {
-				writeMu.Unlock()
 				return
 			}
-			if _, err := fmt.Fprintf(c.Writer, ": keepalive\n\n"); err != nil {
-				writeMu.Unlock()
+			// A comment line plus a frame per tick: some intermediaries ignore
+			// comments alone, so the frame is what actually resets an idle timer.
+			// The frame carries an empty `message`, which is the one byte-level change
+			// from the hand-written version; clients switch on `type`, and monitor.js
+			// already handles `heartbeat` without reading a message.
+			if err := writer.Comment("keepalive"); err != nil {
 				return
 			}
-			// data: frame so strict proxies still see downstream bytes (comments alone may not reset timers)
-			if _, err := fmt.Fprintf(c.Writer, `data: {"type":"heartbeat"}`+"\n\n"); err != nil {
-				writeMu.Unlock()
+			if err := writer.Send("heartbeat", "", nil); err != nil {
 				return
 			}
 			if flusher, ok := c.Writer.(http.Flusher); ok {
 				flusher.Flush()
 			}
-			writeMu.Unlock()
 		}
 	}
 }

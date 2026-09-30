@@ -83,7 +83,7 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 			sendEvent("error", errorMsg, nil)
 		}
 		if assistantMessageID != "" {
-			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errorMsg, time.Now(), assistantMessageID)
+			_ = h.setMessageContent(assistantMessageID, errorMsg)
 		}
 		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 		return true
@@ -136,7 +136,7 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 			h.tasks.UpdateTaskStatus(conversationID, taskStatus)
 			timeoutMsg := "任务执行超时，已自动终止。"
 			if assistantMessageID != "" {
-				_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", timeoutMsg, time.Now(), assistantMessageID)
+				_ = h.setMessageContent(assistantMessageID, timeoutMsg)
 				_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "timeout", timeoutMsg, nil)
 			}
 			sendEvent("error", timeoutMsg, map[string]interface{}{
@@ -151,7 +151,7 @@ func (h *AgentHandler) runRoleWorkflowStreamIfBound(
 		taskStatus = "failed"
 		h.tasks.UpdateTaskStatus(conversationID, taskStatus)
 		if assistantMessageID != "" {
-			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errMsg, time.Now(), assistantMessageID)
+			_ = h.setMessageContent(assistantMessageID, errMsg)
 			_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "error", errMsg, nil)
 		}
 		sendEvent("error", errMsg, map[string]interface{}{"conversationId": conversationID})
@@ -275,7 +275,7 @@ func (h *AgentHandler) runRoleWorkflowJSONIfBound(c *gin.Context, req *ChatReque
 		errMsg := "执行角色绑定流程失败: " + err.Error()
 		taskStatus = "failed"
 		if assistantMessageID != "" {
-			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errMsg, time.Now(), assistantMessageID)
+			_ = h.setMessageContent(assistantMessageID, errMsg)
 		}
 		respond(http.StatusInternalServerError, gin.H{"error": errMsg, "conversationId": conversationID})
 		return true

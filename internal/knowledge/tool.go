@@ -224,7 +224,7 @@ func RegisterKnowledgeTool(
 			// 按逻辑顺序显示所有chunk（包括主结果和扩展的chunk）
 			if len(itemResults) == 1 {
 				// 只有一个chunk，直接显示
-				resultText.WriteString(fmt.Sprintf("内容片段:\n%s\n", mainResult.Chunk.ChunkText))
+				resultText.WriteString(fmt.Sprintf("内容片段:\n%s\n", mainResult.AdvisoryContent()))
 			} else {
 				// 多个chunk，按逻辑顺序显示
 				resultText.WriteString("内容片段（按文档顺序）:\n")
@@ -234,7 +234,7 @@ func RegisterKnowledgeTool(
 					if result.Chunk.ID == mainResult.Chunk.ID {
 						marker = " [主匹配]"
 					}
-					resultText.WriteString(fmt.Sprintf("  [片段 %d%s]\n%s\n", i+1, marker, result.Chunk.ChunkText))
+					resultText.WriteString(fmt.Sprintf("  [片段 %d%s]\n%s\n", i+1, marker, result.AdvisoryContent()))
 				}
 			}
 			resultText.WriteString("\n")

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	providerpkg "cyberstrike-ai/internal/provider"
 	"net/http"
 	"strings"
 
@@ -13,8 +14,7 @@ import (
 )
 
 func IsClaudeProvider(provider string) bool {
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	return provider == "claude" || provider == "anthropic"
+	return providerpkg.IsAnthropicMessagesVendor(provider)
 }
 
 func NewClaudeAgenticModel(

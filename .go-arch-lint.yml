@@ -1,0 +1,166 @@
+# go-arch-lint：边界强制。当前为 warn 模式（Makefile 里 --exit-code 0），
+# 因为它的作用是让"新增的反向依赖"可见，而不是立刻阻塞解耦工作。
+#
+# 现状基线：全图 Tarjan SCC = 0 个循环依赖，所以问题从来不是死结，而是边界粒度。
+# 下面声明的都是**已经成立**的事实，唯一目的是让破坏它们的提交在 CI 上可见。
+appName: cyberstrike-ai
+rootPath: .
+
+deps:
+  commonComponents:
+    - logger
+    - authctx
+    - typesafe
+    - termout
+
+  components:
+    # 能力平台内核：身份/授权/审批/清单。它必须是叶子——一旦它反向依赖任何一个
+    # 使用它的包，就出现了第二套策略实现，而这正是本次重构要消灭的东西（S3）。
+    capability:
+      in: internal/capability/**/*.go
+      title: 能力身份与策略内核（叶子包，不依赖任何业务包）
+      dependsOn: []
+      denies:
+        - app
+        - handler
+        - mcp
+        - database
+        - config
+        - multiagent
+        - security
+        - pluginhost
+        - artifact
+
+    # 路由表提取器：纯 stdlib + go/ast，可被任意包的测试复用。
+    routes:
+      in: internal/routes/**/*.go
+      title: 路由表提取（装配契约的判据）
+      dependsOn: []
+      denies:
+        - app
+        - handler
+        - config
+
+    # 域存储：只依赖标准库 + sqlite 驱动 + uuid，能脱离 HTTP 层独立用真库测试。
+    # 它连 database 包都不 import——所以"取一个连接即可测试"不是说法，是编译期事实。
+    store:
+      in: internal/store/**/*.go
+      title: 按域拆分的持久层
+      dependsOn: []
+      denies:
+        - handler
+        - app
+        - config
+        - database
+        - mcp
+        - multiagent
+
+    # HITL 保留策略服务：只判"要不要清、清到哪天"，SQL 已归 internal/store，
+    # 因此它不再需要整个数据层在手。
+    hitl:
+      in: internal/hitl/**/*.go
+      title: HITL 审计日志保留策略
+      dependsOn:
+        - config
+      denies:
+        - app
+        - handler
+        - database
+        - store
+
+    # Provider 方言表：纯数据 + 分类逻辑，零内部依赖。加厂商=改表，不改调用点。
+    provider:
+      in: internal/provider/**/*.go
+      title: API 方言与厂商目录（dialect 不等于 vendor）
+      dependsOn: []
+      denies:
+        - app
+        - handler
+        - config
+        - multiagent
+        - llm
+        - database
+
+    # 内容特权层级：只依赖 artifact，不碰业务包——它必须在装配之前就可用。
+    contentpolicy:
+      in: internal/contentpolicy/**/*.go
+      title: 社区内容与运维者内容的特权分层
+      dependsOn:
+        - artifact
+      denies:
+        - app
+        - handler
+        - knowledge
+        - multiagent
+        - database
+        - provider
+
+    # 制品信任与撤销：只依赖标准库，审核流水线的判定不掺业务状态。
+    artifact:
+      in: internal/artifact/**/*.go
+      title: 制品签名/信任/撤销/能力增量门
+      dependsOn: []
+      denies:
+        - app
+        - handler
+        - database
+        - config
+
+    # 插件运行时只依赖 processguard：能力中介与子进程护栏不该知道 Agent/MCP 的存在。
+    pluginhost:
+      in: internal/pluginhost/**/*.go
+      title: 进程外能力主机
+      dependsOn:
+        - processguard
+      denies:
+        - app
+        - handler
+        - database
+        - mcp
+        - multiagent
+
+    processguard:
+      in: internal/processguard/**/*.go
+      title: 子进程执行护栏（扇出 0）
+      dependsOn: []
+      denies:
+        - app
+        - handler
+        - database
+
+    # 传输/装配层不得被领域层反向引用。cmd/mcp-stdio 曾经因此长出第二套装配路径。
+    app:
+      in: internal/app/**/*.go
+      title: 唯一装配点
+    handler:
+      in: internal/handler/**/*.go
+      title: HTTP 传输层
+      denies:
+        - app
+    mcpstdio:
+      in: cmd/mcp-stdio/**/*.go
+      title: stdio 入口（必须复用 app 的策略装配，不得自行接线）
+      dependsOn:
+        - app
+
+    database:
+      in: internal/database/**/*.go
+      title: 持久层
+      denies:
+        - handler
+        - app
+        - multiagent
+
+    config:
+      in: internal/config/**/*.go
+      title: 配置加载
+      denies:
+        - handler
+        - app
+        - database
+
+    mcpbuiltin:
+      in: internal/mcp/builtin/**/*.go
+      title: 内置工具名常量（名称表由 capability 派生）
+      dependsOn:
+        - capability

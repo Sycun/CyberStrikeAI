@@ -1,19 +1,45 @@
-// Package reasoning maps user/config intent to CloudWeGo Eino OpenAI ChatModel fields
-// (ReasoningEffort, ExtraFields such as thinking / reasoning_effort / output_config).
+// Package reasoning maps user/config intent to the reasoning-related fields of a chat-model
+// config (an effort level, and ExtraFields such as thinking / reasoning_effort / output_config).
+//
+// It does not import the SDK. The fields it needs are declared as ChatModelTarget below, and
+// the mapping onto CloudWeGo Eino's typed config lives in internal/llm - which is where the
+// report's P6 criterion ("one package speaks Eino") wants that code to be.
 package reasoning
 
 import (
+	providerpkg "cyberstrike-ai/internal/provider"
 	"strings"
 
 	"cyberstrike-ai/internal/config"
-
-	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 )
 
 // ClientIntent is optional per-request override from ChatRequest.reasoning.
 type ClientIntent struct {
 	Mode   string
 	Effort string
+}
+
+// ChatModelTarget is the slice of a chat-model config this package writes to. Keeping the
+// dependency this shallow is what lets the SDK stay inside the adapter package: the
+// Eino-side implementation is a few lines in internal/llm, and every rule below stays
+// testable without it.
+type ChatModelTarget interface {
+	// ExtraFields returns the live map, which may be nil. Mutating the returned map
+	// mutates the config, exactly as writing cfg.ExtraFields()[k] did before this
+	// indirection existed.
+	ExtraFields() map[string]any
+	SetExtraFields(fields map[string]any)
+	// SetEffort takes "", "low", "medium" or "high". "" clears the field; the adapter
+	// maps the names onto the SDK's typed levels.
+	SetEffort(level string)
+}
+
+// extraFieldsForWriting returns a non-nil live map, creating it when the config has none.
+func extraFieldsForWriting(cfg ChatModelTarget) map[string]any {
+	if cfg.ExtraFields() == nil {
+		cfg.SetExtraFields(make(map[string]any))
+	}
+	return cfg.ExtraFields()
 }
 
 type wireProfile int
@@ -30,7 +56,7 @@ const (
 // ChatModel. Those Eino agents call WithToolChoice(Forced); several gateways reject
 // thinking / reasoning fields on the same request (tool_choice required/object).
 // Executor should keep the normal ApplyToEinoChatModelConfig path.
-func ApplyPlanExecutePlannerModelConfig(cfg *einoopenai.ChatModelConfig, oa *config.OpenAIConfig) {
+func ApplyPlanExecutePlannerModelConfig(cfg ChatModelTarget, oa *config.OpenAIConfig) {
 	if cfg == nil || oa == nil {
 		return
 	}
@@ -43,36 +69,37 @@ func ApplyPlanExecutePlannerModelConfig(cfg *einoopenai.ChatModelConfig, oa *con
 	}
 }
 
-func clearReasoningFromChatModelConfig(cfg *einoopenai.ChatModelConfig) {
+func clearReasoningFromChatModelConfig(cfg ChatModelTarget) {
 	if cfg == nil {
 		return
 	}
-	cfg.ReasoningEffort = ""
-	if cfg.ExtraFields != nil {
+	cfg.SetEffort("")
+	if fields := cfg.ExtraFields(); fields != nil {
 		for _, key := range []string{"thinking", "reasoning_effort", "output_config", "reasoning"} {
-			delete(cfg.ExtraFields, key)
+			delete(fields, key)
 		}
-		if len(cfg.ExtraFields) == 0 {
-			cfg.ExtraFields = nil
+		if len(fields) == 0 {
+			cfg.SetExtraFields(nil)
 		}
 	}
 }
 
-func mergeExtraRequestFields(cfg *einoopenai.ChatModelConfig, fields map[string]interface{}) {
+func mergeExtraRequestFields(cfg ChatModelTarget, fields map[string]interface{}) {
 	if cfg == nil || len(fields) == 0 {
 		return
 	}
-	if cfg.ExtraFields == nil {
-		cfg.ExtraFields = make(map[string]any, len(fields))
+	if cfg.ExtraFields() == nil {
+		cfg.SetExtraFields(make(map[string]any, len(fields)))
 	}
+	target := cfg.ExtraFields()
 	for k, v := range fields {
-		cfg.ExtraFields[k] = v
+		target[k] = v
 	}
 }
 
-// ApplyToEinoChatModelConfig merges reasoning-related options into cfg.
+// ApplyToChatModelConfig merges reasoning-related options into cfg.
 // Precondition: cfg already has APIKey, BaseURL, Model, HTTPClient set.
-func ApplyToEinoChatModelConfig(cfg *einoopenai.ChatModelConfig, oa *config.OpenAIConfig, client *ClientIntent) {
+func ApplyToChatModelConfig(cfg ChatModelTarget, oa *config.OpenAIConfig, client *ClientIntent) {
 	if cfg == nil || oa == nil {
 		return
 	}
@@ -98,8 +125,7 @@ func ApplyToEinoChatModelConfig(cfg *einoopenai.ChatModelConfig, oa *config.Open
 
 	// Claude (Anthropic): merge admin extras first; optional extended thinking maps to top-level `thinking`.
 	// DeepSeek/OpenAI-style fields are not sent.
-	if strings.EqualFold(strings.TrimSpace(oa.Provider), "claude") ||
-		strings.EqualFold(strings.TrimSpace(oa.Provider), "anthropic") {
+	if providerpkg.IsAnthropicMessagesVendor(oa.Provider) {
 		applyClaudeExtendedThinking(cfg, mode, effectiveEffort(sr, client, allowClient), oa.Model)
 		return
 	}
@@ -140,8 +166,7 @@ func AgenticOpenAIExtraFields(oa *config.OpenAIConfig, client *ClientIntent) map
 		}
 		return fields
 	}
-	if strings.EqualFold(strings.TrimSpace(oa.Provider), "claude") ||
-		strings.EqualFold(strings.TrimSpace(oa.Provider), "anthropic") {
+	if providerpkg.IsAnthropicMessagesVendor(oa.Provider) {
 		return fields
 	}
 	effort := effectiveEffort(sr, client, allowClient)
@@ -223,18 +248,16 @@ func clearReasoningExtraFields(fields map[string]any) {
 // applyClaudeExtendedThinking sets Anthropic Messages API fields per official guidance:
 //   - Adaptive models (4.6+): thinking.type=adaptive; output_config.effort only when user sets effort (API default is high).
 //   - Sonnet 3.7: thinking.type=enabled + budget_tokens=10000 (doc example); effort is not mapped — use extra_request_fields for custom budget.
-func applyClaudeExtendedThinking(cfg *einoopenai.ChatModelConfig, mode, effort, model string) {
+func applyClaudeExtendedThinking(cfg ChatModelTarget, mode, effort, model string) {
 	if cfg == nil || mode == "off" {
 		return
 	}
-	if cfg.ExtraFields == nil {
-		cfg.ExtraFields = make(map[string]any)
-	}
+	fields := extraFieldsForWriting(cfg)
 	m := strings.ToLower(strings.TrimSpace(model))
 	sonnet37 := isClaudeSonnet37(m)
 
-	if _, exists := cfg.ExtraFields["thinking"]; !exists {
-		cfg.ExtraFields["thinking"] = claudeThinkingForModel(m, sonnet37)
+	if _, exists := fields["thinking"]; !exists {
+		fields["thinking"] = claudeThinkingForModel(m, sonnet37)
 	}
 
 	applyClaudeOutputConfigEffort(cfg, effort, sonnet37)
@@ -272,18 +295,18 @@ func claudeThinkingForModel(m string, sonnet37 bool) map[string]any {
 
 // applyClaudeOutputConfigEffort sets top-level output_config.effort only when effort is explicitly configured.
 // Omitted effort uses the API default (high); do not inject effort on mode:on alone.
-func applyClaudeOutputConfigEffort(cfg *einoopenai.ChatModelConfig, effort string, sonnet37 bool) {
+func applyClaudeOutputConfigEffort(cfg ChatModelTarget, effort string, sonnet37 bool) {
 	if cfg == nil || sonnet37 {
 		return
 	}
-	if _, exists := cfg.ExtraFields["output_config"]; exists {
+	if _, exists := cfg.ExtraFields()["output_config"]; exists {
 		return
 	}
 	e := effortStringForAPI(effort)
 	if e == "" {
 		return
 	}
-	cfg.ExtraFields["output_config"] = map[string]any{"effort": e}
+	cfg.ExtraFields()["output_config"] = map[string]any{"effort": e}
 }
 
 func effectiveMode(sr *config.OpenAIReasoningConfig, client *ClientIntent, allowClient bool) string {
@@ -329,8 +352,7 @@ func usesExtraFieldsReasoningEffort(e string) bool {
 }
 
 func resolveWireProfile(oa *config.OpenAIConfig, sr *config.OpenAIReasoningConfig) wireProfile {
-	provider := strings.TrimSpace(oa.Provider)
-	if strings.EqualFold(provider, "claude") || strings.EqualFold(provider, "anthropic") {
+	if providerpkg.IsAnthropicMessagesVendor(oa.Provider) {
 		return wireClaude
 	}
 	p := strings.ToLower(strings.TrimSpace(sr.ProfileEffective()))
@@ -351,33 +373,24 @@ func resolveWireProfile(oa *config.OpenAIConfig, sr *config.OpenAIReasoningConfi
 	}
 }
 
-func applyThinkingDisabled(cfg *einoopenai.ChatModelConfig) {
+func applyThinkingDisabled(cfg ChatModelTarget) {
 	if cfg == nil {
 		return
 	}
-	if cfg.ExtraFields == nil {
-		cfg.ExtraFields = make(map[string]any)
-	}
-	cfg.ExtraFields["thinking"] = map[string]any{"type": "disabled"}
+	extraFieldsForWriting(cfg)["thinking"] = map[string]any{"type": "disabled"}
 }
 
-func applyDeepseek(cfg *einoopenai.ChatModelConfig, mode, effort string) {
+func applyDeepseek(cfg ChatModelTarget, mode, effort string) {
 	// auto: enable thinking for DeepSeek line; on: same; auto without effort still opens thinking.
 	if mode == "auto" || mode == "on" {
-		if cfg.ExtraFields == nil {
-			cfg.ExtraFields = make(map[string]any)
-		}
-		cfg.ExtraFields["thinking"] = map[string]any{"type": "enabled"}
+		extraFieldsForWriting(cfg)["thinking"] = map[string]any{"type": "enabled"}
 	}
 	if effort != "" {
-		if cfg.ExtraFields == nil {
-			cfg.ExtraFields = make(map[string]any)
-		}
-		cfg.ExtraFields["reasoning_effort"] = effortStringForAPI(effort)
+		extraFieldsForWriting(cfg)["reasoning_effort"] = effortStringForAPI(effort)
 	}
 }
 
-func applyOpenAICompat(cfg *einoopenai.ChatModelConfig, mode, effort string) {
+func applyOpenAICompat(cfg ChatModelTarget, mode, effort string) {
 	if mode == "auto" && effort == "" {
 		return
 	}
@@ -389,23 +402,16 @@ func applyOpenAICompat(cfg *einoopenai.ChatModelConfig, mode, effort string) {
 		return
 	}
 	if usesExtraFieldsReasoningEffort(e) {
-		if cfg.ExtraFields == nil {
-			cfg.ExtraFields = make(map[string]any)
-		}
-		cfg.ExtraFields["reasoning_effort"] = effortStringForAPI(e)
+		extraFieldsForWriting(cfg)["reasoning_effort"] = effortStringForAPI(e)
 		return
 	}
 	switch e {
-	case "low":
-		cfg.ReasoningEffort = einoopenai.ReasoningEffortLevelLow
-	case "medium":
-		cfg.ReasoningEffort = einoopenai.ReasoningEffortLevelMedium
-	case "high":
-		cfg.ReasoningEffort = einoopenai.ReasoningEffortLevelHigh
+	case "low", "medium", "high":
+		cfg.SetEffort(e)
 	}
 }
 
-func applyOutputConfigEffort(cfg *einoopenai.ChatModelConfig, mode, effort string) {
+func applyOutputConfigEffort(cfg ChatModelTarget, mode, effort string) {
 	if mode == "auto" && effort == "" {
 		return
 	}
@@ -416,10 +422,8 @@ func applyOutputConfigEffort(cfg *einoopenai.ChatModelConfig, mode, effort strin
 	if e == "" {
 		return
 	}
-	if cfg.ExtraFields == nil {
-		cfg.ExtraFields = make(map[string]any)
-	}
-	cfg.ExtraFields["output_config"] = map[string]any{"effort": effortStringForAPI(e)}
+	cfg.ExtraFields()
+	cfg.ExtraFields()["output_config"] = map[string]any{"effort": effortStringForAPI(e)}
 }
 
 func effortStringForAPI(e string) string {

@@ -2970,6 +2970,12 @@ function handleStreamEvent(event, progressElement, progressId,
         return { assistantId: assistantId, assistantElement: document.getElementById(assistantId) };
     };
     
+    // The registry the server enforces is published as this list, so a frame the page has
+    // no branch for is visible in the console instead of vanishing.
+    if (window.CSAI && typeof window.CSAI.isSSEEvent === 'function' && !window.CSAI.isSSEEvent(event.type)) {
+        console.warn('[sse] 未识别的事件类型:', event.type);
+    }
+
     switch (event.type) {
         case 'heartbeat':
             // SSE 长连接保活，无需更新 UI

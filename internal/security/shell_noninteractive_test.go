@@ -112,8 +112,13 @@ func TestNonInteractiveStdinReadBlocksWithoutRedirect(t *testing.T) {
 	cmd := exec.Command("sh", "-c", `read x; echo done`)
 	cmd.Stdin = r
 
+	// Start synchronously and wait in a goroutine: reading cmd.Process while
+	// cmd.Run is still spawning the process races on the Process field itself.
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
 	done := make(chan error, 1)
-	go func() { done <- cmd.Run() }()
+	go func() { done <- cmd.Wait() }()
 
 	select {
 	case err := <-done:

@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	providerpkg "cyberstrike-ai/internal/provider"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,7 +27,6 @@ import (
 	"cyberstrike-ai/internal/toolguard"
 	"cyberstrike-ai/internal/typesafe"
 
-	"github.com/cloudwego/eino/schema"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -46,6 +46,17 @@ type SkillsToolRegistrar func() error
 
 // BatchTaskToolRegistrar 批量任务 MCP 工具注册器（ApplyConfig 时重新注册）
 type BatchTaskToolRegistrar func() error
+
+// CapabilityRefreshFunc rebuilds the recipe layer of the capability registry.
+type CapabilityRefreshFunc func(tools []config.ToolConfig) error
+
+// SetCapabilityRefresher wires the capability policy layer to the config handler.
+func (h *ConfigHandler) SetCapabilityRefresher(fn CapabilityRefreshFunc) {
+	if h == nil {
+		return
+	}
+	h.capabilityRefresher = fn
+}
 
 // C2ToolRegistrar C2 MCP 工具注册器（ApplyConfig 时 ClearTools 之后调用）
 type C2ToolRegistrar func() error
@@ -75,34 +86,39 @@ type RobotRestarter interface {
 
 // ConfigHandler 配置处理器
 type ConfigHandler struct {
-	configPath                 string
-	config                     *config.Config
-	mcpServer                  *mcp.Server
-	executor                   *security.Executor
-	agent                      AgentUpdater               // Agent接口，用于更新Agent配置
-	attackChainHandler         AttackChainUpdater         // 攻击链处理器接口，用于更新配置
-	externalMCPMgr             *mcp.ExternalMCPManager    // 外部MCP管理器
-	knowledgeToolRegistrar     KnowledgeToolRegistrar     // 知识库工具注册器（可选）
+	configPath             string
+	config                 *config.Config
+	mcpServer              *mcp.Server
+	executor               *security.Executor
+	agent                  AgentUpdater            // Agent接口，用于更新Agent配置
+	attackChainHandler     AttackChainUpdater      // 攻击链处理器接口，用于更新配置
+	externalMCPMgr         *mcp.ExternalMCPManager // 外部MCP管理器
+	knowledgeToolRegistrar KnowledgeToolRegistrar  // 知识库工具注册器（可选）
+	// settings 是发布运行期配置的快照存储（见 internal/settings）。
+	settings                   *SettingsStore
 	vulnerabilityToolRegistrar VulnerabilityToolRegistrar // 漏洞工具注册器（可选）
-	webshellToolRegistrar      WebshellToolRegistrar      // WebShell 工具注册器（可选）
-	skillsToolRegistrar        SkillsToolRegistrar        // Skills工具注册器（可选）
-	batchTaskToolRegistrar     BatchTaskToolRegistrar     // 批量任务 MCP 工具（可选）
-	c2ToolRegistrar            C2ToolRegistrar            // C2 MCP 工具（可选）
-	c2Runtime                  C2Runtime                  // C2 启停（可选）
-	retrieverUpdater           RetrieverUpdater           // 检索器更新器（可选）
-	knowledgeInitializer       KnowledgeInitializer       // 知识库初始化器（可选）
-	appUpdater                 AppUpdater                 // App更新器（可选）
-	robotRestarter             RobotRestarter             // 机器人连接重启器（可选），ApplyConfig 时重启钉钉/飞书
-	audit                      *audit.Service
-	db                         *database.DB
-	logger                     *zap.Logger
-	mu                         sync.RWMutex
-	toolGuard                  *toolguard.Manager
-	lastEmbeddingConfig        *config.EmbeddingConfig // 上一次的嵌入模型配置（用于检测变更）
+	// capabilityRefresher 重建 recipe 能力层（可选）。注册表按层替换，内置工具的策略
+	// 不会被一次 config「应用」清掉，这是原先 ClearTools 丢工具问题的根治点。
+	capabilityRefresher    CapabilityRefreshFunc
+	webshellToolRegistrar  WebshellToolRegistrar  // WebShell 工具注册器（可选）
+	skillsToolRegistrar    SkillsToolRegistrar    // Skills工具注册器（可选）
+	batchTaskToolRegistrar BatchTaskToolRegistrar // 批量任务 MCP 工具（可选）
+	c2ToolRegistrar        C2ToolRegistrar        // C2 MCP 工具（可选）
+	c2Runtime              C2Runtime              // C2 启停（可选）
+	retrieverUpdater       RetrieverUpdater       // 检索器更新器（可选）
+	knowledgeInitializer   KnowledgeInitializer   // 知识库初始化器（可选）
+	appUpdater             AppUpdater             // App更新器（可选）
+	robotRestarter         RobotRestarter         // 机器人连接重启器（可选），ApplyConfig 时重启钉钉/飞书
+	audit                  *audit.Service
+	db                     database.ConfigStore
+	logger                 *zap.Logger
+	mu                     sync.RWMutex
+	toolGuard              *toolguard.Manager
+	lastEmbeddingConfig    *config.EmbeddingConfig // 上一次的嵌入模型配置（用于检测变更）
 }
 
 func (h *ConfigHandler) SetDB(db *database.DB) {
-	h.db = db
+	h.db = database.Narrow[database.ConfigStore](db)
 }
 
 func (h *ConfigHandler) validateRobotServiceAccounts(robots config.RobotsConfig) error {
@@ -350,13 +366,13 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		subAgentCount = len(agents.MergeYAMLAndMarkdown(h.config.MultiAgent.SubAgents, load.SubAgents))
 	}
 	multiPub := config.MultiAgentPublic{
-		Enabled:                               h.config.MultiAgent.Enabled,
-		RobotDefaultAgentMode:                 config.NormalizeRobotAgentMode(h.config.MultiAgent),
-		BatchUseMultiAgent:                    h.config.MultiAgent.BatchUseMultiAgent,
-		SubAgentCount:                         subAgentCount,
-		Orchestration:                         config.NormalizeMultiAgentOrchestration(h.config.MultiAgent.Orchestration),
-		PlanExecuteLoopMaxIterations:          h.config.MultiAgent.PlanExecuteLoopMaxIterations,
-		SummarizationUserIntentLedgerMaxRunes: h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerMaxRunesEffective(),
+		Enabled:                                    h.config.MultiAgent.Enabled,
+		RobotDefaultAgentMode:                      config.NormalizeRobotAgentMode(h.config.MultiAgent),
+		BatchUseMultiAgent:                         h.config.MultiAgent.BatchUseMultiAgent,
+		SubAgentCount:                              subAgentCount,
+		Orchestration:                              config.NormalizeMultiAgentOrchestration(h.config.MultiAgent.Orchestration),
+		PlanExecuteLoopMaxIterations:               h.config.MultiAgent.PlanExecuteLoopMaxIterations,
+		SummarizationUserIntentLedgerMaxRunes:      h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerMaxRunesEffective(),
 		SummarizationUserIntentLedgerEntryMaxRunes: h.config.MultiAgent.EinoMiddleware.SummarizationUserIntentLedgerEntryMaxRunesEffective(),
 		LatestUserMessageMaxRunes:                  h.config.MultiAgent.EinoMiddleware.LatestUserMessageMaxRunesEffective(),
 		LatestUserMessageHeadRunes:                 h.config.MultiAgent.EinoMiddleware.LatestUserMessageHeadRunesEffective(),
@@ -383,7 +399,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		MCP:        h.config.MCP,
 		Tools:      tools,
 		Agent:      h.config.Agent,
-		Hitl:       h.config.Hitl,
+		Hitl:       h.hitl(),
 		Knowledge:  h.config.Knowledge,
 		C2:         h.config.C2.Public(),
 		Robots:     h.config.Robots,
@@ -893,30 +909,33 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	if req.Hitl != nil {
-		h.config.Hitl.AuditBackend = req.Hitl.EffectiveAuditBackend()
-		h.config.Hitl.AuditModel = req.Hitl.AuditModel
-		h.config.Hitl.ToolWhitelist = mergeHitlToolWhitelistSlice(nil, req.Hitl.ToolWhitelist)
-		if strings.TrimSpace(req.Hitl.DefaultMode) != "" {
-			h.config.Hitl.DefaultMode = req.Hitl.EffectiveDefaultMode()
-		}
-		h.config.Hitl.DefaultReviewer = req.Hitl.EffectiveDefaultReviewer()
-		if req.Hitl.DefaultTimeoutSeconds != nil {
-			v := req.Hitl.EffectiveDefaultTimeoutSeconds()
-			h.config.Hitl.DefaultTimeoutSeconds = &v
-		}
-		h.config.Hitl.AuditAgentPrompt = strings.TrimSpace(req.Hitl.AuditAgentPrompt)
-		h.config.Hitl.AuditAgentPromptReviewEdit = strings.TrimSpace(req.Hitl.AuditAgentPromptReviewEdit)
-		if req.Hitl.RetentionDays != nil {
-			v := *req.Hitl.RetentionDays
-			if v < 0 {
-				v = 0
+		h.publishHitl(func(hitl *config.HitlConfig) {
+			hitl.AuditBackend = req.Hitl.EffectiveAuditBackend()
+			hitl.AuditModel = req.Hitl.AuditModel
+			hitl.ToolWhitelist = mergeHitlToolWhitelistSlice(nil, req.Hitl.ToolWhitelist)
+			if strings.TrimSpace(req.Hitl.DefaultMode) != "" {
+				hitl.DefaultMode = req.Hitl.EffectiveDefaultMode()
 			}
-			h.config.Hitl.RetentionDays = &v
-		}
+			hitl.DefaultReviewer = req.Hitl.EffectiveDefaultReviewer()
+			if req.Hitl.DefaultTimeoutSeconds != nil {
+				v := req.Hitl.EffectiveDefaultTimeoutSeconds()
+				hitl.DefaultTimeoutSeconds = &v
+			}
+			hitl.AuditAgentPrompt = strings.TrimSpace(req.Hitl.AuditAgentPrompt)
+			hitl.AuditAgentPromptReviewEdit = strings.TrimSpace(req.Hitl.AuditAgentPromptReviewEdit)
+			if req.Hitl.RetentionDays != nil {
+				v := *req.Hitl.RetentionDays
+				if v < 0 {
+					v = 0
+				}
+				hitl.RetentionDays = &v
+			}
+		})
+		published := h.hitl()
 		h.logger.Info("更新HITL配置",
-			zap.String("audit_backend", h.config.Hitl.AuditBackend),
-			zap.String("default_reviewer", h.config.Hitl.DefaultReviewer),
-			zap.Int("tool_whitelist", len(h.config.Hitl.ToolWhitelist)),
+			zap.String("audit_backend", published.AuditBackend),
+			zap.String("default_reviewer", published.DefaultReviewer),
+			zap.Int("tool_whitelist", len(published.ToolWhitelist)),
 		)
 	}
 
@@ -1277,11 +1296,7 @@ func (h *ConfigHandler) TestOpenAI(c *gin.Context) {
 
 	baseURL := strings.TrimSuffix(strings.TrimSpace(req.BaseURL), "/")
 	if baseURL == "" {
-		if strings.EqualFold(strings.TrimSpace(req.Provider), "claude") {
-			baseURL = "https://api.anthropic.com"
-		} else {
-			baseURL = "https://api.openai.com/v1"
-		}
+		baseURL = providerpkg.DefaultBaseURLFor(req.Provider)
 	}
 
 	// 构造一个最小的 chat completion 请求
@@ -1307,12 +1322,7 @@ func (h *ConfigHandler) TestOpenAI(c *gin.Context) {
 
 	start := time.Now()
 	if llm.IsClaudeProvider(req.Provider) {
-		nativeModel, err := llm.NewClaudeAgenticModel(ctx, *tmpCfg, nil, 5, nil)
-		if err == nil {
-			_, err = nativeModel.Generate(ctx, []*schema.AgenticMessage{
-				schema.UserAgenticMessage("Hi"),
-			})
-		}
+		err := llm.PingAgentic(ctx, *tmpCfg)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -1451,15 +1461,12 @@ func (h *ConfigHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	provider := strings.TrimSpace(req.Provider)
-	if provider == "" {
-		provider = "openai"
-	}
-	if strings.EqualFold(provider, "claude") {
+	provider := providerpkg.EffectiveProviderName(req.Provider)
+	if !providerpkg.ListsModels(provider) {
 		c.JSON(http.StatusOK, gin.H{
 			"success":   false,
 			"supported": false,
-			"error":     "Claude (Anthropic Messages API) 不支持自动获取模型列表，请手动填写",
+			"error":     "该 provider 走 Anthropic Messages API，不支持自动获取模型列表，请手动填写",
 		})
 		return
 	}
@@ -1535,11 +1542,7 @@ func (h *ConfigHandler) TestVision(c *gin.Context) {
 
 	baseURL := strings.TrimSuffix(strings.TrimSpace(oa.BaseURL), "/")
 	if baseURL == "" {
-		if strings.EqualFold(strings.TrimSpace(oa.Provider), "claude") {
-			baseURL = "https://api.anthropic.com"
-		} else {
-			baseURL = "https://api.openai.com/v1"
-		}
+		baseURL = providerpkg.DefaultBaseURLFor(oa.Provider)
 	}
 
 	payload := map[string]interface{}{
@@ -1710,6 +1713,18 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 
 	// 重新注册工具（根据新的启用状态）
 	h.logger.Debug("重新注册工具")
+
+	// 先重建能力策略层：工具定义可以重建，但授权与审批下限必须始终存在。
+	if h.capabilityRefresher != nil {
+		if err := h.capabilityRefresher(h.config.Security.Tools); err != nil {
+			h.logger.Error("重建能力策略注册表失败", zap.Error(err))
+			if h.audit != nil {
+				h.audit.RecordFail(c, "config", "apply", "应用配置失败：能力策略注册表", map[string]interface{}{"error": err.Error()})
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "重建能力策略注册表失败: " + err.Error()})
+			return
+		}
+	}
 
 	// 清空MCP服务器中的工具
 	h.mcpServer.ClearTools()
@@ -1898,7 +1913,7 @@ func (h *ConfigHandler) saveConfig() error {
 	updateKnowledgeConfig(root, h.config.Knowledge)
 	updateC2Config(root, h.config.C2)
 	updateRobotsConfig(root, h.config.Robots)
-	updateHitlConfig(root, h.config.Hitl)
+	updateHitlConfig(root, h.hitl())
 	updateStorageConfig(root, h.config.Storage)
 	updateMultiAgentConfig(root, h.config.MultiAgent)
 	// 更新外部MCP配置（使用external_mcp.go中的函数，同一包中可直接调用）
@@ -2241,12 +2256,14 @@ func mergeHitlToolWhitelistSlice(existing, add []string) []string {
 func (h *ConfigHandler) SetHitlToolWhitelist(tools []string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.config.Hitl.ToolWhitelist = mergeHitlToolWhitelistSlice(nil, tools)
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.ToolWhitelist = mergeHitlToolWhitelistSlice(nil, tools)
+	})
 	if err := h.saveConfig(); err != nil {
 		return err
 	}
 	h.logger.Info("HITL 全局工具白名单已写入配置文件",
-		zap.Int("count", len(h.config.Hitl.ToolWhitelist)),
+		zap.Int("count", len(h.hitl().ToolWhitelist)),
 	)
 	return nil
 }
@@ -2255,8 +2272,10 @@ func (h *ConfigHandler) SetHitlToolWhitelist(tools []string) error {
 func (h *ConfigHandler) MergeHitlToolWhitelistIntoConfig(add []string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	merged := mergeHitlToolWhitelistSlice(h.config.Hitl.ToolWhitelist, add)
-	h.config.Hitl.ToolWhitelist = merged
+	merged := mergeHitlToolWhitelistSlice(h.hitl().ToolWhitelist, add)
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.ToolWhitelist = merged
+	})
 	if err := h.saveConfig(); err != nil {
 		return err
 	}
@@ -2307,18 +2326,22 @@ func updateStorageConfig(doc *yaml.Node, cfg config.StorageConfig) {
 func (h *ConfigHandler) UpdateHitlDefaultConfig(mode, reviewer string, timeoutSeconds int) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.config.Hitl.DefaultMode = config.HitlConfig{DefaultMode: mode}.EffectiveDefaultMode()
-	h.config.Hitl.DefaultReviewer = config.HitlConfig{DefaultReviewer: reviewer}.EffectiveDefaultReviewer()
-	if timeoutSeconds < 0 {
-		timeoutSeconds = 0
-	}
-	h.config.Hitl.DefaultTimeoutSeconds = &timeoutSeconds
+	published := config.HitlConfig{}
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.DefaultMode = config.HitlConfig{DefaultMode: mode}.EffectiveDefaultMode()
+		hitl.DefaultReviewer = config.HitlConfig{DefaultReviewer: reviewer}.EffectiveDefaultReviewer()
+		if timeoutSeconds < 0 {
+			timeoutSeconds = 0
+		}
+		hitl.DefaultTimeoutSeconds = &timeoutSeconds
+		published = *hitl
+	})
 	if err := h.saveConfig(); err != nil {
 		return err
 	}
 	h.logger.Info("HITL 全局默认配置已写入配置文件",
-		zap.String("default_mode", h.config.Hitl.DefaultMode),
-		zap.String("default_reviewer", h.config.Hitl.DefaultReviewer),
+		zap.String("default_mode", published.DefaultMode),
+		zap.String("default_reviewer", published.DefaultReviewer),
 		zap.Int("default_timeout_seconds", timeoutSeconds),
 	)
 	return nil
@@ -2328,11 +2351,13 @@ func (h *ConfigHandler) UpdateHitlDefaultConfig(mode, reviewer string, timeoutSe
 func (h *ConfigHandler) UpdateHitlDefaultReviewer(reviewer string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.config.Hitl.DefaultReviewer = config.HitlConfig{DefaultReviewer: reviewer}.EffectiveDefaultReviewer()
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.DefaultReviewer = config.HitlConfig{DefaultReviewer: reviewer}.EffectiveDefaultReviewer()
+	})
 	if err := h.saveConfig(); err != nil {
 		return err
 	}
-	h.logger.Info("HITL 全局默认审批方已写入配置文件", zap.String("default_reviewer", h.config.Hitl.DefaultReviewer))
+	h.logger.Info("HITL 全局默认审批方已写入配置文件", zap.String("default_reviewer", h.hitl().DefaultReviewer))
 	return nil
 }
 
@@ -2340,8 +2365,10 @@ func (h *ConfigHandler) UpdateHitlDefaultReviewer(reviewer string) error {
 func (h *ConfigHandler) UpdateHitlAuditAgentStrategy(approvalPrompt, reviewEditPrompt string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.config.Hitl.AuditAgentPrompt = strings.TrimSpace(approvalPrompt)
-	h.config.Hitl.AuditAgentPromptReviewEdit = strings.TrimSpace(reviewEditPrompt)
+	h.publishHitl(func(hitl *config.HitlConfig) {
+		hitl.AuditAgentPrompt = strings.TrimSpace(approvalPrompt)
+		hitl.AuditAgentPromptReviewEdit = strings.TrimSpace(reviewEditPrompt)
+	})
 	if err := h.saveConfig(); err != nil {
 		return err
 	}

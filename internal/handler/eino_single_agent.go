@@ -2,9 +2,7 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -24,68 +22,32 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 
+	var sseWriteMu sync.Mutex
+	stream := h.newAgentStream(c, &sseWriteMu)
+	defer stream.close()
+	sendEvent := stream.send
+
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		ev := StreamEvent{Type: "error", Message: "请求参数错误: " + err.Error()}
-		b, _ := json.Marshal(ev)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", b)
-		done := StreamEvent{Type: "done", Message: ""}
-		db, _ := json.Marshal(done)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", db)
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		}
+		sendEvent("error", "请求参数错误: "+err.Error(), nil)
+		sendEvent("done", "", nil)
 		return
 	}
 
 	c.Header("X-Accel-Buffering", "no")
 
 	var baseCtx context.Context
-	clientDisconnected := false
-	var sseWriteMu sync.Mutex
 	var ssePublishConversationID string
-	sendEvent := func(eventType, message string, data interface{}) {
-		if eventType == "error" && baseCtx != nil {
-			cause := context.Cause(baseCtx)
-			if errors.Is(cause, ErrTaskCancelled) || errors.Is(cause, multiagent.ErrInterruptContinue) {
-				return
-			}
+	stream.skip = func(eventType string) bool {
+		// 用户主动停止时 Eino 仍可能并发上报 error；UI 已经有 cancelled 文案，
+		// 这条错误只会让一次停止显示成两条回复。
+		if eventType != "error" || baseCtx == nil {
+			return false
 		}
-		ev := StreamEvent{Type: eventType, Message: message, Data: data}
-		b, errMarshal := json.Marshal(ev)
-		if errMarshal != nil {
-			b = []byte(`{"type":"error","message":"marshal failed"}`)
-		}
-		sseLine := make([]byte, 0, len(b)+8)
-		sseLine = append(sseLine, []byte("data: ")...)
-		sseLine = append(sseLine, b...)
-		sseLine = append(sseLine, '\n', '\n')
-		if ssePublishConversationID != "" && h.taskEventBus != nil {
-			h.taskEventBus.Publish(ssePublishConversationID, sseLine)
-		}
-		if clientDisconnected {
-			return
-		}
-		select {
-		case <-c.Request.Context().Done():
-			clientDisconnected = true
-			return
-		default:
-		}
-		sseWriteMu.Lock()
-		_, err := c.Writer.Write(sseLine)
-		if err != nil {
-			sseWriteMu.Unlock()
-			clientDisconnected = true
-			return
-		}
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		} else {
-			c.Writer.Flush()
-		}
-		sseWriteMu.Unlock()
+		cause := context.Cause(baseCtx)
+		return errors.Is(cause, ErrTaskCancelled) || errors.Is(cause, multiagent.ErrInterruptContinue)
 	}
+	stream.conversationID = func() string { return ssePublishConversationID }
 
 	h.logger.Info("收到 Eino ADK 单代理流式请求",
 		zap.String("conversationId", req.ConversationID),
@@ -179,7 +141,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 			sendEvent("error", errorMsg, nil)
 		}
 		if assistantMessageID != "" {
-			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errorMsg, time.Now(), assistantMessageID)
+			_ = h.setMessageContent(assistantMessageID, errorMsg)
 		}
 		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 		timeoutCancel()
@@ -361,7 +323,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 			h.tasks.UpdateTaskStatus(conversationID, taskStatus)
 			timeoutMsg := "任务执行超时，已自动终止。"
 			if assistantMessageID != "" {
-				_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", timeoutMsg, time.Now(), assistantMessageID)
+				_ = h.setMessageContent(assistantMessageID, timeoutMsg)
 				_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "timeout", timeoutMsg, nil)
 			}
 			sendEvent("error", timeoutMsg, map[string]interface{}{
@@ -380,7 +342,7 @@ func (h *AgentHandler) EinoSingleAgentLoopStream(c *gin.Context) {
 		clientErr := multiagent.EinoClientRunErrorMessage(runErr)
 		errMsg := "执行失败: " + clientErr
 		if assistantMessageID != "" {
-			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errMsg, time.Now(), assistantMessageID)
+			_ = h.setMessageContent(assistantMessageID, errMsg)
 			_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "error", errMsg, nil)
 		}
 		errData := multiagent.EinoClientRunErrorFields(runErr)

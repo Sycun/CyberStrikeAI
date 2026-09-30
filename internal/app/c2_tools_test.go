@@ -40,7 +40,7 @@ func TestC2ListenerCreateInheritsConversationProject(t *testing.T) {
 	principal := authctx.NewPrincipal(user.ID, user.Username, database.RBACScopeAssigned, map[string]bool{
 		"c2:read": true, "c2:write": true,
 	})
-	ctx := authctx.WithPrincipal(mcp.WithMCPConversationID(context.Background(), conversation.ID), principal)
+	ctx := WithCapabilityApproval(authctx.WithPrincipal(mcp.WithMCPConversationID(context.Background(), conversation.ID), principal))
 	server := mcp.NewServer(zap.NewNop())
 	server.SetToolAuthorizer(mcpToolAuthorizer(db))
 	registerC2Tools(server, c2.NewManager(db, zap.NewNop(), t.TempDir()), zap.NewNop(), 8080)

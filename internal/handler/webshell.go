@@ -325,7 +325,7 @@ func (e simpleError) Error() string { return string(e) }
 type WebShellHandler struct {
 	logger *zap.Logger
 	client *http.Client
-	db     *database.DB
+	db     database.WebShellStore
 	audit  *audit.Service
 }
 
@@ -346,7 +346,7 @@ func NewWebShellHandler(logger *zap.Logger, db *database.DB) *WebShellHandler {
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // intentional for webshell proxy
 			},
 		},
-		db: db,
+		db: database.Narrow[database.WebShellStore](db),
 	}
 }
 

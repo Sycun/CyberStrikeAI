@@ -4,23 +4,29 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/config"
-	"cyberstrike-ai/internal/database"
 
 	"go.uber.org/zap"
 )
 
 const retentionPurgeInterval = time.Hour
 
+// DecidedLogStore is the persistence surface retention needs: drop the terminal
+// interrupt rows older than a cutoff. The HITL domain store implements it, so this
+// package no longer needs the whole data layer handed to it.
+type DecidedLogStore interface {
+	PurgeDecidedBefore(cutoff time.Time) (int64, error)
+}
+
 // Service manages HITL audit log retention (decided hitl_interrupts rows).
 type Service struct {
-	db     *database.DB
+	logs   DecidedLogStore
 	cfg    *config.Config
 	logger *zap.Logger
 }
 
 // NewService creates a HITL audit log retention service.
-func NewService(db *database.DB, cfg *config.Config, logger *zap.Logger) *Service {
-	return &Service{db: db, cfg: cfg, logger: logger}
+func NewService(logs DecidedLogStore, cfg *config.Config, logger *zap.Logger) *Service {
+	return &Service{logs: logs, cfg: cfg, logger: logger}
 }
 
 // RetentionDays returns configured retention; 0 means keep forever.
@@ -33,7 +39,7 @@ func (s *Service) RetentionDays() int {
 
 // PurgeExpired deletes decided HITL log rows older than retention_days when configured.
 func (s *Service) PurgeExpired() {
-	if s == nil || s.db == nil || s.cfg == nil {
+	if s == nil || s.logs == nil || s.cfg == nil {
 		return
 	}
 	days := s.cfg.Hitl.RetentionDaysEffective()
@@ -41,7 +47,7 @@ func (s *Service) PurgeExpired() {
 		return
 	}
 	cutoff := time.Now().AddDate(0, 0, -days)
-	n, err := s.db.PurgeHitlInterruptLogsBefore(cutoff)
+	n, err := s.logs.PurgeDecidedBefore(cutoff)
 	if err != nil {
 		if s.logger != nil {
 			s.logger.Warn("清理过期人机协同审计日志失败", zap.Error(err))

@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"cyberstrike-ai/internal/contentpolicy"
 	"encoding/json"
 	"time"
 )
@@ -81,6 +82,21 @@ type RetrievalResult struct {
 	Item       *KnowledgeItem  `json:"item"`
 	Similarity float64         `json:"similarity"` // 相似度分数
 	Score      float64         `json:"score"`      // 与 Similarity 相同：余弦相似度
+}
+
+// AdvisoryContent renders the retrieved chunk for model consumption: privilege-tagged
+// and fenced. It is the only model-facing accessor for chunk text, so neither the MCP
+// tool result nor the Eino retriever exit can hand the agent unfenced community text -
+// which is the mechanism PoisonedRAG relies on.
+func (r *RetrievalResult) AdvisoryContent() string {
+	if r == nil || r.Chunk == nil {
+		return ""
+	}
+	itemID := ""
+	if r.Item != nil {
+		itemID = r.Item.ID
+	}
+	return contentpolicy.Fence(contentpolicy.SourceKnowledge, itemID, r.Chunk.ChunkText)
 }
 
 // RetrievalLog 检索日志

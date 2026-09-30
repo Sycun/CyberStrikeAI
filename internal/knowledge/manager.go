@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"cyberstrike-ai/internal/contentpolicy"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -596,6 +597,13 @@ func (m *Manager) GetItem(id string) (*KnowledgeItem, error) {
 
 // CreateItem 创建知识项
 func (m *Manager) CreateItem(category, title, content string) (*KnowledgeItem, error) {
+	// Ingest is where a poisoned-retrieval attack is actually stopped: text written
+	// as an instruction, or carrying rendering-time execution markup, never becomes
+	// an indexable document.
+	if err := contentpolicy.RefuseIngest(contentpolicy.SourceKnowledge, title, content); err != nil {
+		return nil, err
+	}
+
 	id := uuid.New().String()
 	now := time.Now()
 
@@ -634,6 +642,10 @@ func (m *Manager) CreateItem(category, title, content string) (*KnowledgeItem, e
 
 // UpdateItem 更新知识项
 func (m *Manager) UpdateItem(id, category, title, content string) (*KnowledgeItem, error) {
+	if err := contentpolicy.RefuseIngest(contentpolicy.SourceKnowledge, title, content); err != nil {
+		return nil, err
+	}
+
 	// 获取现有项
 	item, err := m.GetItem(id)
 	if err != nil {

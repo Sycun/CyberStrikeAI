@@ -1,5 +1,7 @@
 package builtin
 
+import "cyberstrike-ai/internal/capability"
+
 // 内置工具名称常量
 // 所有代码中使用内置工具名称的地方都应该使用这些常量，而不是硬编码字符串
 const (
@@ -75,121 +77,15 @@ const (
 	ToolC2File       = "c2_file"        // 文件管理（list/get_result）
 )
 
-// IsBuiltinTool 检查工具名称是否是内置工具
+// IsBuiltinTool 检查工具名称是否是内置工具。
+//
+// 名称表由 internal/capability 的策略表派生，而不是三份手工副本：常量定义名称，
+// 策略表定义身份，二者由 TestBuiltinNamesMatchCapabilityTable 强制一致。
 func IsBuiltinTool(toolName string) bool {
-	switch toolName {
-	case ToolRecordVulnerability,
-		ToolListVulnerabilities,
-		ToolGetVulnerability,
-		ToolCreateAsset,
-		ToolGetAsset,
-		ToolQueryAssets,
-		ToolUpdateAsset,
-		ToolDeleteAsset,
-		ToolCompleteAssetScan,
-		ToolUpsertProjectFact,
-		ToolGetProjectFact,
-		ToolListProjectFacts,
-		ToolSearchProjectFacts,
-		ToolDeprecateProjectFact,
-		ToolRestoreProjectFact,
-		ToolListKnowledgeRiskTypes,
-		ToolSearchKnowledgeBase,
-		ToolAnalyzeImage,
-		ToolGetToolExecution,
-		ToolWaitToolExecution,
-		ToolCancelToolExecution,
-		ToolWebshellExec,
-		ToolWebshellFileList,
-		ToolWebshellFileRead,
-		ToolWebshellFileWrite,
-		ToolManageWebshellList,
-		ToolManageWebshellAdd,
-		ToolManageWebshellUpdate,
-		ToolManageWebshellDelete,
-		ToolManageWebshellTest,
-		ToolBatchTaskList,
-		ToolBatchTaskGet,
-		ToolBatchTaskCreate,
-		ToolBatchTaskStart,
-		ToolBatchTaskRerun,
-		ToolBatchTaskPause,
-		ToolBatchTaskDelete,
-		ToolBatchTaskUpdateMetadata,
-		ToolBatchTaskUpdateSchedule,
-		ToolBatchTaskScheduleEnabled,
-		ToolBatchTaskAdd,
-		ToolBatchTaskUpdate,
-		ToolBatchTaskRemove,
-		// C2 工具
-		ToolC2Listener,
-		ToolC2Session,
-		ToolC2Task,
-		ToolC2TaskManage,
-		ToolC2Payload,
-		ToolC2Event,
-		ToolC2Profile,
-		ToolC2File:
-		return true
-	default:
-		return false
-	}
+	return capability.IsBuiltin(toolName)
 }
 
 // GetAllBuiltinTools 返回所有内置工具名称列表
 func GetAllBuiltinTools() []string {
-	return []string{
-		ToolRecordVulnerability,
-		ToolListVulnerabilities,
-		ToolGetVulnerability,
-		ToolCreateAsset,
-		ToolGetAsset,
-		ToolQueryAssets,
-		ToolUpdateAsset,
-		ToolDeleteAsset,
-		ToolCompleteAssetScan,
-		ToolUpsertProjectFact,
-		ToolGetProjectFact,
-		ToolListProjectFacts,
-		ToolSearchProjectFacts,
-		ToolDeprecateProjectFact,
-		ToolRestoreProjectFact,
-		ToolListKnowledgeRiskTypes,
-		ToolSearchKnowledgeBase,
-		ToolAnalyzeImage,
-		ToolGetToolExecution,
-		ToolWaitToolExecution,
-		ToolCancelToolExecution,
-		ToolWebshellExec,
-		ToolWebshellFileList,
-		ToolWebshellFileRead,
-		ToolWebshellFileWrite,
-		ToolManageWebshellList,
-		ToolManageWebshellAdd,
-		ToolManageWebshellUpdate,
-		ToolManageWebshellDelete,
-		ToolManageWebshellTest,
-		ToolBatchTaskList,
-		ToolBatchTaskGet,
-		ToolBatchTaskCreate,
-		ToolBatchTaskStart,
-		ToolBatchTaskRerun,
-		ToolBatchTaskPause,
-		ToolBatchTaskDelete,
-		ToolBatchTaskUpdateMetadata,
-		ToolBatchTaskUpdateSchedule,
-		ToolBatchTaskScheduleEnabled,
-		ToolBatchTaskAdd,
-		ToolBatchTaskUpdate,
-		ToolBatchTaskRemove,
-		// C2 工具
-		ToolC2Listener,
-		ToolC2Session,
-		ToolC2Task,
-		ToolC2TaskManage,
-		ToolC2Payload,
-		ToolC2Event,
-		ToolC2Profile,
-		ToolC2File,
-	}
+	return capability.BuiltinNames()
 }

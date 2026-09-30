@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"cyberstrike-ai/internal/c2"
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/store"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -18,20 +18,29 @@ import (
 // C2HITLBridge 实现 C2 Manager 的 HITLBridge 接口，将危险任务桥接到现有 HITL 审批流。
 // 审批记录写入 hitl_interrupts 表，与现有 HITL 系统共享前端审批 UI。
 type C2HITLBridge struct {
-	db        *database.DB
-	logger    *zap.Logger
-	timeout   time.Duration
-	getConvID func() string
+	// interrupts is the HITL domain store: the bridge asks it to record and read the
+	// approval instead of writing statements against a table it does not own.
+	interrupts *store.HITL
+	logger     *zap.Logger
+	timeout    time.Duration
+	getConvID  func() string
 }
 
 // NewC2HITLBridge 创建 C2 HITL 桥
 func NewC2HITLBridge(db *database.DB, logger *zap.Logger) *C2HITLBridge {
 	return &C2HITLBridge{
-		db:        db,
-		logger:    logger,
-		timeout:   5 * time.Minute,
-		getConvID: func() string { return "" },
+		interrupts: newBridgeHITLStore(db),
+		logger:     logger,
+		timeout:    5 * time.Minute,
+		getConvID:  func() string { return "" },
 	}
+}
+
+func newBridgeHITLStore(db *database.DB) *store.HITL {
+	if db == nil {
+		return nil
+	}
+	return store.NewHITL(db.DB)
 }
 
 // SetConversationIDGetter 设置获取当前对话 ID 的函数
@@ -67,13 +76,15 @@ func (b *C2HITLBridge) RequestApproval(ctx context.Context, req c2.HITLApprovalR
 		"c2_operation": true,
 	})
 
-	_, err := b.db.Exec(`INSERT INTO hitl_interrupts
-		(id, conversation_id, message_id, mode, tool_name, tool_call_id, payload, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`,
-		interruptID, convID, "", "approval",
-		c2.MCPToolC2Task, req.TaskID,
-		string(payload), now,
-	)
+	err := b.interrupts.CreateInterrupt(store.NewInterrupt{
+		ID:             interruptID,
+		ConversationID: convID,
+		Mode:           "approval",
+		ToolName:       c2.MCPToolC2Task,
+		ToolCallID:     req.TaskID,
+		Payload:        string(payload),
+		CreatedAt:      now,
+	})
 	if err != nil {
 		b.logger.Error("C2 HITL: 创建审批记录失败，拒绝执行", zap.Error(err))
 		return fmt.Errorf("C2 HITL 审批记录创建失败，安全起见拒绝执行: %w", err)
@@ -99,28 +110,30 @@ func (b *C2HITLBridge) RequestApproval(ctx context.Context, req c2.HITLApprovalR
 	for {
 		select {
 		case <-ctx.Done():
-			_, _ = b.db.Exec(`UPDATE hitl_interrupts SET status='cancelled', decision='reject',
-				decision_comment='context cancelled', decided_at=? WHERE id=? AND status='pending'`,
-				time.Now(), interruptID)
+			_, _ = b.interrupts.ResolvePending(interruptID, store.Resolution{
+				Status: "cancelled", Decision: "reject", Comment: "context cancelled",
+				DecidedBy: "system", At: time.Now(),
+			})
 			return ctx.Err()
 
 		case <-deadline:
-			_, _ = b.db.Exec(`UPDATE hitl_interrupts SET status='timeout', decision='reject',
-				decision_comment='C2 HITL timeout auto-reject for safety', decided_at=? WHERE id=? AND status='pending'`,
-				time.Now(), interruptID)
+			_, _ = b.interrupts.ResolvePending(interruptID, store.Resolution{
+				Status: "timeout", Decision: "reject", Comment: "C2 HITL timeout auto-reject for safety",
+				DecidedBy: "system", At: time.Now(),
+			})
 			b.logger.Warn("C2 HITL: 审批超时，安全起见拒绝执行", zap.String("interrupt_id", interruptID))
 			return fmt.Errorf("C2 HITL 审批超时，危险任务已被自动拒绝")
 
 		case <-ticker.C:
-			var status, decision string
-			err := b.db.QueryRow(`SELECT status, COALESCE(decision, '') FROM hitl_interrupts WHERE id = ?`,
-				interruptID).Scan(&status, &decision)
+			answer, err := b.interrupts.Decision(interruptID)
 			if err != nil {
-				if err == sql.ErrNoRows {
-					return nil
-				}
 				continue
 			}
+			if !answer.Found {
+				// The row is gone: the approval was retracted rather than refused.
+				return nil
+			}
+			status, decision := answer.Status, answer.Decision
 			switch status {
 			case "decided", "timeout":
 				if decision == "reject" {
@@ -220,9 +233,9 @@ func taskToAttackPhase(taskType string) string {
 // 这个函数将由 App 调用，注入必要的依赖
 func SetupC2HITLBridgeWithAgent(db *database.DB, logger *zap.Logger) c2.HITLBridge {
 	return &C2HITLBridge{
-		db:        db,
-		logger:    logger,
-		timeout:   5 * time.Minute,
-		getConvID: func() string { return "" },
+		interrupts: newBridgeHITLStore(db),
+		logger:     logger,
+		timeout:    5 * time.Minute,
+		getConvID:  func() string { return "" },
 	}
 }

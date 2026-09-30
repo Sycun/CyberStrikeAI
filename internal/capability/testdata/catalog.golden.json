@@ -1,0 +1,4859 @@
+[
+  {
+    "id": "core.amass",
+    "name": "amass",
+    "title": "子域名枚举和网络映射工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(amass)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Amass参数",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "mode": {
+          "default": "enum",
+          "description": "运行模式（Amass子命令）：",
+          "enum": [
+            "enum",
+            "intel",
+            "viz"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.analyze_image",
+    "name": "analyze_image",
+    "title": "图像分析",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "agent:execute",
+    "approval": "inherited",
+    "grants": [
+      "fs.read(workspace)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.angr",
+    "name": "angr",
+    "title": "符号执行和二进制分析框架",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "default": "",
+          "description": "额外参数，脚本中可通过 `additional_args` 列表访问。",
+          "type": "string"
+        },
+        "analysis_type": {
+          "default": "symbolic",
+          "description": "用于脚本内自定义分支的分析类型标签（例如 symbolic/cfg/static）",
+          "type": "string"
+        },
+        "avoid_addresses": {
+          "default": "",
+          "description": "要避免的地址（逗号分隔，脚本变量 avoid_addresses）",
+          "type": "string"
+        },
+        "binary": {
+          "default": "",
+          "description": "要分析的二进制文件路径，将作为 binary_path 变量传递给脚本",
+          "type": "string"
+        },
+        "find_address": {
+          "default": "",
+          "description": "符号执行中要查找的地址（可选，传入脚本变量 find_address）",
+          "type": "string"
+        },
+        "script_content": {
+          "description": "要执行的angr Python脚本内容",
+          "type": "string"
+        }
+      },
+      "required": [
+        "script_content"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.api-schema-analyzer",
+    "name": "api-schema-analyzer",
+    "title": "API模式分析工具，识别潜在安全问题",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(spectral)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的 Spectral 参数，例如 `--ruleset`, `--format`, `--fail-severity` 等。",
+          "type": "string"
+        },
+        "schema_url": {
+          "description": "API模式文件或URL（传递给 spectral lint 的目标）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.arjun",
+    "name": "arjun",
+    "title": "HTTP参数发现工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(arjun)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Arjun参数。用于传递未在参数列表中定义的Arjun选项。",
+          "type": "string"
+        },
+        "method": {
+          "default": "GET",
+          "description": "HTTP方法（GET, POST等）",
+          "type": "string"
+        },
+        "stable": {
+          "default": false,
+          "description": "使用稳定模式",
+          "type": "boolean"
+        },
+        "threads": {
+          "default": 25,
+          "description": "线程数",
+          "type": "number"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        },
+        "wordlist": {
+          "description": "自定义字典文件",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.arp-scan",
+    "name": "arp-scan",
+    "title": "ARP网络发现工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(arp-scan)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的arp-scan参数。用于传递未在参数列表中定义的arp-scan选项。",
+          "type": "string"
+        },
+        "interface": {
+          "description": "网络接口",
+          "type": "string"
+        },
+        "local_network": {
+          "default": false,
+          "description": "扫描本地网络",
+          "type": "boolean"
+        },
+        "target": {
+          "description": "目标IP范围（如果不使用local_network）",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.batch_task_add_task",
+    "name": "batch_task_add_task",
+    "title": "追加队列任务",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_create",
+    "name": "batch_task_create",
+    "title": "创建批量任务",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_delete",
+    "name": "batch_task_delete",
+    "title": "删除批量任务",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "tasks:delete",
+    "approval": "always",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_get",
+    "name": "batch_task_get",
+    "title": "读取批量任务",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "tasks:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_list",
+    "name": "batch_task_list",
+    "title": "列出批量任务",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "tasks:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_pause",
+    "name": "batch_task_pause",
+    "title": "暂停批量任务",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_remove_task",
+    "name": "batch_task_remove_task",
+    "title": "移除队列任务",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "tasks:delete",
+    "approval": "always",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_rerun",
+    "name": "batch_task_rerun",
+    "title": "重跑批量任务",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "always",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_schedule_enabled",
+    "name": "batch_task_schedule_enabled",
+    "title": "开关任务调度",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_start",
+    "name": "batch_task_start",
+    "title": "启动批量任务",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "always",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_update_metadata",
+    "name": "batch_task_update_metadata",
+    "title": "更新任务元数据",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_update_schedule",
+    "name": "batch_task_update_schedule",
+    "title": "更新任务调度",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.batch_task_update_task",
+    "name": "batch_task_update_task",
+    "title": "更新队列任务",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "tasks:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.binwalk",
+    "name": "binwalk",
+    "title": "固件和文件分析工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(binwalk)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的binwalk参数。用于传递未在参数列表中定义的binwalk选项。",
+          "type": "string"
+        },
+        "extract": {
+          "default": false,
+          "description": "提取发现的文件",
+          "type": "boolean"
+        },
+        "file_path": {
+          "description": "要分析的文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.bloodhound",
+    "name": "bloodhound",
+    "title": "Active Directory 攻击路径分析和可视化工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(bloodhound-python)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的bloodhound参数。用于传递未在参数列表中定义的bloodhound选项。",
+          "type": "string"
+        },
+        "collection_method": {
+          "default": "All",
+          "description": "收集模式 (All, ACL, DCOM, LocalAdmin, RDP 等)",
+          "type": "string"
+        },
+        "dc": {
+          "description": "域控制器 IP 地址",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "password": {
+          "description": "域用户密码",
+          "type": "string"
+        },
+        "username": {
+          "description": "域用户名",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.c2_event",
+    "name": "c2_event",
+    "title": "事件查询",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "c2:read",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.c2_file",
+    "name": "c2_file",
+    "title": "文件管理",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "c2:read",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.c2_listener",
+    "name": "c2_listener",
+    "title": "监听器管理",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "c2:write",
+    "approval": "always",
+    "grants": [
+      "net.bind(listener)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.c2_payload",
+    "name": "c2_payload",
+    "title": "Payload 生成",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "c2:write",
+    "approval": "always",
+    "grants": [
+      "process.exec(go build)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.c2_profile",
+    "name": "c2_profile",
+    "title": "Malleable Profile 管理",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "c2:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.c2_session",
+    "name": "c2_session",
+    "title": "会话管理",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "c2:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.c2_task",
+    "name": "c2_task",
+    "title": "任务下发",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "c2:write",
+    "approval": "always",
+    "grants": [
+      "c2.exec()"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.c2_task_manage",
+    "name": "c2_task_manage",
+    "title": "任务管理",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "c2:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.cancel_tool_execution",
+    "name": "cancel_tool_execution",
+    "title": "取消执行",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "monitor:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.checkov",
+    "name": "checkov",
+    "title": "基础设施即代码安全扫描工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(checkov)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的checkov参数。用于传递未在参数列表中定义的checkov选项。",
+          "type": "string"
+        },
+        "check": {
+          "description": "要运行的特定检查",
+          "type": "string"
+        },
+        "directory": {
+          "default": ".",
+          "description": "要扫描的目录",
+          "type": "string"
+        },
+        "framework": {
+          "description": "要扫描的框架（terraform, cloudformation, kubernetes等）",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "json",
+          "description": "输出格式（json, yaml, cli）",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.checksec",
+    "name": "checksec",
+    "title": "二进制安全特性检查工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(checksec)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的checksec参数。用于传递未在参数列表中定义的checksec选项。",
+          "type": "string"
+        },
+        "binary": {
+          "description": "要检查的二进制文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.clair",
+    "name": "clair",
+    "title": "容器漏洞分析工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(clair)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的clair参数。用于传递未在参数列表中定义的clair选项。",
+          "type": "string"
+        },
+        "config": {
+          "default": "/etc/clair/config.yaml",
+          "description": "Clair配置文件",
+          "type": "string"
+        },
+        "image": {
+          "description": "要扫描的容器镜像",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "json",
+          "description": "输出格式（json, yaml）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.cloudmapper",
+    "name": "cloudmapper",
+    "title": "AWS网络可视化和安全分析工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(cloudmapper)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "account": {
+          "description": "要分析的AWS账户",
+          "type": "string"
+        },
+        "action": {
+          "default": "collect",
+          "description": "要执行的操作（collect, prepare, webserver, find_admins等）",
+          "type": "string"
+        },
+        "additional_args": {
+          "description": "额外的cloudmapper参数。用于传递未在参数列表中定义的cloudmapper选项。",
+          "type": "string"
+        },
+        "config": {
+          "default": "config.json",
+          "description": "配置文件路径",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.complete_asset_scan",
+    "name": "complete_asset_scan",
+    "title": "标记资产扫描完成",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "asset:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.create_asset",
+    "name": "create_asset",
+    "title": "创建资产",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "asset:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.dalfox",
+    "name": "dalfox",
+    "title": "高级XSS漏洞扫描器",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(dalfox)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的dalfox参数。用于传递未在参数列表中定义的dalfox选项。",
+          "type": "string"
+        },
+        "blind": {
+          "description": "盲XSS回调地址（例如Burp Collaborator URL）",
+          "type": "string"
+        },
+        "mining_dict": {
+          "default": true,
+          "description": "启用字典挖掘",
+          "type": "boolean"
+        },
+        "mining_dom": {
+          "default": true,
+          "description": "启用DOM挖掘",
+          "type": "boolean"
+        },
+        "pipe_mode": {
+          "default": false,
+          "description": "使用管道模式输入",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "目标URL。dalfox 单目标模式为子命令 url，此处作为 url 后的第一个位置参数传入。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.delete_asset",
+    "name": "delete_asset",
+    "title": "删除资产",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "asset:delete",
+    "approval": "always",
+    "source": "builtin"
+  },
+  {
+    "id": "core.deprecate_project_fact",
+    "name": "deprecate_project_fact",
+    "title": "废弃项目事实",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "project:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.dirsearch",
+    "name": "dirsearch",
+    "title": "高级目录和文件发现工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(dirsearch)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的dirsearch参数。用于传递未在参数列表中定义的dirsearch选项。",
+          "type": "string"
+        },
+        "extensions": {
+          "default": "php,html,js,txt,xml,json",
+          "description": "文件扩展名（逗号分隔）",
+          "type": "string"
+        },
+        "recursive": {
+          "default": false,
+          "description": "启用递归扫描",
+          "type": "boolean"
+        },
+        "threads": {
+          "default": 30,
+          "description": "线程数",
+          "type": "number"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        },
+        "wordlist": {
+          "description": "字典文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.dnsenum",
+    "name": "dnsenum",
+    "title": "DNS枚举工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(dnsenum)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的dnsenum参数。用于传递未在参数列表中定义的dnsenum选项。",
+          "type": "string"
+        },
+        "dns_server": {
+          "description": "要使用的DNS服务器",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "wordlist": {
+          "description": "用于暴力破解的字典文件",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.dnslog",
+    "name": "dnslog",
+    "title": "DNSlog工具，用于盲注、SSRF、XXE等无回显漏洞验证",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "domain": {
+          "description": "域名参数（仅用于get_records操作）",
+          "type": "string"
+        },
+        "operation": {
+          "description": "操作类型，支持两种操作：",
+          "type": "string"
+        },
+        "wait_time": {
+          "default": 0,
+          "description": "等待时间（秒，仅用于get_records操作）",
+          "type": "number"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.dotdotpwn",
+    "name": "dotdotpwn",
+    "title": "目录遍历漏洞测试工具",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(dotdotpwn)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的dotdotpwn参数。用于传递未在参数列表中定义的dotdotpwn选项。",
+          "type": "string"
+        },
+        "module": {
+          "default": "http",
+          "description": "要使用的模块（http, ftp, tftp等）",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标主机名或IP",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.edit_file",
+    "name": "edit_file",
+    "title": "编辑工作区文件",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "fs.write(workspace)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.enum4linux-ng",
+    "name": "enum4linux-ng",
+    "title": "高级SMB枚举工具（Enum4linux的下一代版本）",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(enum4linux-ng)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的enum4linux-ng参数。用于传递未在参数列表中定义的enum4linux-ng选项。",
+          "type": "string"
+        },
+        "domain": {
+          "description": "域名",
+          "type": "string"
+        },
+        "groups": {
+          "default": true,
+          "description": "枚举组",
+          "type": "boolean"
+        },
+        "password": {
+          "description": "密码",
+          "type": "string"
+        },
+        "policy": {
+          "default": true,
+          "description": "枚举策略",
+          "type": "boolean"
+        },
+        "shares": {
+          "default": true,
+          "description": "枚举共享",
+          "type": "boolean"
+        },
+        "target": {
+          "description": "目标IP地址",
+          "type": "string"
+        },
+        "username": {
+          "description": "用户名",
+          "type": "string"
+        },
+        "users": {
+          "default": true,
+          "description": "枚举用户",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.exec",
+    "name": "exec",
+    "title": "系统命令执行工具，用于执行Shell命令和系统操作（谨慎使用）",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(sh)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的exec参数。用于传递未在参数列表中定义的exec选项。",
+          "type": "string"
+        },
+        "command": {
+          "description": "要执行的系统命令。可以是任何有效的Shell命令。",
+          "type": "string"
+        },
+        "shell": {
+          "default": "sh",
+          "description": "使用的Shell类型，默认为sh。",
+          "type": "string"
+        },
+        "workdir": {
+          "description": "命令执行的工作目录。如果不指定，使用当前工作目录。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.execute",
+    "name": "execute",
+    "title": "本地命令执行",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "process.exec(*)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.execute-python-script",
+    "name": "execute-python-script",
+    "title": "在指定虚拟环境中编写并执行Python脚本",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(/bin/bash)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "default": "",
+          "description": "额外的execute-python-script参数。用于传递未在参数列表中定义的execute-python-script选项。",
+          "type": "string"
+        },
+        "env_name": {
+          "default": "default",
+          "description": "虚拟环境名称（默认default）",
+          "type": "string"
+        },
+        "script": {
+          "description": "要执行的Python脚本内容，支持多行。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "script"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.exiftool",
+    "name": "exiftool",
+    "title": "元数据提取工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(exiftool)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的exiftool参数。用于传递未在参数列表中定义的exiftool选项。",
+          "type": "string"
+        },
+        "file_path": {
+          "description": "要分析的文件路径",
+          "type": "string"
+        },
+        "output_csv": {
+          "default": false,
+          "description": "以CSV格式输出（等同于 -csv）",
+          "type": "boolean"
+        },
+        "output_json": {
+          "default": false,
+          "description": "以JSON格式输出（等同于 -json）",
+          "type": "boolean"
+        },
+        "output_xml": {
+          "default": false,
+          "description": "以XML格式输出（等同于 -X）",
+          "type": "boolean"
+        },
+        "tags": {
+          "description": "要提取的特定标签",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.falco",
+    "name": "falco",
+    "title": "运行时安全监控工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(falco)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的falco参数。用于传递未在参数列表中定义的falco选项。",
+          "type": "string"
+        },
+        "config_file": {
+          "default": "/etc/falco/falco.yaml",
+          "description": "Falco配置文件",
+          "type": "string"
+        },
+        "duration": {
+          "default": 60,
+          "description": "监控持续时间（秒）",
+          "type": "number"
+        },
+        "json_output": {
+          "default": true,
+          "description": "以JSON格式输出（等同于 -o json_output=true）",
+          "type": "boolean"
+        },
+        "rules_file": {
+          "description": "自定义规则文件",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.feroxbuster",
+    "name": "feroxbuster",
+    "title": "递归内容发现工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(feroxbuster)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的feroxbuster参数。用于传递未在参数列表中定义的feroxbuster选项。",
+          "type": "string"
+        },
+        "threads": {
+          "default": 10,
+          "description": "线程数",
+          "type": "number"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        },
+        "wordlist": {
+          "description": "字典文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.ffuf",
+    "name": "ffuf",
+    "title": "快速Web模糊测试工具，用于目录、参数和内容发现",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(ffuf)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的FFuf参数",
+          "type": "string"
+        },
+        "match_codes": {
+          "default": "200,204,301,302,307,401,403",
+          "description": "匹配的HTTP状态码（逗号分隔）",
+          "type": "string"
+        },
+        "url": {
+          "description": "目标URL（使用FUZZ作为占位符）",
+          "type": "string"
+        },
+        "wordlist": {
+          "default": "/usr/share/wordlists/dirb/common.txt",
+          "description": "字典文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.fierce",
+    "name": "fierce",
+    "title": "DNS侦察工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(fierce)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的fierce参数。用于传递未在参数列表中定义的fierce选项。",
+          "type": "string"
+        },
+        "dns_server": {
+          "description": "要使用的DNS服务器",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.fofa_search",
+    "name": "fofa_search",
+    "title": "FOFA网络空间搜索引擎，支持灵活的查询参数配置",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "fields": {
+          "default": "ip,port,domain",
+          "description": "返回字段列表（可选）",
+          "type": "string"
+        },
+        "full": {
+          "default": false,
+          "description": "是否返回完整数据（可选）",
+          "type": "boolean"
+        },
+        "page": {
+          "default": 1,
+          "description": "页码（可选）",
+          "type": "number"
+        },
+        "query": {
+          "description": "FOFA查询语句（必需）",
+          "type": "string"
+        },
+        "size": {
+          "default": 100,
+          "description": "返回结果数量（可选）",
+          "type": "number"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.foremost",
+    "name": "foremost",
+    "title": "文件恢复工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(foremost)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的foremost参数。用于传递未在参数列表中定义的foremost选项。",
+          "type": "string"
+        },
+        "file_types": {
+          "description": "要恢复的文件类型（jpg,gif,png等）",
+          "type": "string"
+        },
+        "input_file": {
+          "description": "输入文件或设备",
+          "type": "string"
+        },
+        "output_dir": {
+          "default": "/tmp/foremost_output",
+          "description": "输出目录",
+          "type": "string"
+        }
+      },
+      "required": [
+        "input_file"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.fscan",
+    "name": "fscan",
+    "title": "内网综合扫描工具，支持存活探测、端口扫描、服务识别、爆破、POC检测",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(fscan)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的fscan参数。用于传递未在参数列表中定义的fscan选项。",
+          "type": "string"
+        },
+        "cookie": {
+          "description": "HTTP Cookie值",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "download_path": {
+          "description": "下载文件保存路径",
+          "type": "string"
+        },
+        "download_url": {
+          "description": "要下载的文件URL",
+          "type": "string"
+        },
+        "exclude_host": {
+          "description": "排除的主机IP",
+          "type": "string"
+        },
+        "exclude_port": {
+          "description": "排除的端口",
+          "type": "string"
+        },
+        "global_timeout": {
+          "default": 180,
+          "description": "全局超时时间（秒）",
+          "type": "number"
+        },
+        "host_file": {
+          "description": "目标主机文件路径（每行一个IP）",
+          "type": "string"
+        },
+        "iface": {
+          "description": "指定本地网卡IP地址（VPN场景使用）",
+          "type": "string"
+        },
+        "lang": {
+          "default": "zh",
+          "description": "输出语言：zh（默认中文）, en（英文）",
+          "type": "string"
+        },
+        "log_level": {
+          "default": "base,info,success",
+          "description": "日志级别（默认 base,info,success）",
+          "type": "string"
+        },
+        "max_redirect": {
+          "default": 10,
+          "description": "HTTP最大重定向次数",
+          "type": "number"
+        },
+        "mode": {
+          "default": "all",
+          "description": "扫描模式：",
+          "type": "string"
+        },
+        "module_threads": {
+          "default": 20,
+          "description": "模块并发线程数",
+          "type": "number"
+        },
+        "output_file": {
+          "default": "result.txt",
+          "description": "结果输出文件路径（默认 result.txt）",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "txt",
+          "description": "输出格式：txt（默认）, json, csv",
+          "type": "string"
+        },
+        "pass_file": {
+          "description": "密码字典文件路径",
+          "type": "string"
+        },
+        "password": {
+          "description": "暴力破解密码",
+          "type": "string"
+        },
+        "poc_num": {
+          "default": 20,
+          "description": "POC扫描并发数",
+          "type": "number"
+        },
+        "pocname": {
+          "description": "指定POC名称进行单点扫描",
+          "type": "string"
+        },
+        "pocpath": {
+          "description": "自定义POC脚本路径",
+          "type": "string"
+        },
+        "port_file": {
+          "description": "自定义端口文件路径",
+          "type": "string"
+        },
+        "ports": {
+          "default": "21,22,23,25,53,80,81,88,110,111,135,139,143,161,389,443,445,465,502,512,513,514,515,548,554,587,623,636,873,902,993,995,1080,1099,1194,1433,1434,1521,1522,1525,1723,1883,2049,2121,2181,2200,2222,2375,2376,2379,2380,3000,3128,3268,3269,3306,3389,3690,4369,4444,4848,5000,5005,5044,5060,5432,5601,5631,5632,5671,5672,5900,5984,5985,5986,6000,6379,6380,6443,6666,6667,7001,7002,7474,7687,8000,8005,8008,8009,8080,8081,8086,8088,8089,8090,8161,8180,8443,8500,8834,8848,8880,8888,9000,9001,9042,9080,9090,9092,9093,9160,9200,9300,9418,9443,9999,10000,10051,10250,10255,11211,15672,22222,26379,27017,27018,50000,50070,50075,61613,61614,61616",
+          "description": "扫描端口列表，逗号分隔。默认覆盖1000个常用端口。",
+          "type": "string"
+        },
+        "proxy": {
+          "description": "HTTP代理地址（如: http://127.0.0.1:8080）",
+          "type": "string"
+        },
+        "rate_limit": {
+          "description": "每分钟最大发包次数（0表示不限制）",
+          "type": "number"
+        },
+        "retry": {
+          "default": 3,
+          "description": "最大重试次数",
+          "type": "number"
+        },
+        "reverse_shell": {
+          "description": "反弹Shell目标地址:端口（如: 192.168.1.100:4444）",
+          "type": "string"
+        },
+        "socks5": {
+          "description": "SOCKS5代理地址（如: 127.0.0.1:1080）",
+          "type": "string"
+        },
+        "sshkey_file": {
+          "description": "SSH私钥文件路径",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标主机：IP地址、IP段（如192.168.1.0/24）、IP文件或域名",
+          "type": "string"
+        },
+        "threads": {
+          "default": 600,
+          "description": "端口扫描线程数",
+          "type": "number"
+        },
+        "timeout": {
+          "default": 3,
+          "description": "端口扫描超时时间（秒）",
+          "type": "number"
+        },
+        "url": {
+          "description": "目标URL（用于Web扫描模式）",
+          "type": "string"
+        },
+        "url_file": {
+          "description": "目标URL文件路径",
+          "type": "string"
+        },
+        "user_file": {
+          "description": "用户名字典文件路径",
+          "type": "string"
+        },
+        "username": {
+          "description": "暴力破解用户名",
+          "type": "string"
+        },
+        "web_timeout": {
+          "default": 5,
+          "description": "Web请求超时时间（秒）",
+          "type": "number"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.gau",
+    "name": "gau",
+    "title": "从多个数据源获取所有URL",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(gau)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Gau参数。用于传递未在参数列表中定义的Gau选项。",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "include_subs": {
+          "default": true,
+          "description": "包含子域名",
+          "type": "boolean"
+        },
+        "providers": {
+          "description": "数据源（wayback,commoncrawl,otx,urlscan）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.gdb",
+    "name": "gdb",
+    "title": "GNU调试器，用于二进制分析和调试",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(gdb)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的gdb参数。用于传递未在参数列表中定义的gdb选项。",
+          "type": "string"
+        },
+        "binary": {
+          "description": "要分析的二进制文件路径",
+          "type": "string"
+        },
+        "commands": {
+          "description": "要执行的GDB命令（分号分隔）",
+          "type": "string"
+        },
+        "script_file": {
+          "description": "GDB脚本文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.get_asset",
+    "name": "get_asset",
+    "title": "读取资产",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "asset:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.get_project_fact",
+    "name": "get_project_fact",
+    "title": "读取项目事实",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "project:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.get_tool_execution",
+    "name": "get_tool_execution",
+    "title": "查询执行状态",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "monitor:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.get_vulnerability",
+    "name": "get_vulnerability",
+    "title": "读取漏洞",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "vulnerability:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.ghidra",
+    "name": "ghidra",
+    "title": "高级二进制分析和逆向工程工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(analyzeHeadless)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的ghidra参数。用于传递未在参数列表中定义的ghidra选项。",
+          "type": "string"
+        },
+        "binary": {
+          "description": "要分析的二进制文件路径",
+          "type": "string"
+        },
+        "project_dir": {
+          "default": "/tmp/ghidra_projects",
+          "description": "Ghidra项目存放目录",
+          "type": "string"
+        },
+        "project_name": {
+          "default": "cyberstrike_analysis",
+          "description": "Ghidra项目名称",
+          "type": "string"
+        },
+        "script_file": {
+          "description": "可选的Ghidra脚本文件（通过 -postScript 执行）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.glob",
+    "name": "glob",
+    "title": "文件名匹配",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "agent:local-execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.gobuster",
+    "name": "gobuster",
+    "title": "Web内容扫描工具，用于发现目录、文件和子域名",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(gobuster)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Gobuster参数",
+          "type": "string"
+        },
+        "mode": {
+          "default": "dir",
+          "description": "扫描模式（Gobuster子命令），对应以下取值：",
+          "enum": [
+            "dir",
+            "dns",
+            "fuzz",
+            "vhost"
+          ],
+          "type": "string"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        },
+        "wordlist": {
+          "default": "/usr/share/wordlists/dirb/common.txt",
+          "description": "字典文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.graphql-scanner",
+    "name": "graphql-scanner",
+    "title": "GraphQL安全扫描和自省工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(graphqlmap)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的graphql-scanner参数。用于传递未在参数列表中定义的graphql-scanner选项。",
+          "type": "string"
+        },
+        "endpoint": {
+          "description": "GraphQL端点URL",
+          "type": "string"
+        },
+        "introspection": {
+          "default": true,
+          "description": "测试自省查询",
+          "type": "boolean"
+        },
+        "query_depth": {
+          "default": 10,
+          "description": "要测试的最大查询深度",
+          "type": "number"
+        },
+        "test_mutations": {
+          "default": true,
+          "description": "测试突变操作",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "endpoint"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.grep",
+    "name": "grep",
+    "title": "内容检索",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "agent:local-execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.hashcat",
+    "name": "hashcat",
+    "title": "高级密码破解工具，支持GPU加速",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(hashcat)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Hashcat参数",
+          "type": "string"
+        },
+        "attack_mode": {
+          "default": "0",
+          "description": "攻击模式（0=字典, 1=组合, 3=掩码等）",
+          "type": "string"
+        },
+        "hash_file": {
+          "description": "包含哈希的文件",
+          "type": "string"
+        },
+        "hash_type": {
+          "description": "哈希类型编号",
+          "type": "string"
+        },
+        "mask": {
+          "description": "掩码（用于掩码攻击）",
+          "type": "string"
+        },
+        "wordlist": {
+          "default": "/usr/share/wordlists/rockyou.txt",
+          "description": "字典文件",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash_file",
+        "hash_type"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.hashpump",
+    "name": "hashpump",
+    "title": "哈希长度扩展攻击工具",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(hashpump)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的hashpump参数。用于传递未在参数列表中定义的hashpump选项。",
+          "type": "string"
+        },
+        "append_data": {
+          "description": "要追加的数据",
+          "type": "string"
+        },
+        "data": {
+          "description": "原始数据",
+          "type": "string"
+        },
+        "key_length": {
+          "description": "密钥长度",
+          "type": "number"
+        },
+        "signature": {
+          "description": "原始哈希签名",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signature",
+        "data",
+        "key_length",
+        "append_data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.http-framework-test",
+    "name": "http-framework-test",
+    "title": "纯Python HTTP测试框架（httpx，会话复用+编码守护）",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "default": "request",
+          "description": "保留字段：标识调用意图（request, spider等），脚本内部不使用",
+          "type": "string"
+        },
+        "allow_insecure": {
+          "default": false,
+          "description": "忽略TLS证书错误（verify=False）",
+          "type": "boolean"
+        },
+        "auto_encode_url": {
+          "default": true,
+          "description": "自动URL编码（默认开启，可通过 --no-auto-encode-url 关闭）",
+          "type": "boolean"
+        },
+        "cookies": {
+          "description": "自定义Cookie（格式：name1=value1; name2=value2）",
+          "type": "string"
+        },
+        "data": {
+          "description": "请求数据/参数（支持JSON、表单、原始payload，前缀@file或@-可加载文件/STDIN）",
+          "type": "string"
+        },
+        "debug": {
+          "default": false,
+          "description": "调试模式：显示Body编码处理细节（模式/charset/长度）",
+          "type": "boolean"
+        },
+        "delay": {
+          "default": "0",
+          "description": "重复请求之间的延迟（秒，可为小数）",
+          "type": "string"
+        },
+        "download": {
+          "description": "将响应体保存到本地文件，写入原始字节数据：",
+          "type": "string"
+        },
+        "follow_redirects": {
+          "default": false,
+          "description": "跟随重定向（httpx follow_redirects）",
+          "type": "boolean"
+        },
+        "headers": {
+          "description": "自定义请求头（字典格式，如 {\"X-Custom\": \"value\"}）",
+          "type": "string"
+        },
+        "http2": {
+          "default": false,
+          "description": "启用 HTTP/2（需安装 h2：pip install 'httpx[http2]'）。也可写在 httpx_options：http2=true",
+          "type": "boolean"
+        },
+        "httpx_options": {
+          "description": "额外的 httpx Client 选项（整段传给 --additional-args）。支持 \"key=value\" 或单词形式（等价于 key=true）：",
+          "type": "string"
+        },
+        "include_headers": {
+          "default": true,
+          "description": "输出响应头（默认开启，可用 --no-include-headers 关闭）",
+          "type": "boolean"
+        },
+        "method": {
+          "default": "GET",
+          "description": "HTTP方法（GET, POST, PUT, DELETE等）",
+          "type": "string"
+        },
+        "proxy": {
+          "description": "代理（http(s)://或socks5://地址，直接传递给httpx Client）",
+          "type": "string"
+        },
+        "repeat": {
+          "default": 1,
+          "description": "重复请求次数，用于盲注/稳定性观测（\u003e=1）",
+          "type": "number"
+        },
+        "response_context_lines": {
+          "default": 0,
+          "description": "line 模式下命中行上下各保留 N 行上下文（类似 grep -C）",
+          "type": "number"
+        },
+        "response_encoding": {
+          "description": "强制响应解码使用的编码（如GBK），覆盖自动探测",
+          "type": "string"
+        },
+        "response_filter": {
+          "description": "响应体正则过滤（仅影响 stdout，不影响 --download 与指标）。",
+          "type": "string"
+        },
+        "response_filter_ignore_case": {
+          "default": false,
+          "description": "正则忽略大小写",
+          "type": "boolean"
+        },
+        "response_filter_invert": {
+          "default": false,
+          "description": "反向过滤：输出不匹配 regex 的行（用于剔除 HTML 噪音）",
+          "type": "boolean"
+        },
+        "response_filter_mode": {
+          "default": "line",
+          "description": "过滤模式：line（按行，默认）、multiline（跨行块）、full（整段 DOTALL 匹配）",
+          "type": "string"
+        },
+        "response_max_bytes": {
+          "default": 0,
+          "description": "stdout 响应体 UTF-8 字节上限（0=不限制），超出部分截断",
+          "type": "number"
+        },
+        "response_max_lines": {
+          "default": 0,
+          "description": "stdout 最多输出行数（0=不限制）；有 filter 时限制命中行数，无 filter 时截断全文",
+          "type": "number"
+        },
+        "response_preview_lines": {
+          "default": 5,
+          "description": "filter 零命中时预览的前 N 行（默认 5，0=不预览）",
+          "type": "number"
+        },
+        "show_command": {
+          "default": true,
+          "description": "打印请求概览（方法、URL、所有头、Body概况）",
+          "type": "boolean"
+        },
+        "show_summary": {
+          "default": true,
+          "description": "打印指标摘要（默认开启，含DNS/TCP/TLS/TTFB/Total）",
+          "type": "boolean"
+        },
+        "timeout": {
+          "description": "最大超时时间（秒，支持小数）",
+          "type": "string"
+        },
+        "url": {
+          "description": "目标URL（默认 path-as-is，保留 ../ 等字面量路径；可开 auto_encode_url 编码特殊字符）",
+          "type": "string"
+        },
+        "user_agent": {
+          "description": "自定义User-Agent",
+          "type": "string"
+        },
+        "verbose_output": {
+          "default": false,
+          "description": "输出额外调试信息（请求体字节数、探针延时、历史长度等）",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.hydra",
+    "name": "hydra",
+    "title": "密码暴力破解工具，支持多种协议和服务",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(hydra)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外参数（如 -s 端口、-S SSL、-m 模块选项、-C login:pass 文件），追加在命令末尾",
+          "type": "string"
+        },
+        "output_file": {
+          "description": "将结果写入文件（-o），长任务建议指定",
+          "type": "string"
+        },
+        "password": {
+          "description": "单个密码（-p）",
+          "type": "string"
+        },
+        "password_file": {
+          "description": "密码字典文件（-P）；优先使用小字典试跑",
+          "type": "string"
+        },
+        "service": {
+          "description": "服务类型（ssh、ftp、http-get、http-post-form、smb 等，见 hydra -h）",
+          "type": "string"
+        },
+        "stop_on_first": {
+          "default": true,
+          "description": "找到一对有效账密后立即退出（-f，默认 true）",
+          "type": "boolean"
+        },
+        "target": {
+          "description": "目标 IP、主机名或 CIDR（须在选项之后）",
+          "type": "string"
+        },
+        "tasks": {
+          "default": 4,
+          "description": "每目标并行连接数（-t）；SSH 等建议 4，默认 4",
+          "type": "number"
+        },
+        "username": {
+          "description": "单个用户名（-l）；与 username_file 二选一至少填一个",
+          "type": "string"
+        },
+        "username_file": {
+          "description": "用户名字典文件（-L）",
+          "type": "string"
+        },
+        "wait_between": {
+          "default": 1,
+          "description": "每线程连接间隔秒数（-W），默认 1",
+          "type": "number"
+        },
+        "wait_time": {
+          "default": 16,
+          "description": "单次连接等待响应秒数（-w），默认 16（低于 Hydra 默认 32，减少挂起感）",
+          "type": "number"
+        }
+      },
+      "required": [
+        "target",
+        "service"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.impacket",
+    "name": "impacket",
+    "title": "Impacket 网络协议工具集，用于网络协议攻击和横向移动",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "default": "",
+          "description": "额外的impacket参数。用于传递未在参数列表中定义的impacket选项。",
+          "type": "string"
+        },
+        "args": {
+          "default": "",
+          "description": "脚本参数（JSON数组或空格分隔字符串）",
+          "type": "string"
+        },
+        "script": {
+          "description": "Impacket 脚本路径，例如 '/usr/share/doc/python3-impacket/examples/psexec.py'",
+          "type": "string"
+        }
+      },
+      "required": [
+        "script"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.install-python-package",
+    "name": "install-python-package",
+    "title": "在指定虚拟环境中创建/激活并安装Python依赖",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(/bin/bash)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "default": "",
+          "description": "额外的install-python-package参数。用于传递未在参数列表中定义的install-python-package选项。",
+          "type": "string"
+        },
+        "env_name": {
+          "default": "default",
+          "description": "虚拟环境名称（默认default）",
+          "type": "string"
+        },
+        "package": {
+          "description": "要安装的Python包名",
+          "type": "string"
+        }
+      },
+      "required": [
+        "package"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.jaeles",
+    "name": "jaeles",
+    "title": "高级漏洞扫描器，支持自定义签名",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(jaeles)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的jaeles参数。用于传递未在参数列表中定义的jaeles选项。",
+          "type": "string"
+        },
+        "config": {
+          "description": "配置文件",
+          "type": "string"
+        },
+        "signatures": {
+          "description": "自定义签名路径",
+          "type": "string"
+        },
+        "threads": {
+          "default": 20,
+          "description": "线程数",
+          "type": "number"
+        },
+        "timeout": {
+          "default": 20,
+          "description": "请求超时时间（秒）",
+          "type": "number"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.john",
+    "name": "john",
+    "title": "John the Ripper密码破解工具",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(john)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的John参数",
+          "type": "string"
+        },
+        "format_type": {
+          "description": "哈希格式类型",
+          "type": "string"
+        },
+        "hash_file": {
+          "description": "包含哈希的文件",
+          "type": "string"
+        },
+        "wordlist": {
+          "default": "/usr/share/wordlists/rockyou.txt",
+          "description": "字典文件",
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash_file"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.jwt-analyzer",
+    "name": "jwt-analyzer",
+    "title": "JWT令牌分析和漏洞测试工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(jwt_tool)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的jwt-analyzer参数。用于传递未在参数列表中定义的jwt-analyzer选项。",
+          "type": "string"
+        },
+        "jwt_token": {
+          "description": "要分析的JWT令牌",
+          "type": "string"
+        },
+        "target_url": {
+          "description": "用于测试令牌操作的可选目标URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "jwt_token"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.katana",
+    "name": "katana",
+    "title": "下一代Web爬虫和蜘蛛工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(katana)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Katana参数。用于传递未在参数列表中定义的Katana选项。",
+          "type": "string"
+        },
+        "depth": {
+          "default": 3,
+          "description": "爬取深度",
+          "type": "number"
+        },
+        "form_extraction": {
+          "default": true,
+          "description": "启用表单提取（-fx / -form-extraction）",
+          "type": "boolean"
+        },
+        "js_crawl": {
+          "default": true,
+          "description": "启用JavaScript爬取",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.kube-bench",
+    "name": "kube-bench",
+    "title": "CIS Kubernetes基准检查工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(kube-bench)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的kube-bench参数。用于传递未在参数列表中定义的kube-bench选项。",
+          "type": "string"
+        },
+        "config_dir": {
+          "description": "配置目录",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "json",
+          "description": "输出格式（json, yaml）",
+          "type": "string"
+        },
+        "targets": {
+          "description": "要检查的目标（master, node, etcd, policies）",
+          "type": "string"
+        },
+        "version": {
+          "description": "Kubernetes版本",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.kube-hunter",
+    "name": "kube-hunter",
+    "title": "Kubernetes渗透测试工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(kube-hunter)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "active": {
+          "default": false,
+          "description": "启用主动扫描（可能有风险）",
+          "type": "boolean"
+        },
+        "additional_args": {
+          "description": "额外的kube-hunter参数。用于传递未在参数列表中定义的kube-hunter选项。",
+          "type": "string"
+        },
+        "cidr": {
+          "description": "CIDR范围扫描",
+          "type": "string"
+        },
+        "interface": {
+          "description": "网络接口扫描",
+          "type": "string"
+        },
+        "report": {
+          "default": "json",
+          "description": "报告格式（json, yaml）",
+          "type": "string"
+        },
+        "target": {
+          "description": "特定目标扫描",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.libc-database",
+    "name": "libc-database",
+    "title": "libc识别和偏移查找工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "description": "要执行的操作（find, dump, download）",
+          "type": "string"
+        },
+        "additional_args": {
+          "default": "",
+          "description": "额外的libc-database参数。用于传递未在参数列表中定义的libc-database选项。",
+          "type": "string"
+        },
+        "libc_id": {
+          "default": "",
+          "description": "Libc ID（用于dump/download操作）",
+          "type": "string"
+        },
+        "symbols": {
+          "default": "",
+          "description": "符号和偏移（格式：symbol1:offset1 symbol2:offset2）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.lightx",
+    "name": "lightx",
+    "title": "轻量级资产发现与漏洞扫描工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(lightx)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "target": {
+          "description": "扫描目标，支持多种格式。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.linpeas",
+    "name": "linpeas",
+    "title": "Linux 权限提升枚举脚本，自动检测常见提权路径",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(linpeas.sh)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的linpeas参数。用于传递未在参数列表中定义的linpeas选项。",
+          "type": "string"
+        },
+        "fast": {
+          "description": "快速模式，跳过耗时检查",
+          "type": "boolean"
+        },
+        "output": {
+          "description": "输出文件路径（可选）",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.list_knowledge_risk_types",
+    "name": "list_knowledge_risk_types",
+    "title": "列出风险类型",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "knowledge:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.list_project_facts",
+    "name": "list_project_facts",
+    "title": "列出项目事实",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "project:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.list_vulnerabilities",
+    "name": "list_vulnerabilities",
+    "title": "查询漏洞列表",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "vulnerability:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.ls",
+    "name": "ls",
+    "title": "列目录",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "agent:local-execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.manage_webshell_add",
+    "name": "manage_webshell_add",
+    "title": "新增 WebShell 连接",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "webshell:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.manage_webshell_delete",
+    "name": "manage_webshell_delete",
+    "title": "删除 WebShell 连接",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "webshell:delete",
+    "approval": "always",
+    "source": "builtin"
+  },
+  {
+    "id": "core.manage_webshell_list",
+    "name": "manage_webshell_list",
+    "title": "列出 WebShell 连接",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "webshell:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.manage_webshell_test",
+    "name": "manage_webshell_test",
+    "title": "测试 WebShell 连接",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "webshell:write",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.manage_webshell_update",
+    "name": "manage_webshell_update",
+    "title": "更新 WebShell 连接",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "webshell:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.masscan",
+    "name": "masscan",
+    "title": "高速互联网级端口扫描工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(masscan)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的masscan参数。用于传递未在参数列表中定义的masscan选项。",
+          "type": "string"
+        },
+        "banners": {
+          "default": false,
+          "description": "启用Banner抓取",
+          "type": "boolean"
+        },
+        "interface": {
+          "description": "网络接口",
+          "type": "string"
+        },
+        "ports": {
+          "default": "1-65535",
+          "description": "端口范围（如：1-65535）",
+          "type": "string"
+        },
+        "rate": {
+          "default": 1000,
+          "description": "每秒数据包数",
+          "type": "number"
+        },
+        "target": {
+          "description": "目标IP地址或CIDR范围",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.mcp_external_execute",
+    "name": "mcp:external:execute",
+    "title": "外部 MCP 调用",
+    "class": "mutating",
+    "runtime": "mcp:remote",
+    "permission": "mcp:external:execute",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.metasploit",
+    "name": "metasploit",
+    "title": "Metasploit渗透测试框架",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "default": "",
+          "description": "额外的 msfconsole 参数（追加在命令末尾）",
+          "type": "string"
+        },
+        "module": {
+          "description": "要使用的Metasploit模块（例如 exploit/windows/smb/ms17_010_eternalblue）",
+          "type": "string"
+        },
+        "options": {
+          "default": "{}",
+          "description": "模块选项（JSON对象，键值对应 set 指令）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.msfvenom",
+    "name": "msfvenom",
+    "title": "Metasploit载荷生成工具",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(msfvenom)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的msfvenom参数。用于传递未在参数列表中定义的msfvenom选项。",
+          "type": "string"
+        },
+        "encoder": {
+          "description": "编码器（如：x86/shikata_ga_nai）",
+          "type": "string"
+        },
+        "format_type": {
+          "description": "输出格式（exe, elf, raw等）",
+          "type": "string"
+        },
+        "iterations": {
+          "description": "编码迭代次数",
+          "type": "string"
+        },
+        "output_file": {
+          "description": "输出文件路径",
+          "type": "string"
+        },
+        "payload": {
+          "description": "要生成的载荷（如：windows/meterpreter/reverse_tcp）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "payload"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.nbtscan",
+    "name": "nbtscan",
+    "title": "NetBIOS名称扫描工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(nbtscan)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的nbtscan参数。用于传递未在参数列表中定义的nbtscan选项。",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标IP地址或范围",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 2,
+          "description": "超时时间（秒）",
+          "type": "number"
+        },
+        "verbose": {
+          "default": false,
+          "description": "详细输出",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.netexec",
+    "name": "netexec",
+    "title": "网络枚举和利用框架（原CrackMapExec）",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(netexec)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的NetExec参数",
+          "type": "string"
+        },
+        "hash_value": {
+          "description": "NTLM哈希（用于Pass-the-Hash）",
+          "type": "string"
+        },
+        "module": {
+          "description": "要执行的模块",
+          "type": "string"
+        },
+        "password": {
+          "description": "密码",
+          "type": "string"
+        },
+        "protocol": {
+          "default": "smb",
+          "description": "协议类型（smb, ssh, winrm等）",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标IP或网络",
+          "type": "string"
+        },
+        "username": {
+          "description": "用户名",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.nikto",
+    "name": "nikto",
+    "title": "Web服务器扫描工具，用于检测Web服务器和应用程序中的已知漏洞和配置错误",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(nikto)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的nikto参数。用于传递未在参数列表中定义的nikto选项。",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标URL或IP地址。可以是完整的URL或IP地址。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.nmap",
+    "name": "nmap",
+    "title": "网络扫描：端口/服务/脚本；可选时序、自定义 NSE、OS 检测（需 root）",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(nmap)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外参数，按空格追加到命令末尾。",
+          "type": "string"
+        },
+        "aggressive": {
+          "default": false,
+          "description": "启用 `-A` 激进扫描（含 OS 检测）。**必须 root**；无 root 请保持 false。",
+          "type": "boolean"
+        },
+        "nse_scripts": {
+          "description": "NSE 脚本，传给 `--script`。示例：`vuln`、`http-title,http-headers`",
+          "type": "string"
+        },
+        "os_detection": {
+          "default": false,
+          "description": "启用 `-O` OS 检测。**必须 root**；无 root 请保持 false。",
+          "type": "boolean"
+        },
+        "ports": {
+          "description": "端口范围。示例：`80`、`1-1000`、`80,443,8080`、`1-65535`（全端口很慢）",
+          "type": "string"
+        },
+        "scan_type": {
+          "description": "扫描类型选项；**若填写则替换默认的 `-sT -sV -sC`**，只保留你写的选项。",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标 IP、主机名、CIDR 或域名；URL 会自动提取主机部分。",
+          "type": "string"
+        },
+        "timing": {
+          "description": "时序模板 T0–T5，数字越大越快。示例：`4` 生成 `-T4`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.nuclei",
+    "name": "nuclei",
+    "title": "快速漏洞扫描器，使用YAML模板进行漏洞检测",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(nuclei)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Nuclei参数",
+          "type": "string"
+        },
+        "severity": {
+          "description": "严重程度过滤（critical,high,medium,low,info）",
+          "type": "string"
+        },
+        "tags": {
+          "description": "标签过滤（如cve,rce,lfi）",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标URL或IP",
+          "type": "string"
+        },
+        "template": {
+          "description": "自定义模板路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.objdump",
+    "name": "objdump",
+    "title": "二进制文件反汇编工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(objdump)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的objdump参数。用于传递未在参数列表中定义的objdump选项。",
+          "type": "string"
+        },
+        "binary": {
+          "description": "要分析的二进制文件路径",
+          "type": "string"
+        },
+        "disassemble": {
+          "default": true,
+          "description": "反汇编二进制文件",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.one-gadget",
+    "name": "one-gadget",
+    "title": "在libc中查找one-shot RCE gadget的工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(one_gadget)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的one-gadget参数。用于传递未在参数列表中定义的one-gadget选项。",
+          "type": "string"
+        },
+        "level": {
+          "default": 1,
+          "description": "约束级别（0, 1, 2）",
+          "type": "number"
+        },
+        "libc_path": {
+          "description": "libc二进制文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "libc_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.pacu",
+    "name": "pacu",
+    "title": "AWS渗透测试框架",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(pacu)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的pacu参数。用于传递未在参数列表中定义的pacu选项。",
+          "type": "string"
+        },
+        "modules": {
+          "description": "要运行的模块（逗号分隔）",
+          "type": "string"
+        },
+        "regions": {
+          "description": "AWS区域（逗号分隔）",
+          "type": "string"
+        },
+        "session_name": {
+          "default": "hexstrike_session",
+          "description": "Pacu会话名称",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.paramspider",
+    "name": "paramspider",
+    "title": "从Web档案中挖掘参数",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(paramspider)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的paramspider参数。用于传递未在参数列表中定义的paramspider选项。",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "exclude": {
+          "description": "要排除的文件扩展名",
+          "type": "string"
+        },
+        "level": {
+          "default": 2,
+          "description": "挖掘深度级别",
+          "type": "number"
+        },
+        "output": {
+          "description": "输出文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.prowler",
+    "name": "prowler",
+    "title": "云安全评估工具（AWS, Azure, GCP）",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(prowler)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的prowler参数。用于传递未在参数列表中定义的prowler选项。",
+          "type": "string"
+        },
+        "checks": {
+          "description": "要运行的特定检查",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "json",
+          "description": "输出格式（json, csv, html）",
+          "type": "string"
+        },
+        "profile": {
+          "default": "default",
+          "description": "AWS配置文件",
+          "type": "string"
+        },
+        "provider": {
+          "default": "aws",
+          "description": "云提供商（aws, azure, gcp）",
+          "type": "string"
+        },
+        "region": {
+          "description": "要扫描的特定区域",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.pwninit",
+    "name": "pwninit",
+    "title": "CTF二进制漏洞利用设置工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(pwninit)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的pwninit参数。用于传递未在参数列表中定义的pwninit选项。",
+          "type": "string"
+        },
+        "binary": {
+          "description": "二进制文件路径",
+          "type": "string"
+        },
+        "ld": {
+          "description": "Loader文件路径",
+          "type": "string"
+        },
+        "libc": {
+          "description": "libc文件路径",
+          "type": "string"
+        },
+        "template_type": {
+          "default": "python",
+          "description": "模板类型（python, c）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.pwntools",
+    "name": "pwntools",
+    "title": "CTF和漏洞利用开发框架",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "exploit_type": {
+          "default": "local",
+          "description": "漏洞利用类型标签（PWN_EXPLOIT_TYPE）",
+          "type": "string"
+        },
+        "script_content": {
+          "description": "Python脚本内容（使用pwntools）",
+          "type": "string"
+        },
+        "target_binary": {
+          "default": "",
+          "description": "本地二进制文件路径（注入PWN_BINARY）",
+          "type": "string"
+        },
+        "target_host": {
+          "default": "",
+          "description": "远程主机地址（PWN_HOST）",
+          "type": "string"
+        },
+        "target_port": {
+          "default": "",
+          "description": "远程端口（PWN_PORT）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "script_content"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.quake_search",
+    "name": "quake_search",
+    "title": "Quake网络空间搜索接口，支持自定义query、size、fields",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "fields": {
+          "default": "ip,port",
+          "description": "返回字段（可选），多个字段用英文逗号分隔。",
+          "type": "string"
+        },
+        "latest": {
+          "default": true,
+          "description": "是否优先返回最新索引结果（可选）。",
+          "type": "boolean"
+        },
+        "query": {
+          "description": "Quake DSL 查询语句（必需）。",
+          "type": "string"
+        },
+        "size": {
+          "default": 10,
+          "description": "返回结果数量（可选）。",
+          "type": "number"
+        },
+        "start": {
+          "default": 0,
+          "description": "分页起始偏移（可选），从 0 开始。",
+          "type": "number"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.query_assets",
+    "name": "query_assets",
+    "title": "查询资产",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "asset:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.query_execution_result",
+    "name": "query_execution_result",
+    "title": "查询工具执行结果，支持分页、搜索和过滤大结果集",
+    "class": "readonly",
+    "runtime": "go-internal",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "db.query(executions)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "execution_id": {
+          "description": "工具执行的ID。从工具执行完成后的返回消息中获取。",
+          "type": "string"
+        },
+        "filter": {
+          "description": "过滤条件。只返回包含此关键词的行。",
+          "type": "string"
+        },
+        "limit": {
+          "default": 100,
+          "description": "每页返回的行数。控制单次查询返回的数据量。",
+          "type": "number"
+        },
+        "page": {
+          "default": 1,
+          "description": "要查询的页码。从1开始计数。",
+          "type": "number"
+        },
+        "search": {
+          "description": "搜索关键词。在结果中搜索包含此关键词的行。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "execution_id"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.radare2",
+    "name": "radare2",
+    "title": "二进制分析和逆向工程框架，支持反汇编、调试和脚本分析",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(r2)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的radare2参数。用于传递未在参数列表中定义的radare2选项。",
+          "type": "string"
+        },
+        "arch": {
+          "description": "指定目标架构。",
+          "type": "string"
+        },
+        "auto_analyze": {
+          "default": false,
+          "description": "自动分析二进制文件。相当于执行 \"aaa\" 命令。",
+          "type": "boolean"
+        },
+        "base_address": {
+          "description": "设置基址（base address）。用于加载地址。",
+          "type": "string"
+        },
+        "bits": {
+          "description": "指定目标位数（16, 32, 64）。",
+          "type": "number"
+        },
+        "commands": {
+          "description": "要执行的Radare2命令。可以是单个命令或多个命令（用分号分隔）。",
+          "type": "string"
+        },
+        "debug": {
+          "default": false,
+          "description": "调试模式。可以附加到进程或调试文件。",
+          "type": "boolean"
+        },
+        "eval": {
+          "description": "设置配置变量。格式为 key=value。",
+          "type": "string"
+        },
+        "project": {
+          "description": "加载或保存项目文件。",
+          "type": "string"
+        },
+        "quiet": {
+          "default": false,
+          "description": "静默模式。不显示启动信息和提示符。",
+          "type": "boolean"
+        },
+        "script_file": {
+          "description": "要执行的脚本文件路径。脚本文件包含Radare2命令，每行一个命令。",
+          "type": "string"
+        },
+        "seek": {
+          "description": "设置起始地址。可以是十六进制地址或表达式。",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标文件、进程ID或特殊值。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.read_file",
+    "name": "read_file",
+    "title": "读工作区文件",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "agent:local-execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.record_vulnerability",
+    "name": "record_vulnerability",
+    "title": "记录漏洞",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "vulnerability:write",
+    "approval": "inherited",
+    "evidence": true,
+    "source": "builtin"
+  },
+  {
+    "id": "core.responder",
+    "name": "responder",
+    "title": "LLMNR/NBT-NS/MDNS投毒和凭据收集工具",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "default": "",
+          "description": "额外的Responder参数（直接追加）",
+          "type": "string"
+        },
+        "analyze": {
+          "default": false,
+          "description": "仅分析模式（-A）",
+          "type": "boolean"
+        },
+        "duration": {
+          "default": 300,
+          "description": "运行持续时间（秒，0表示直到手动停止）",
+          "type": "number"
+        },
+        "fingerprint": {
+          "default": false,
+          "description": "指纹识别模式（-f）",
+          "type": "boolean"
+        },
+        "interface": {
+          "default": "eth0",
+          "description": "网络接口（-I）",
+          "type": "string"
+        },
+        "wpad": {
+          "default": true,
+          "description": "启用WPAD恶意代理（-w）",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.restore_project_fact",
+    "name": "restore_project_fact",
+    "title": "恢复项目事实",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "project:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.ropgadget",
+    "name": "ropgadget",
+    "title": "ROP gadget搜索工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(ROPgadget)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的ropgadget参数。用于传递未在参数列表中定义的ropgadget选项。",
+          "type": "string"
+        },
+        "binary": {
+          "description": "要分析的二进制文件路径",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.ropper",
+    "name": "ropper",
+    "title": "高级ROP/JOP gadget搜索工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(ropper)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的ropper参数。用于传递未在参数列表中定义的ropper选项。",
+          "type": "string"
+        },
+        "arch": {
+          "description": "目标架构（x86, x86_64, arm等）",
+          "type": "string"
+        },
+        "binary": {
+          "description": "要分析的二进制文件路径",
+          "type": "string"
+        },
+        "gadget_type": {
+          "default": "rop",
+          "description": "Gadget类型（rop, jop, sys, all）",
+          "type": "string"
+        },
+        "quality": {
+          "default": 1,
+          "description": "Gadget质量级别（1-5）",
+          "type": "number"
+        },
+        "search_string": {
+          "description": "要搜索的特定gadget模式",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binary"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.rpcclient",
+    "name": "rpcclient",
+    "title": "RPC枚举工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "default": "",
+          "description": "额外的rpcclient参数。用于传递未在参数列表中定义的rpcclient选项。",
+          "type": "string"
+        },
+        "commands": {
+          "default": "enumdomusers;enumdomgroups;querydominfo",
+          "description": "RPC命令（分号分隔）",
+          "type": "string"
+        },
+        "domain": {
+          "default": "",
+          "description": "域名",
+          "type": "string"
+        },
+        "password": {
+          "default": "",
+          "description": "密码",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标IP地址",
+          "type": "string"
+        },
+        "username": {
+          "default": "",
+          "description": "用户名",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.rustscan",
+    "name": "rustscan",
+    "title": "超快速端口扫描（Rust）；可选 greppable、批量与脚本级别",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(rustscan)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "未列在上面的选项可写在这里，空格分隔。",
+          "type": "string"
+        },
+        "batch_size": {
+          "description": "每批并发端口数；越大越快，受 OS 打开文件数限制。官方默认 4500",
+          "type": "number"
+        },
+        "exclude_addresses": {
+          "description": "排除地址，逗号分隔 CIDR/IP/主机",
+          "type": "string"
+        },
+        "exclude_ports": {
+          "description": "排除端口，逗号分隔。示例：`80,443`",
+          "type": "string"
+        },
+        "greppable": {
+          "default": false,
+          "description": "Greppable 模式：只输出端口，适合脚本解析或写入文件",
+          "type": "boolean"
+        },
+        "ports": {
+          "description": "要扫描的端口，**仅**逗号分隔列表，对应 `-p`。",
+          "type": "string"
+        },
+        "range": {
+          "description": "端口范围，格式 start-end，对应 `-r`。",
+          "type": "string"
+        },
+        "scan_order": {
+          "description": "扫描顺序：serial 升序；random 随机",
+          "enum": [
+            "serial",
+            "random"
+          ],
+          "type": "string"
+        },
+        "scripts": {
+          "default": "none",
+          "description": "脚本级别；**必须**传字符串，勿传 true/false。",
+          "enum": [
+            "none",
+            "default",
+            "custom"
+          ],
+          "type": "string"
+        },
+        "target": {
+          "description": "对应 `-a`：逗号分隔的 CIDR、IP 或主机名；也可为含换行/列表的文件路径。",
+          "type": "string"
+        },
+        "timeout_ms": {
+          "description": "单端口超时（毫秒）。官方默认 1500",
+          "type": "number"
+        },
+        "top_ports": {
+          "default": false,
+          "description": "使用内置 top 1000 端口（等价于传 `--top`）",
+          "type": "boolean"
+        },
+        "tries": {
+          "description": "判定关闭前的重试次数；0 会被纠正为 1",
+          "type": "number"
+        },
+        "ulimit": {
+          "default": 5000,
+          "description": "提升扫描用的 ulimit；依系统 fd 限制调整",
+          "type": "number"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.scout-suite",
+    "name": "scout-suite",
+    "title": "多云安全评估工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(scout)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的scout-suite参数。用于传递未在参数列表中定义的scout-suite选项。",
+          "type": "string"
+        },
+        "profile": {
+          "default": "default",
+          "description": "AWS配置文件",
+          "type": "string"
+        },
+        "provider": {
+          "default": "aws",
+          "description": "云提供商（aws, azure, gcp, aliyun, oci）",
+          "type": "string"
+        },
+        "report_dir": {
+          "default": "/tmp/scout-suite",
+          "description": "报告保存目录",
+          "type": "string"
+        },
+        "services": {
+          "description": "要评估的特定服务",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.search_knowledge_base",
+    "name": "search_knowledge_base",
+    "title": "检索知识库",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "knowledge:read",
+    "approval": "never",
+    "evidence": true,
+    "source": "builtin"
+  },
+  {
+    "id": "core.search_project_facts",
+    "name": "search_project_facts",
+    "title": "检索项目事实",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "project:read",
+    "approval": "never",
+    "source": "builtin"
+  },
+  {
+    "id": "core.shodan_search",
+    "name": "shodan_search",
+    "title": "Shodan网络空间搜索，支持search与count模式",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "count_only": {
+          "default": false,
+          "description": "是否仅统计总数（可选）。",
+          "type": "boolean"
+        },
+        "facets": {
+          "description": "分面统计字段（可选）。",
+          "type": "string"
+        },
+        "fields": {
+          "description": "指定返回字段（可选，仅 search 模式生效）。",
+          "type": "string"
+        },
+        "minify": {
+          "default": true,
+          "description": "是否精简返回字段（可选，仅 search 模式生效）。",
+          "type": "boolean"
+        },
+        "page": {
+          "default": 1,
+          "description": "页码（可选，仅 search 模式生效），从 1 开始，默认 1。",
+          "type": "number"
+        },
+        "query": {
+          "description": "Shodan 搜索语句（必需）。",
+          "type": "string"
+        },
+        "size": {
+          "description": "返回结果数量（可选，仅 search 模式生效）。",
+          "type": "number"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.smbmap",
+    "name": "smbmap",
+    "title": "SMB共享枚举和访问工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(smbmap)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的SMBMap参数",
+          "type": "string"
+        },
+        "domain": {
+          "description": "域名",
+          "type": "string"
+        },
+        "password": {
+          "description": "密码",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标IP地址",
+          "type": "string"
+        },
+        "username": {
+          "description": "用户名",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.sqlmap",
+    "name": "sqlmap",
+    "title": "自动化SQL注入检测和利用工具，用于发现和利用SQL注入漏洞",
+    "class": "destructive",
+    "runtime": "recipe:exec",
+    "permission": "agent:destructive-execute",
+    "approval": "always",
+    "grants": [
+      "fs.read(*)",
+      "process.exec(sqlmap)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的SQLMap参数。用于传递未在参数列表中定义的SQLMap选项。",
+          "type": "string"
+        },
+        "batch": {
+          "default": true,
+          "description": "非交互模式，自动选择默认选项，不需要用户输入。",
+          "type": "boolean"
+        },
+        "cookie": {
+          "description": "Cookie字符串，用于Cookie注入检测。",
+          "type": "string"
+        },
+        "data": {
+          "description": "POST数据字符串，用于POST请求的SQL注入检测。",
+          "type": "string"
+        },
+        "level": {
+          "default": 3,
+          "description": "测试级别，范围1-5，级别越高测试越全面但耗时越长。",
+          "type": "number"
+        },
+        "url": {
+          "description": "目标URL，包含可能存在SQL注入的参数。",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.steghide",
+    "name": "steghide",
+    "title": "隐写术分析工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(steghide)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "action": {
+          "description": "操作类型（extract, embed, info）",
+          "type": "string"
+        },
+        "additional_args": {
+          "description": "额外的steghide参数。用于传递未在参数列表中定义的steghide选项。",
+          "type": "string"
+        },
+        "cover_file": {
+          "description": "载体文件路径（embed/info操作使用 -cf）",
+          "type": "string"
+        },
+        "embed_file": {
+          "description": "要嵌入的文件（embed操作时）",
+          "type": "string"
+        },
+        "passphrase": {
+          "description": "密码",
+          "type": "string"
+        },
+        "stego_file": {
+          "description": "隐写文件路径（embed时输出，extract时输入）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.strings",
+    "name": "strings",
+    "title": "从二进制文件中提取字符串",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(strings)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的strings参数。用于传递未在参数列表中定义的strings选项。",
+          "type": "string"
+        },
+        "file_path": {
+          "description": "要分析的文件路径",
+          "type": "string"
+        },
+        "min_len": {
+          "default": 4,
+          "description": "最小字符串长度",
+          "type": "number"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.subfinder",
+    "name": "subfinder",
+    "title": "被动子域名发现工具，使用多个数据源",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(subfinder)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Subfinder参数",
+          "type": "string"
+        },
+        "all_sources": {
+          "default": false,
+          "description": "使用所有数据源",
+          "type": "boolean"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "silent": {
+          "default": true,
+          "description": "静默模式",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.terrascan",
+    "name": "terrascan",
+    "title": "基础设施即代码安全扫描工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(terrascan)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的terrascan参数。用于传递未在参数列表中定义的terrascan选项。",
+          "type": "string"
+        },
+        "iac_dir": {
+          "default": ".",
+          "description": "IaC目录",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "json",
+          "description": "输出格式（json, yaml, xml）",
+          "type": "string"
+        },
+        "policy_type": {
+          "description": "要使用的策略类型",
+          "type": "string"
+        },
+        "scan_type": {
+          "default": "all",
+          "description": "扫描类型（all, terraform, k8s等）",
+          "type": "string"
+        },
+        "severity": {
+          "description": "严重程度过滤（high, medium, low）",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.trivy",
+    "name": "trivy",
+    "title": "容器和文件系统漏洞扫描器",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(trivy)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的Trivy参数。用于传递未在参数列表中定义的Trivy选项。",
+          "type": "string"
+        },
+        "output_format": {
+          "default": "json",
+          "description": "输出格式（json, table, sarif）",
+          "type": "string"
+        },
+        "scan_type": {
+          "default": "image",
+          "description": "扫描类型（image, fs, repo, config）",
+          "type": "string"
+        },
+        "severity": {
+          "description": "严重程度过滤（UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL）",
+          "type": "string"
+        },
+        "target": {
+          "description": "扫描目标（镜像名、目录、仓库）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.update_asset",
+    "name": "update_asset",
+    "title": "更新资产",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "asset:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.upsert_project_fact",
+    "name": "upsert_project_fact",
+    "title": "写入项目事实",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "project:write",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.virustotal_search",
+    "name": "virustotal_search",
+    "title": "VirusTotal 子域名查询工具，通过 VirusTotal API 被动收集域名子域名",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "domain": {
+          "description": "要查询的目标域名（必需）。",
+          "type": "string"
+        },
+        "include_ips": {
+          "default": false,
+          "description": "是否包含 IP 地址信息（可选）。",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 40,
+          "description": "返回结果数量限制（可选）。",
+          "type": "number"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.volatility3",
+    "name": "volatility3",
+    "title": "Volatility3内存取证分析工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(volatility3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的volatility3参数。用于传递未在参数列表中定义的volatility3选项。",
+          "type": "string"
+        },
+        "memory_file": {
+          "description": "内存转储文件路径",
+          "type": "string"
+        },
+        "output_file": {
+          "description": "输出文件路径",
+          "type": "string"
+        },
+        "plugin": {
+          "description": "要执行的Volatility3插件",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_file",
+        "plugin"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.wafw00f",
+    "name": "wafw00f",
+    "title": "WAF识别和指纹识别工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(wafw00f)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的wafw00f参数。用于传递未在参数列表中定义的wafw00f选项。",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标URL或IP",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.wait_tool_execution",
+    "name": "wait_tool_execution",
+    "title": "等待执行完成",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "monitor:read",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.waybackurls",
+    "name": "waybackurls",
+    "title": "从Wayback Machine获取历史URL",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(waybackurls)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的waybackurls参数。用于传递未在参数列表中定义的waybackurls选项。",
+          "type": "string"
+        },
+        "domain": {
+          "description": "目标域名",
+          "type": "string"
+        },
+        "get_versions": {
+          "default": false,
+          "description": "获取所有版本的URL",
+          "type": "boolean"
+        },
+        "no_subs": {
+          "default": false,
+          "description": "不包含子域名",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.webshell_exec",
+    "name": "webshell_exec",
+    "title": "WebShell 命令执行",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "webshell:write",
+    "approval": "always",
+    "grants": [
+      "c2.exec()"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.webshell_file_list",
+    "name": "webshell_file_list",
+    "title": "WebShell 列目录",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "webshell:read",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.webshell_file_read",
+    "name": "webshell_file_read",
+    "title": "WebShell 读文件",
+    "class": "readonly",
+    "runtime": "go-builtin",
+    "permission": "webshell:read",
+    "approval": "inherited",
+    "source": "builtin"
+  },
+  {
+    "id": "core.webshell_file_write",
+    "name": "webshell_file_write",
+    "title": "WebShell 写文件",
+    "class": "destructive",
+    "runtime": "go-builtin",
+    "permission": "webshell:write",
+    "approval": "always",
+    "grants": [
+      "c2.exec()"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.wpscan",
+    "name": "wpscan",
+    "title": "WordPress安全扫描器，用于检测WordPress漏洞",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(wpscan)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的WPScan参数",
+          "type": "string"
+        },
+        "url": {
+          "description": "WordPress站点URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.write_file",
+    "name": "write_file",
+    "title": "写工作区文件",
+    "class": "mutating",
+    "runtime": "go-builtin",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "fs.write(workspace)"
+    ],
+    "source": "builtin"
+  },
+  {
+    "id": "core.x8",
+    "name": "x8",
+    "title": "隐藏参数发现工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(x8)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的x8参数。用于传递未在参数列表中定义的x8选项。",
+          "type": "string"
+        },
+        "body": {
+          "description": "请求体",
+          "type": "string"
+        },
+        "headers": {
+          "description": "自定义请求头",
+          "type": "string"
+        },
+        "method": {
+          "default": "GET",
+          "description": "HTTP方法",
+          "type": "string"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        },
+        "wordlist": {
+          "default": "/usr/share/wordlists/x8/params.txt",
+          "description": "参数字典",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.xsser",
+    "name": "xsser",
+    "title": "XSS漏洞测试工具",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(xsser)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的xsser参数。用于传递未在参数列表中定义的xsser选项。",
+          "type": "string"
+        },
+        "params": {
+          "description": "要测试的参数",
+          "type": "string"
+        },
+        "url": {
+          "description": "目标URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.xxd",
+    "name": "xxd",
+    "title": "十六进制转储工具",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(xxd)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的xxd参数。用于传递未在参数列表中定义的xxd选项。",
+          "type": "string"
+        },
+        "file_path": {
+          "description": "要转储的文件路径",
+          "type": "string"
+        },
+        "length": {
+          "description": "要读取的字节数",
+          "type": "string"
+        },
+        "offset": {
+          "default": "0",
+          "description": "开始读取的偏移量",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file_path"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.zap",
+    "name": "zap",
+    "title": "OWASP ZAP Web应用安全扫描器",
+    "class": "mutating",
+    "runtime": "recipe:exec",
+    "permission": "agent:local-execute",
+    "approval": "inherited",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(zap-cli)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的zap参数。用于传递未在参数列表中定义的zap选项。",
+          "type": "string"
+        },
+        "api_key": {
+          "description": "ZAP API密钥",
+          "type": "string"
+        },
+        "daemon": {
+          "default": false,
+          "description": "以守护进程模式运行",
+          "type": "boolean"
+        },
+        "format_type": {
+          "default": "xml",
+          "description": "输出格式（xml, json, html）",
+          "type": "string"
+        },
+        "output_file": {
+          "description": "输出文件路径",
+          "type": "string"
+        },
+        "port": {
+          "default": "8090",
+          "description": "ZAP守护进程端口",
+          "type": "string"
+        },
+        "scan_type": {
+          "default": "baseline",
+          "description": "扫描类型（baseline, full, api）",
+          "type": "string"
+        },
+        "target": {
+          "description": "目标URL",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.zoomeye_search",
+    "name": "zoomeye_search",
+    "title": "ZoomEye网络空间搜索引擎，支持灵活的查询参数配置",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "net.connect(target)",
+      "process.exec(python3)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "facets": {
+          "description": "统计项（可选）",
+          "type": "string"
+        },
+        "fields": {
+          "default": "ip,port,domain,update_time",
+          "description": "返回字段列表（可选）",
+          "type": "string"
+        },
+        "ignore_cache": {
+          "default": false,
+          "description": "是否忽略缓存（可选）",
+          "type": "boolean"
+        },
+        "page": {
+          "default": 1,
+          "description": "页码（可选）",
+          "type": "number"
+        },
+        "pagesize": {
+          "default": 5,
+          "description": "每页结果数量（可选）",
+          "type": "number"
+        },
+        "query": {
+          "description": "ZoomEye查询语句（必需）",
+          "type": "string"
+        },
+        "sub_type": {
+          "default": "v4",
+          "description": "数据类型（可选）",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "id": "core.zsteg",
+    "name": "zsteg",
+    "title": "LSB 隐写检测工具，用于检测 PNG/BMP 图片中的隐写数据",
+    "class": "readonly",
+    "runtime": "recipe:exec",
+    "permission": "agent:execute",
+    "approval": "never",
+    "grants": [
+      "fs.read(workspace)",
+      "process.exec(zsteg)"
+    ],
+    "source": "recipe",
+    "paramsSchema": {
+      "additionalProperties": true,
+      "properties": {
+        "additional_args": {
+          "description": "额外的zsteg参数。用于传递未在参数列表中定义的zsteg选项。",
+          "type": "string"
+        },
+        "all": {
+          "description": "检测所有可能的隐写方法",
+          "type": "boolean"
+        },
+        "file": {
+          "description": "要分析的图片文件路径",
+          "type": "string"
+        },
+        "lsb": {
+          "description": "只检测 LSB 隐写",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    }
+  }
+]

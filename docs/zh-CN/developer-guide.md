@@ -6,9 +6,11 @@
 
 ```text
 cmd/server/              Web 服务入口
-internal/app/            应用组装、路由注册、MCP 工具注册
+internal/app/            应用组装、路由注册、MCP 工具注册、能力策略装配（唯一装配点）
+internal/capability/     能力身份/清单/授权/审批下限（叶子包，不依赖任何业务包）
 internal/handler/        HTTP Handler
-internal/database/       SQLite 数据访问
+internal/database/       SQLite 数据访问（存量；新域见 internal/store）
+internal/store/          按域拆分的持久层：一个域一个文件，只吃 *sql.DB，能独立用真库测试
 internal/security/       认证、限流、Shell 执行
 internal/mcp/            MCP Server、外部 MCP 管理
 internal/multiagent/     Eino 单代理、多代理、中间件
@@ -35,11 +37,18 @@ go run ./cmd/server --config config.yaml
 
 ## 路由
 
-路由集中在 `internal/app/app.go` 的 `registerRoutes` 中。新增业务接口通常需要：
+路由由 `internal/app` 的**分域注册器**装配：`setupRoutes(routeDeps)` 只负责建组、挂中间件并逐个调用
+`routes_<domain>.go` 里的 `register<Domain>Routes`。装配点仍然唯一（`internal/app`），但"所有路由集中在
+`app.go` 一个函数里"这条旧约定已被解掉——那个函数曾经 558 行、30 个位置参数，加一个接口要在大函数里找位置。
+路由表由 `internal/app/testdata/routes.golden.txt`（278 条）与 `TestRouteTableMatchesGolden` 守住，
+所以移动注册不会悄悄改变服务端实际暴露的路径。新增业务接口通常需要：
 
 1. 在 `internal/handler/` 增加 Handler。
-2. 在 `internal/database/` 增加必要的数据访问。
-3. 在 `internal/app/app.go` 构造并注册路由。
+2. 增加必要的数据访问：新域放 `internal/store/`（一张表一个主人，handler 侧只依赖消费方自定义接口），
+   存量域的扩展才放 `internal/database/`。**HTTP 层不许写裸 SQL**——`TestHandlerRawSQLRatchet` 按
+   `h.db`/`m.db` 两个接收者分别设基线，只许降不许升。
+3. 在对应域的 `internal/app/routes_<domain>.go` 里注册路由（没有对应文件时才新建一个），
+   并让 `go test ./internal/routes -run TestWriteGolden`（需 `CSAI_WRITE_ROUTE_GOLDEN=1`）更新路由基线。
 4. 如需对外文档，更新 `internal/handler/openapi.go`。
 5. 如需前端调用，更新 `web/static/js/`。
 
@@ -47,6 +56,9 @@ go run ./cmd/server --config config.yaml
 
 默认 SQLite。新增表或字段时：
 
+- 新域优先落在 `internal/store/`：构造时只要 `*sql.DB`，因此可以脱离 HTTP 层用真 SQLite 测试；
+  它不 import `internal/database`/`internal/config`/`internal/handler`，这条边界由 `.go-arch-lint.yml`
+  与 `TestStorePackageHoldsNoHTTPConcerns` 双向钉住。
 - 将迁移逻辑放到数据库初始化或对应模块迁移函数。
 - 保持向后兼容，避免破坏已有 `data/conversations.db`。
 - 添加针对迁移和核心查询的单测。
@@ -55,7 +67,7 @@ go run ./cmd/server --config config.yaml
 
 命令工具优先通过 `tools/*.yaml` 增加，不必改 Go 代码。需要 Go 内置工具时：
 
-- 在合适模块注册 MCP Tool。
+- 在合适模块注册 MCP Tool，并在 `internal/capability` 登记策略：内置工具加一行 `policy_builtin.go`，配方工具在 `tools/*.yaml` 写 `capability:` 段（新增配方不需要改 Go 代码）。运行 `make generate` 更新生成目录。未登记策略的工具会被拒绝执行。
 - 定义清晰 `InputSchema`。
 - 处理超时、错误、审计和 HITL 上下文。
 - 避免把高风险操作默认免审批。

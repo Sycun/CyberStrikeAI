@@ -66,7 +66,7 @@ Permissions use `module:action`. Common actions are `read`, `write`, `delete`, a
 | Account | `auth:self` |
 | Dashboard | `dashboard:read` |
 | Chat | `chat:read`, `chat:write`, `chat:delete` |
-| Agent | `agent:execute`, `agent:local-execute` |
+| Agent | `agent:execute`, `agent:local-execute`, `agent:destructive-execute` |
 | HITL | `hitl:read`, `hitl:write` |
 | Tasks | `tasks:read`, `tasks:write`, `tasks:delete` |
 | Projects | `project:read`, `project:write`, `project:delete` |
@@ -94,7 +94,8 @@ Permissions use `module:action`. Common actions are `read`, `write`, `delete`, a
 Important distinctions:
 
 - `agent:execute` runs Agents but does not grant local filesystem, shell, or arbitrary configured command access.
-- `agent:local-execute` is the local execution fallback and should be limited to trusted operators.
+- `agent:local-execute` authorizes only the local/configured recipes whose manifest declares that permission; it is no longer a fallback for unregistered tools.
+- `agent:destructive-execute` separately authorizes capabilities that run model-supplied code (`exec`, `angr`, `pwntools`), each of which still requires a human decision per call. See [capability-platform.md](capability-platform.md).
 - `mcp:execute` protects the authenticated MCP HTTP entry point.
 - `mcp:external:execute` allows Agent calls to external MCP tools and currently also requires `all` scope.
 - `fofa:execute` is kept for backward compatibility, but it now protects the Reconnaissance page for FOFA, ZoomEye, Quake, and Shodan searches.
@@ -230,7 +231,7 @@ files:read / files:write
 hitl:read / hitl:write
 ```
 
-Add `agent:local-execute` or `terminal:execute` only when local commands are required. Add individual `:delete` permissions only when deletion is part of the job.
+Add `agent:local-execute` or `terminal:execute` only when local commands are required, and `agent:destructive-execute` only when the role must run model-supplied code. Add individual `:delete` permissions only when deletion is part of the job.
 
 ### Robot service account
 
@@ -253,7 +254,7 @@ The HTTP user becomes an immutable Principal propagated to single-agent, multi-a
 
 ### Built-in MCP
 
-Every built-in tool requires an explicit authorization policy. WebShell tools check both `webshell:read/write/delete` and the target `connection_id`; project, vulnerability, task, and C2 tools validate resource arguments as well. An unregistered built-in policy fails closed. Other local/configured tools require `agent:local-execute`.
+Every built-in tool requires an explicit authorization policy. WebShell tools check both `webshell:read/write/delete` and the target `connection_id`; project, vulnerability, task, and C2 tools validate resource arguments as well. **Every callable tool fails closed when it has no registered manifest, configured recipes included** — built-ins live in `internal/capability/policy_builtin.go`, recipes declare a `capability:` block in `tools/*.yaml`. There is one decision entry point on the execution path.
 
 ### External MCP
 
@@ -338,7 +339,7 @@ curl -X POST http://localhost:8080/api/rbac/resource-assignments \
 
 - Use individual administrator accounts instead of sharing one password.
 - Name custom roles by job function and document purpose/owner.
-- Review high-risk permissions separately: `terminal:execute`, `agent:local-execute`, `c2:write/delete`, `webshell:write/delete`, `rbac:write`, and `config:write`.
+- Review high-risk permissions separately: `terminal:execute`, `agent:local-execute`, `agent:destructive-execute`, `c2:write/delete`, `webshell:write/delete`, `rbac:write`, and `config:write`.
 - Periodically review `all` roles, service accounts, robot allowlists, and dormant users.
 - On offboarding, disable the account first, then revoke robot bindings, assignments, and sessions.
 - Monitor RBAC denials, user/role changes, resource assignments, and robot service-account execution in audit logs.

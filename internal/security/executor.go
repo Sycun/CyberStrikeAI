@@ -12,8 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"cyberstrike-ai/internal/capability"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/mcp"
+	"cyberstrike-ai/internal/pluginhost"
 	"cyberstrike-ai/internal/tooloutput"
 
 	"github.com/creack/pty"
@@ -125,6 +127,12 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 		zap.Any("args", args),
 	)
 
+	// 能力清单声明为插件运行时时，调用改走进程外主机；未配置就是拒绝，
+	// 不会退回进程内执行——那正是"商店不能拓宽批准范围"这条约束要求的行为。
+	if result, handled, err := e.executeViaPluginHost(ctx, toolName, args); handled {
+		return result, err
+	}
+
 	// 特殊处理：exec工具直接执行系统命令
 	if toolName == "exec" {
 		e.logger.Debug("执行exec工具")
@@ -184,7 +192,14 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 	}
 
 	// 执行命令
-	cmd := exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
+	command := ResolvePythonCommand(toolConfig.Command)
+	if command != toolConfig.Command {
+		e.logger.Debug("Python 配方已绑定到项目虚拟环境",
+			zap.String("tool", toolName),
+			zap.String("interpreter", command),
+		)
+	}
+	cmd := exec.CommandContext(ctx, command, cmdArgs...)
 	applyDefaultTerminalEnv(cmd)
 	attachNonInteractiveStdin(cmd)
 	_ = prepareShellCmdSession(cmd)
@@ -205,7 +220,7 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 			e.logger.Info("检测到工具需要 TTY，使用 PTY 重试",
 				zap.String("tool", toolName),
 			)
-			cmd2 := exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
+			cmd2 := exec.CommandContext(ctx, command, cmdArgs...)
 			applyDefaultTerminalEnv(cmd2)
 			_ = prepareShellCmdSession(cmd2)
 			output, err = runCommandWithPTY(ctx, cmd2, cb, e.toolOutputMaxBytes, spill)
@@ -217,7 +232,7 @@ func (e *Executor) ExecuteTool(ctx context.Context, toolName string, args map[st
 			e.logger.Info("检测到工具需要 TTY，使用 PTY 重试",
 				zap.String("tool", toolName),
 			)
-			cmd2 := exec.CommandContext(ctx, toolConfig.Command, cmdArgs...)
+			cmd2 := exec.CommandContext(ctx, command, cmdArgs...)
 			applyDefaultTerminalEnv(cmd2)
 			_ = prepareShellCmdSession(cmd2)
 			output, err = runCommandWithPTY(ctx, cmd2, nil, e.toolOutputMaxBytes, spill)
@@ -1380,6 +1395,10 @@ func runCommandWithPTY(ctx context.Context, cmd *exec.Cmd, cb ToolOutputCallback
 // executeInternalTool 执行内部工具（不执行外部命令）
 func (e *Executor) executeInternalTool(ctx context.Context, toolName string, command string, args map[string]interface{}) (*mcp.ToolResult, error) {
 	internalToolType := strings.TrimPrefix(command, "internal:")
+	switch internalToolType {
+	case "query_execution_result":
+		return e.queryExecutionResult(ctx, args)
+	}
 	e.logger.Warn("未知的内部工具",
 		zap.String("toolName", toolName),
 		zap.String("internalToolType", internalToolType),
@@ -1512,4 +1531,39 @@ func getExitCodeValue(err error) int {
 		return *code
 	}
 	return -1
+}
+
+// executeViaPluginHost routes a capability whose manifest pins it to the
+// out-of-process runtime. It reports handled=true whenever the capability declares
+// a plugin runtime, so the caller never falls through to spawning the recipe in
+// this process, whether or not a host is configured.
+func (e *Executor) executeViaPluginHost(ctx context.Context, toolName string, args map[string]interface{}) (*mcp.ToolResult, bool, error) {
+	spec, err := capability.Global().Lookup(toolName)
+	if err != nil || !pluginhost.IsPluginRuntime(string(spec.Runtime)) {
+		return nil, false, nil
+	}
+	domain := pluginhost.DomainForTrust(spec.ID)
+	service := pluginhost.Global()
+	if service == nil || !service.Enabled() {
+		e.logger.Warn("能力需要插件运行时但主机未配置，按 fail-closed 拒绝",
+			zap.String("capability", spec.ID), zap.String("runtime", string(spec.Runtime)))
+		return nil, true, fmt.Errorf("capability %s requires the plugin runtime, which is not configured", spec.ID)
+	}
+
+	params, marshalErr := json.Marshal(args)
+	if marshalErr != nil {
+		return nil, true, fmt.Errorf("encode plugin parameters: %w", marshalErr)
+	}
+	result, invokeErr := service.Invoke(ctx, domain, spec.ID, params, spec.Timeout)
+	if invokeErr != nil {
+		return nil, true, invokeErr
+	}
+	toolResult := &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: result.Content}}}
+	if result.IsError || result.ErrorText != "" {
+		toolResult.IsError = true
+		if result.ErrorText != "" {
+			toolResult.Content = []mcp.Content{{Type: "text", Text: result.ErrorText}}
+		}
+	}
+	return toolResult, true, nil
 }

@@ -78,7 +78,7 @@ type robotPendingConfirmation struct {
 // RobotHandler 企业微信/钉钉/飞书等机器人回调处理
 type RobotHandler struct {
 	config               *config.Config
-	db                   *database.DB
+	db                   database.RobotStore
 	agentHandler         *AgentHandler
 	logger               *zap.Logger
 	mu                   sync.RWMutex
@@ -97,7 +97,7 @@ type RobotHandler struct {
 func NewRobotHandler(cfg *config.Config, db *database.DB, agentHandler *AgentHandler, logger *zap.Logger) *RobotHandler {
 	return &RobotHandler{
 		config:               cfg,
-		db:                   db,
+		db:                   database.Narrow[database.RobotStore](db),
 		agentHandler:         agentHandler,
 		logger:               logger,
 		sessions:             make(map[string]string),

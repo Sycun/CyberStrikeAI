@@ -5,30 +5,30 @@ import (
 	"strings"
 
 	"cyberstrike-ai/internal/authctx"
+	"cyberstrike-ai/internal/capability"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
 
-func isLocalPrivilegeTool(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "execute", "ls", "read_file", "write_file", "edit_file", "glob", "grep":
-		return true
-	default:
-		return false
-	}
-}
-
+// localToolPermissionDenied asks the capability registry which permission an
+// agent-local tool needs, instead of matching the tool name against a second
+// hand-kept list. A tool the registry does not know is left to the execution-path
+// policy, which fails closed.
 func localToolPermissionDenied(ctx context.Context, name string) bool {
-	if !isLocalPrivilegeTool(name) {
+	spec, err := capability.Global().Lookup(strings.ToLower(strings.TrimSpace(name)))
+	if err != nil || spec.Source != capability.SourceAgentLocal {
 		return false
 	}
 	principal, ok := authctx.PrincipalFromContext(ctx)
-	return !ok || !principal.HasPermission("agent:local-execute")
+	if !ok {
+		return true
+	}
+	return !principal.HasPermission(spec.Permission)
 }
 
 func localToolRBACMiddleware() compose.ToolMiddleware {
-	denied := "Permission denied: agent:local-execute is required for local filesystem and shell tools."
+	denied := "Permission denied: the capability registry requires agent:local-execute for local filesystem and shell tools."
 	return compose.ToolMiddleware{
 		Invokable: func(next compose.InvokableToolEndpoint) compose.InvokableToolEndpoint {
 			return func(ctx context.Context, input *compose.ToolInput) (*compose.ToolOutput, error) {

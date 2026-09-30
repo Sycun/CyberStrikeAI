@@ -2,6 +2,7 @@ package multiagent
 
 import (
 	"context"
+	providerpkg "cyberstrike-ai/internal/provider"
 	"errors"
 	"fmt"
 	"net"
@@ -77,9 +78,9 @@ func newEinoToolCallingChatModelFactory(
 			MaxCompletionTokens: &maxCompletionTokens,
 		}
 		if mode == einoModelModePlanner {
-			reasoning.ApplyPlanExecutePlannerModelConfig(modelCfg, &oa)
+			llm.ApplyPlanExecutePlannerModelConfig(modelCfg, &oa)
 		} else {
-			reasoning.ApplyToEinoChatModelConfig(modelCfg, &oa, reasoningClient)
+			llm.ApplyReasoningToChatModelConfig(modelCfg, &oa, reasoningClient)
 		}
 		baseModel, err := einoopenai.NewChatModel(ctx, modelCfg)
 		if err != nil {
@@ -143,15 +144,13 @@ func newEinoClaudeAgenticChatModel(
 }
 
 func supportsEinoAgenticBackend(oa config.OpenAIConfig) bool {
-	provider := strings.ToLower(strings.TrimSpace(oa.Provider))
-	return provider == "" ||
-		provider == "openai" ||
-		provider == "openai_compatible" ||
-		isEinoAgenticClaudeProvider(provider)
+	return providerpkg.AgenticBackendSupported(oa.Provider)
 }
 
+// isEinoAgenticClaudeProvider asks the dialect catalog which vendors speak the
+// messages API, replacing the two-name string comparison this package used to keep.
 func isEinoAgenticClaudeProvider(provider string) bool {
-	return llm.IsClaudeProvider(provider)
+	return providerpkg.IsAnthropicMessagesVendor(provider)
 }
 
 func agenticModelGateFactory(factory einoAgenticModelConfigFactory, oa config.OpenAIConfig, mode einoModelMode) einoAgenticModelFactory {

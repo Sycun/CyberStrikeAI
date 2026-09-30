@@ -4,24 +4,46 @@ import (
 	"strings"
 
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/mcp"
 )
 
 var auditActionsResourceRemoved = map[string]bool{
-	"delete":                  true,
-	"item_delete":             true,
-	"connection_delete":       true,
-	"listener_delete":         true,
-	"session_delete":          true,
-	"task_delete":             true,
-	"execution_delete":        true,
-	"execution_delete_batch":  true,
-	"delete_queue":            true,
-	"delete_batch_task":       true,
-	"markdown_delete":         true,
+	"delete":                 true,
+	"item_delete":            true,
+	"connection_delete":      true,
+	"listener_delete":        true,
+	"session_delete":         true,
+	"task_delete":            true,
+	"execution_delete":       true,
+	"execution_delete_batch": true,
+	"delete_queue":           true,
+	"delete_batch_task":      true,
+	"markdown_delete":        true,
+}
+
+// ResourceExistenceSource is the read surface this check needs: given the resource an audit row
+// points at, does that row still exist? Declared here because internal/audit is the consumer, and
+// listing eight lookups is cheaper than handing the audit log reader the whole 361-method database.
+//
+// The handlers' own store interfaces must be a superset of this one, since they pass their storage
+// in - internal/database/stores.go keeps AuditStore aligned with it.
+type ResourceExistenceSource interface {
+	ConversationExists(id string) (bool, error)
+	GetVulnerability(id string) (*database.Vulnerability, error)
+	GetBatchQueue(queueID string) (*database.BatchTaskQueueRow, error)
+	GetC2Listener(id string) (*database.C2Listener, error)
+	GetC2Session(id string) (*database.C2Session, error)
+	GetC2Task(id string) (*database.C2Task, error)
+	GetWebshellConnection(id string) (*database.WebShellConnection, error)
+	GetToolExecution(id string) (*mcp.ToolExecution, error)
 }
 
 // ApplyResourceAvailability sets log.ResourceAvailable when the linked resource can be checked.
-func ApplyResourceAvailability(db *database.DB, log *database.AuditLog) {
+//
+// db is an interface, so callers must pass one built by database.Narrow: a nil *database.DB stored
+// in an interface is not nil, and the guard below would then fall through into method calls on a nil
+// receiver instead of reporting "availability unknown".
+func ApplyResourceAvailability(db ResourceExistenceSource, log *database.AuditLog) {
 	if log == nil || strings.TrimSpace(log.ResourceID) == "" {
 		return
 	}
@@ -39,7 +61,7 @@ func ApplyResourceAvailability(db *database.DB, log *database.AuditLog) {
 	}
 }
 
-func resourceStillExists(db *database.DB, resourceType, resourceID string) (bool, bool) {
+func resourceStillExists(db ResourceExistenceSource, resourceType, resourceID string) (bool, bool) {
 	resourceID = strings.TrimSpace(resourceID)
 	if resourceID == "" {
 		return false, false

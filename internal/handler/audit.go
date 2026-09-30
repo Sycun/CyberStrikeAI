@@ -14,14 +14,14 @@ import (
 
 // AuditHandler serves platform audit log APIs.
 type AuditHandler struct {
-	db     *database.DB
+	db     database.AuditStore
 	audit  *audit.Service
 	logger *zap.Logger
 }
 
 // NewAuditHandler creates an audit log handler.
 func NewAuditHandler(db *database.DB, auditSvc *audit.Service, logger *zap.Logger) *AuditHandler {
-	return &AuditHandler{db: db, audit: auditSvc, logger: logger}
+	return &AuditHandler{db: database.Narrow[database.AuditStore](db), audit: auditSvc, logger: logger}
 }
 
 // Meta GET /api/audit/meta

@@ -11,7 +11,7 @@ import (
 
 // OpenAPIHandler OpenAPI处理器
 type OpenAPIHandler struct {
-	db               *database.DB
+	db               database.OpenAPIStore
 	logger           *zap.Logger
 	conversationHdlr *ConversationHandler
 	agentHdlr        *AgentHandler
@@ -20,7 +20,7 @@ type OpenAPIHandler struct {
 // NewOpenAPIHandler 创建新的OpenAPI处理器
 func NewOpenAPIHandler(db *database.DB, logger *zap.Logger, conversationHdlr *ConversationHandler, agentHdlr *AgentHandler) *OpenAPIHandler {
 	return &OpenAPIHandler{
-		db:               db,
+		db:               database.Narrow[database.OpenAPIStore](db),
 		logger:           logger,
 		conversationHdlr: conversationHdlr,
 		agentHdlr:        agentHdlr,

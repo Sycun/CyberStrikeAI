@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/rand"
+	providerpkg "cyberstrike-ai/internal/provider"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"cyberstrike-ai/internal/termout"
 	"cyberstrike-ai/internal/toolguard"
@@ -20,6 +22,9 @@ import (
 
 type Config struct {
 	Version     string                `yaml:"version,omitempty" json:"version,omitempty"` // 前端显示的版本号，如 v1.3.3
+	MCPStdio    MCPStdioConfig        `yaml:"mcp_stdio,omitempty"`
+	PluginHost  PluginHostConfig      `yaml:"plugin_host,omitempty"`
+	Artifacts   ArtifactConfig        `yaml:"artifacts,omitempty"`
 	Server      ServerConfig          `yaml:"server"`
 	Log         LogConfig             `yaml:"log"`
 	MCP         MCPConfig             `yaml:"mcp"`
@@ -854,10 +859,7 @@ type AIChannelConfig struct {
 }
 
 func (c AIChannelConfig) ToOpenAIConfig() OpenAIConfig {
-	provider := strings.TrimSpace(c.Provider)
-	if provider == "" || provider == "openai_compatible" {
-		provider = "openai"
-	}
+	provider := providerpkg.EffectiveProviderName(c.Provider)
 	return OpenAIConfig{
 		Provider:            provider,
 		APIKey:              c.APIKey,
@@ -1603,6 +1605,26 @@ type ToolConfig struct {
 	Parameters       []ParameterConfig `yaml:"parameters,omitempty"`         // 参数定义（可选）
 	ArgMapping       string            `yaml:"arg_mapping,omitempty"`        // 参数映射方式: "auto", "manual", "template"（可选）
 	AllowedExitCodes []int             `yaml:"allowed_exit_codes,omitempty"` // 允许的退出码列表（某些工具在成功时也返回非零退出码）
+
+	// Capability is the authorization manifest. A recipe without one is loaded
+	// but never registered, so the authorizer fails closed instead of falling
+	// back to a coarse permission.
+	Capability *CapabilityManifest `yaml:"capability,omitempty"`
+}
+
+// CapabilityManifest 是工具配方声明的能力身份、级别、权限与出网上限。
+// 它是能力注册表的输入：商店制品永远不能拓宽运维者已批准的范围。
+type CapabilityManifest struct {
+	ID             string   `yaml:"id"`
+	Version        string   `yaml:"version,omitempty"`
+	Class          string   `yaml:"class"`              // readonly | mutating | destructive
+	Permission     string   `yaml:"permission"`         // 需要的 RBAC 权限
+	Approval       string   `yaml:"approval,omitempty"` // never | inherited | always
+	Runtime        string   `yaml:"runtime,omitempty"`  // recipe:exec | plugin-host:python | go-internal
+	Grants         []string `yaml:"grants,omitempty"`   // 中介能力上限，如 net.connect(target)
+	Evidence       bool     `yaml:"evidence,omitempty"`
+	TimeoutSeconds int      `yaml:"timeout_seconds,omitempty"`
+	Publisher      string   `yaml:"publisher,omitempty"`
 }
 
 // ParameterConfig 参数配置
@@ -1618,6 +1640,69 @@ type ParameterConfig struct {
 	Format      string      `yaml:"format,omitempty"`    // 参数格式: "flag", "positional", "combined" (flag=value), "template"
 	Template    string      `yaml:"template,omitempty"`  // 模板字符串，如 "{flag} {value}" 或 "{value}"
 	Options     []string    `yaml:"options,omitempty"`   // 可选值列表（用于枚举）
+}
+
+// ArtifactConfig points at the store-side material the client enforces: the
+// publisher trust store and the revocation list. There is no option to accept an
+// unverified artifact.
+type ArtifactConfig struct {
+	RevocationsPath string `yaml:"revocations_path,omitempty"`
+	TrustStorePath  string `yaml:"trust_store_path,omitempty"`
+	InstallDir      string `yaml:"install_dir,omitempty"`
+	QuarantineDir   string `yaml:"quarantine_dir,omitempty"`
+	RefreshMinutes  int    `yaml:"refresh_minutes,omitempty"`
+}
+
+// PluginHostConfig configures the out-of-process capability runtime. One trust
+// domain (publisher) is one child process, lazily started, restarted after a
+// crash, with no credentials in its environment and no network path except the
+// host-side CONNECT proxy built from the approved egress tuples.
+type PluginHostConfig struct {
+	Enabled bool                          `yaml:"enabled"`
+	Domains map[string]PluginDomainConfig `yaml:"domains,omitempty"`
+}
+
+// PluginDomainConfig is one trust domain.
+type PluginDomainConfig struct {
+	Binary              string        `yaml:"binary"`
+	Args                []string      `yaml:"args,omitempty"`
+	WorkDir             string        `yaml:"workdir,omitempty"`
+	InheritedEnvKeys    []string      `yaml:"inherited_env_keys,omitempty"`
+	Grants              []string      `yaml:"grants,omitempty"`
+	StrictEgress        *bool         `yaml:"strict_egress,omitempty"`
+	ApprovedTuples      []EgressTuple `yaml:"approved_targets,omitempty"`
+	IdleTimeoutSeconds  int           `yaml:"idle_timeout_seconds,omitempty"`
+	CallTimeoutSeconds  int           `yaml:"call_timeout_seconds,omitempty"`
+	StartTimeoutSeconds int           `yaml:"start_timeout_seconds,omitempty"`
+	MaxRestarts         int           `yaml:"max_restarts,omitempty"`
+	IsolationMode       string        `yaml:"isolation_mode,omitempty"`
+}
+
+// EgressTuple is the (target, ports, method, window) an operator approved. A
+// capability reaching anything outside this set is refused at the proxy.
+type EgressTuple struct {
+	Host         string `yaml:"host"`
+	Ports        []int  `yaml:"ports,omitempty"`
+	Method       string `yaml:"method,omitempty"`
+	ValidMinutes int    `yaml:"valid_minutes,omitempty"`
+}
+
+// MCPStdioConfig declares the identity the stdio assembly path runs under.
+// Without it the same policy pipeline denies every call, which is the point:
+// a second entry point cannot execute outside the operator-approved scope.
+type MCPStdioConfig struct {
+	PrincipalUserID   string   `yaml:"principal_user_id,omitempty"`
+	PrincipalUsername string   `yaml:"principal_username,omitempty"`
+	Scope             string   `yaml:"scope,omitempty"`
+	Permissions       []string `yaml:"permissions,omitempty"`
+}
+
+// TimeoutDuration converts the manifest timeout into a policy duration.
+func (m *CapabilityManifest) TimeoutDuration() time.Duration {
+	if m == nil || m.TimeoutSeconds <= 0 {
+		return 0
+	}
+	return time.Duration(m.TimeoutSeconds) * time.Second
 }
 
 func Load(path string) (*Config, error) {
@@ -2339,6 +2424,8 @@ func (c RerankConfig) ProviderEffective(baseURL string) string {
 	return "cohere"
 }
 
+// ModelEffective keys off the rerank provider name, which is a separate provider
+// namespace from the model dialect catalog: a rerank "dashscope" is not an LLM dialect.
 func (c RerankConfig) ModelEffective(provider string) string {
 	if m := strings.TrimSpace(c.Model); m != "" {
 		return m

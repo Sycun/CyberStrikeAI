@@ -1675,7 +1675,8 @@
     "colPerms": "Permissions",
     "colOwner": "Owner",
     "colGroup": "Group",
-    "colType": "Type"
+    "colType": "Type",
+    "dbProfileName": "Connection Name"
   },
   "mcp": {
     "monitorTitle": "MCP Status Monitor",

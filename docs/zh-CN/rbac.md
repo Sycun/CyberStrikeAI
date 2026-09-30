@@ -73,7 +73,7 @@ AI 测试角色不是安全授权边界。即使选择了“渗透测试”角�
 | 账号 | `auth:self` |
 | 仪表盘 | `dashboard:read` |
 | 对话 | `chat:read`、`chat:write`、`chat:delete` |
-| Agent | `agent:execute`、`agent:local-execute` |
+| Agent | `agent:execute`、`agent:local-execute`、`agent:destructive-execute` |
 | HITL | `hitl:read`、`hitl:write` |
 | 任务 | `tasks:read`、`tasks:write`、`tasks:delete` |
 | 项目 | `project:read`、`project:write`、`project:delete` |
@@ -103,7 +103,8 @@ AI 测试角色不是安全授权边界。即使选择了“渗透测试”角�
 - `fofa:execute` 为兼容旧版本保留权限名，现在保护 **信息收集** 页中的 FOFA、ZoomEye、Quake、Shodan 查询。
 
 - `agent:execute` 允许运行 Agent，但不自动允许本地文件系统、Shell 或任意配置命令。
-- `agent:local-execute` 是本地执行兜底权限，应仅授予可信操作员。
+- `agent:local-execute` 只授权清单里**明确声明了该权限**的本地/配置配方工具，不再是未登记工具的兜底权限。
+- `agent:destructive-execute` 单独授权"执行模型提供的代码"这一类能力（`exec`/`angr`/`pwntools` 等），且这些能力每次调用都必须人工审批。清单见 [capability-platform.md](capability-platform.md)。
 - `mcp:execute` 用于访问认证后的 MCP HTTP 入口。
 - `mcp:external:execute` 用于 Agent 调用外部 MCP 工具，当前还要求该权限的 Scope 为 `all`。
 - 管理外部 MCP 配置使用 `mcp:write`，与执行外部工具是两项权限。
@@ -241,7 +242,7 @@ files:read / files:write
 hitl:read / hitl:write
 ```
 
-只有确实需要本机命令时才增加 `agent:local-execute` 或 `terminal:execute`；需要删除时再增加对应 `:delete`。
+只有确实需要本机命令时才增加 `agent:local-execute` 或 `terminal:execute`；只有需要运行模型提供的代码时才增加 `agent:destructive-execute`；需要删除时再增加对应 `:delete`。
 
 ### 机器人专用账号
 
@@ -266,7 +267,7 @@ HTTP 登录用户会被转换为不可变 Principal，传入单 Agent、多 Agen
 
 每个内置工具必须有显式授权策略。例如 WebShell 工具会同时检查 `webshell:read/write/delete` 和 `connection_id` 的资源访问；漏洞、项目、任务与 C2 工具也会检查参数指向的资源。
 
-未登记授权策略的内置工具默认拒绝。普通本地/配置工具需要 `agent:local-execute`。
+未登记授权策略的工具**一律默认拒绝**——包括配置目录里的配方工具。每个可调用能力都必须在能力注册表里有清单（内置工具在 `internal/capability/policy_builtin.go`，配方工具在 `tools/*.yaml` 的 `capability:` 段），执行路径上只有一个决策入口。
 
 ### 外部 MCP
 
@@ -351,7 +352,7 @@ curl -X POST http://localhost:8080/api/rbac/resource-assignments \
 
 - 使用个人账号管理平台，避免多人共享管理员密码。
 - 自定义角色按岗位命名，描述中写明用途和负责人。
-- 高风险权限单独审批：`terminal:execute`、`agent:local-execute`、`c2:write/delete`、`webshell:write/delete`、`rbac:write`、`config:write`。
+- 高风险权限单独审批：`terminal:execute`、`agent:local-execute`、`agent:destructive-execute`、`c2:write/delete`、`webshell:write/delete`、`rbac:write`、`config:write`。
 - 定期检查 `all` Scope 角色、服务账号、机器人白名单和长期未使用用户。
 - 用户离职时先禁用账号，再撤销机器人绑定、资源授权和会话。
 - 在日志审计中关注 `rbac/access_denied`、角色/用户变更、资源授权、机器人服务账号执行。

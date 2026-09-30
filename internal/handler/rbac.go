@@ -16,14 +16,14 @@ import (
 )
 
 type RBACHandler struct {
-	db     *database.DB
+	db     database.RBACStore
 	logger *zap.Logger
 	audit  *audit.Service
 	auth   *security.AuthManager
 }
 
 func NewRBACHandler(db *database.DB, logger *zap.Logger) *RBACHandler {
-	return &RBACHandler{db: db, logger: logger}
+	return &RBACHandler{db: database.Narrow[database.RBACStore](db), logger: logger}
 }
 
 func (h *RBACHandler) SetAudit(s *audit.Service) {

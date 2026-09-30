@@ -1,16 +1,16 @@
 package handler
 
 import (
-	"database/sql"
 	"errors"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/security"
+	"cyberstrike-ai/internal/store"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,162 +37,120 @@ func normalizeHitlDecidedBy(v string) string {
 	}
 }
 
-func (m *HITLManager) migrateHitlSchemaColumns() {
-	_, _ = m.db.Exec(`ALTER TABLE hitl_interrupts ADD COLUMN decided_by TEXT NOT NULL DEFAULT 'human'`)
-	_, _ = m.db.Exec(`ALTER TABLE hitl_interrupts ADD COLUMN reviewer TEXT NOT NULL DEFAULT 'human'`)
-	_, _ = m.db.Exec(`UPDATE hitl_interrupts SET reviewer='audit_agent'
-		WHERE COALESCE(decided_by, '') IN ('audit_agent', 'agent', 'ai')`)
-	_, _ = m.db.Exec(`ALTER TABLE hitl_conversation_configs ADD COLUMN reviewer TEXT NOT NULL DEFAULT 'human'`)
+var errHitlStoreUnavailable = errors.New("hitl store unavailable")
+
+// newHITLStore gives a domain store the same connection the legacy handle wraps,
+// so extracted stores and `*database.DB` consumers share one pool.
+func newHITLStore(db *database.DB) *store.HITL {
+	if db == nil {
+		return nil
+	}
+	return store.NewHITL(db.DB)
 }
 
-func hitlInterruptRowToMap(
-	id, cid, mode, toolName, toolCallID, payload, rowStatus, reviewer, decidedBy string,
-	messageID sql.NullString,
-	decision, comment sql.NullString,
-	createdAt time.Time,
-	decidedAt sql.NullTime,
-) map[string]interface{} {
-	msgID := ""
-	if messageID.Valid {
-		msgID = messageID.String
+// hitlStore is where the HTTP layer reaches the interrupt table now: through the
+// domain store instead of a raw statement.
+func (h *AgentHandler) hitlStoreOrErr() (*store.HITL, error) {
+	if h == nil || h.hitlStore == nil {
+		return nil, errHitlStoreUnavailable
 	}
-	auditBackend, auditModel := hitlAuditBackendFromRecord(decidedBy, comment.String, payload)
+	return h.hitlStore, nil
+}
+
+func (h *AgentHandler) listHitlInterrupts(set store.InterruptSet, f store.InterruptFilter) ([]store.Interrupt, int, error) {
+	s, err := h.hitlStoreOrErr()
+	if err != nil {
+		return nil, 0, err
+	}
+	return s.List(set, f)
+}
+
+// hitlInterruptToMap renders one stored interrupt for the API. decided_at is a
+// nullable column and the UI distinguishes "no decision yet" from a decision
+// made at the epoch, so it stays null rather than becoming a zero timestamp.
+func hitlInterruptToMap(it store.Interrupt) map[string]interface{} {
+	auditBackend, auditModel := hitlAuditBackendFromRecord(it.DecidedBy, it.Comment, it.Payload)
+	var decidedAt interface{}
+	if it.DecidedAt != nil {
+		decidedAt = *it.DecidedAt
+	}
 	return map[string]interface{}{
-		"id":             id,
-		"conversationId": cid,
-		"messageId":      msgID,
-		"mode":           mode,
-		"toolName":       toolName,
-		"toolCallId":     toolCallID,
-		"payload":        payload,
-		"status":         rowStatus,
-		"reviewer":       reviewer,
-		"decision":       decision.String,
-		"comment":        comment.String,
-		"decidedBy":      decidedBy,
+		"id":             it.ID,
+		"conversationId": it.ConversationID,
+		"messageId":      it.MessageID,
+		"mode":           it.Mode,
+		"toolName":       it.ToolName,
+		"toolCallId":     it.ToolCallID,
+		"payload":        it.Payload,
+		"status":         it.Status,
+		"reviewer":       it.Reviewer,
+		"decision":       it.Decision,
+		"comment":        it.Comment,
+		"decidedBy":      it.DecidedBy,
 		"auditBackend":   auditBackend,
 		"auditModel":     auditModel,
-		"createdAt":      createdAt,
-		"decidedAt": func() interface{} {
-			if decidedAt.Valid {
-				return decidedAt.Time
-			}
-			return nil
-		}(),
+		"createdAt":      it.CreatedAt,
+		"decidedAt":      decidedAt,
 	}
 }
 
-func (h *AgentHandler) buildHitlListQuery(logs bool) (string, []interface{}) {
-	where, args := h.buildHitlLogsWhere(logs)
-	q := `SELECT id, conversation_id, message_id, mode, tool_name, tool_call_id, payload, status, COALESCE(reviewer,'human'), decision, decision_comment, COALESCE(decided_by,'human'), created_at, decided_at FROM hitl_interrupts` + where
-	return q, args
+func hitlInterruptMaps(items []store.Interrupt) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, it := range items {
+		out = append(out, hitlInterruptToMap(it))
+	}
+	return out
 }
 
-func (h *AgentHandler) buildHitlLogsWhere(logs bool) (string, []interface{}) {
-	q := " WHERE 1=1"
-	args := []interface{}{}
-	if logs {
-		q += " AND status != 'pending'"
-	} else {
-		// 该接口只返回真正等待用户操作的人工审批。Agent 审查即使正在运行，
-		// 也不应触发弹窗、倒计时或项目待审批计数。
-		q += " AND status = 'pending' AND COALESCE(reviewer,'human') = 'human'"
-	}
-	return q, args
-}
-
-func (h *AgentHandler) appendHitlListFilters(q string, args []interface{}, c *gin.Context) (string, []interface{}) {
-	conversationID := strings.TrimSpace(c.Query("conversationId"))
-	toolName := strings.TrimSpace(c.Query("toolName"))
-	decision := strings.TrimSpace(c.Query("decision"))
-	decidedBy := strings.TrimSpace(c.Query("decidedBy"))
-	status := strings.TrimSpace(c.Query("status"))
-	search := strings.TrimSpace(c.Query("q"))
-
-	if conversationID != "" {
-		q += " AND conversation_id = ?"
-		args = append(args, conversationID)
-	}
-	if toolName != "" {
-		q += " AND tool_name LIKE ?"
-		args = append(args, "%"+toolName+"%")
-	}
-	if decision != "" && decision != "all" {
-		q += " AND decision = ?"
-		args = append(args, decision)
-	}
-	if decidedBy != "" && decidedBy != "all" {
-		q += " AND COALESCE(decided_by,'human') = ?"
-		args = append(args, normalizeHitlDecidedBy(decidedBy))
-	}
-	if status != "" && status != "all" {
-		q += " AND status = ?"
-		args = append(args, status)
-	}
-	if search != "" {
-		like := "%" + search + "%"
-		q += " AND (id LIKE ? OR conversation_id LIKE ? OR tool_name LIKE ? OR payload LIKE ? OR COALESCE(decision_comment,'') LIKE ?)"
-		args = append(args, like, like, like, like, like)
-	}
-	return q, args
-}
-
-func (h *AgentHandler) scanHitlInterruptRows(rows *sql.Rows) ([]map[string]interface{}, error) {
-	items := make([]map[string]interface{}, 0)
-	for rows.Next() {
-		var id, cid, mode, toolName, toolCallID, payload, rowStatus, reviewer, decidedBy string
-		var messageID sql.NullString
-		var decision, comment sql.NullString
-		var createdAt time.Time
-		var decidedAt sql.NullTime
-		if err := rows.Scan(&id, &cid, &messageID, &mode, &toolName, &toolCallID, &payload, &rowStatus, &reviewer, &decision, &comment, &decidedBy, &createdAt, &decidedAt); err != nil {
-			continue
-		}
-		items = append(items, hitlInterruptRowToMap(id, cid, mode, toolName, toolCallID, payload, rowStatus, reviewer, decidedBy, messageID, decision, comment, createdAt, decidedAt))
-	}
-	return items, nil
-}
-
-func (h *AgentHandler) countHitlQuery(baseQ string, args []interface{}) (int, error) {
-	countQ := "SELECT COUNT(*) FROM (" + baseQ + ") AS hitl_cnt"
-	var total int
-	if err := h.db.QueryRow(countQ, args...).Scan(&total); err != nil {
-		return 0, err
-	}
-	return total, nil
-}
-
-func (h *AgentHandler) ListHITLLogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+// hitlListPaging reads the page parameters, clamped to a range the table can serve.
+func hitlListPaging(c *gin.Context) (page, pageSize, offset int) {
+	page, _ = strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
 		page = 1
 	}
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	pageSize, _ = strconv.Atoi(c.DefaultQuery("pageSize", "20"))
 	pageSize = int(math.Max(1, math.Min(float64(pageSize), 200)))
-	offset := (page - 1) * pageSize
+	return page, pageSize, (page - 1) * pageSize
+}
 
-	q, args := h.buildHitlListQuery(true)
-	q, args = h.appendHitlListFilters(q, args, c)
-	q, args = appendConversationAccessSQL(q, args, "conversation_id", notificationAccessFromContext(c))
-	total, err := h.countHitlQuery(q, args)
+// hitlFilterFromRequest turns the sidebar's query string into a store filter. The
+// store treats "" and "all" as no filter; decided_by is mapped through the alias
+// table first because the UI sends history written under several names.
+func hitlFilterFromRequest(c *gin.Context) store.InterruptFilter {
+	f := store.InterruptFilter{
+		ConversationID: strings.TrimSpace(c.Query("conversationId")),
+		ToolName:       strings.TrimSpace(c.Query("toolName")),
+		Decision:       strings.TrimSpace(c.Query("decision")),
+		Status:         strings.TrimSpace(c.Query("status")),
+		Search:         strings.TrimSpace(c.Query("q")),
+	}
+	if v := strings.TrimSpace(c.Query("decidedBy")); v != "" && v != "all" {
+		f.DecidedBy = normalizeHitlDecidedBy(v)
+	}
+	return f
+}
+
+// hitlAccessFromRequest is the caller's read scope, expressed for the store layer.
+func hitlAccessFromRequest(c *gin.Context) store.Access {
+	session, ok := security.CurrentSession(c)
+	if !ok {
+		return store.Access{}
+	}
+	return store.Access{UserID: session.UserID, Scope: session.Scope}
+}
+
+func (h *AgentHandler) ListHITLLogs(c *gin.Context) {
+	page, pageSize, offset := hitlListPaging(c)
+	f := hitlFilterFromRequest(c)
+	f.Access = hitlAccessFromRequest(c)
+	f.Limit, f.Offset = pageSize, offset
+
+	items, total, err := h.listHitlInterrupts(store.InterruptsLog, f)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	q += " ORDER BY COALESCE(decided_at, created_at) DESC LIMIT ? OFFSET ?"
-	args = append(args, pageSize, offset)
-	rows, err := h.db.Query(q, args...)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer rows.Close()
-	items, err := h.scanHitlInterruptRows(rows)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "page": page, "pageSize": pageSize, "total": total, "retentionDays": h.hitlRetentionDays()})
+	c.JSON(http.StatusOK, gin.H{"items": hitlInterruptMaps(items), "page": page, "pageSize": pageSize, "total": total, "retentionDays": h.hitlRetentionDays()})
 }
 
 func (h *AgentHandler) hitlRetentionDays() int {
@@ -213,13 +171,17 @@ func (h *AgentHandler) DeleteHITLLogs(c *gin.Context) {
 		return
 	}
 
+	s, err := h.hitlStoreOrErr()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	var deleted int64
-	var err error
 	if request.All {
-		where, args := h.buildHitlLogsWhere(true)
-		where, args = h.appendHitlListFilters(where, args, c)
-		where, args = appendConversationAccessSQL(where, args, "conversation_id", notificationAccessFromContext(c))
-		deleted, err = h.db.DeleteHitlInterruptLogsMatching(where, args)
+		f := hitlFilterFromRequest(c)
+		f.Access = hitlAccessFromRequest(c)
+		deleted, err = s.DeleteLogs(store.InterruptsLog, f)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -239,7 +201,7 @@ func (h *AgentHandler) DeleteHITLLogs(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": filterErr.Error()})
 			return
 		}
-		deleted, err = h.db.DeleteHitlInterruptLogsByIDs(ids)
+		deleted, err = s.DeleteLogsByIDs(ids)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -261,28 +223,30 @@ func (h *AgentHandler) GetHITLLog(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
 		return
 	}
-	q := `SELECT id, conversation_id, message_id, mode, tool_name, tool_call_id, payload, status, COALESCE(reviewer,'human'), decision, decision_comment, COALESCE(decided_by,'human'), created_at, decided_at FROM hitl_interrupts WHERE id = ?`
-	var rowID, cid, mode, toolName, toolCallID, payload, rowStatus, reviewer, decidedBy string
-	var messageID sql.NullString
-	var decision, comment sql.NullString
-	var createdAt time.Time
-	var decidedAt sql.NullTime
-	err := h.db.QueryRow(q, id).Scan(&rowID, &cid, &messageID, &mode, &toolName, &toolCallID, &payload, &rowStatus, &reviewer, &decision, &comment, &decidedBy, &createdAt, &decidedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-		return
-	}
+	s, err := h.hitlStoreOrErr()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if !h.hitlConversationAllowed(c, cid) {
+	it, found, err := s.Get(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if !h.hitlConversationAllowed(c, it.ConversationID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该资源"})
 		return
 	}
-	c.JSON(http.StatusOK, hitlInterruptRowToMap(rowID, cid, mode, toolName, toolCallID, payload, rowStatus, reviewer, decidedBy, messageID, decision, comment, createdAt, decidedAt))
+	c.JSON(http.StatusOK, hitlInterruptToMap(it))
 }
 
+// filterAllowedHitlInterruptIDs drops ids the caller may not touch. Requested ids
+// that are not in the table at all drop out too - they cannot be deleted, and
+// saying so would leak which ids exist.
 func (h *AgentHandler) filterAllowedHitlInterruptIDs(c *gin.Context, ids []string) ([]string, error) {
 	clean := make([]string, 0, len(ids))
 	seen := map[string]struct{}{}
@@ -300,32 +264,34 @@ func (h *AgentHandler) filterAllowedHitlInterruptIDs(c *gin.Context, ids []strin
 	if len(clean) == 0 {
 		return clean, nil
 	}
-	query := `SELECT id, conversation_id FROM hitl_interrupts WHERE id IN (` + buildPlaceholders(len(clean)) + `)`
-	args := make([]interface{}, 0, len(clean))
-	for _, id := range clean {
-		args = append(args, id)
-	}
-	rows, err := h.db.Query(query, args...)
+	s, err := h.hitlStoreOrErr()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	owners, err := s.ConversationOwners(clean)
+	if err != nil {
+		return nil, err
+	}
 	allowed := make([]string, 0, len(clean))
-	for rows.Next() {
-		var id, conversationID string
-		if err := rows.Scan(&id, &conversationID); err != nil {
+	for _, id := range clean {
+		conversationID, ok := owners[id]
+		if !ok {
 			continue
 		}
 		if h.hitlConversationAllowed(c, conversationID) {
 			allowed = append(allowed, id)
 		}
 	}
-	return allowed, rows.Err()
+	return allowed, nil
 }
 
 func (h *AgentHandler) hitlInterruptAllowed(c *gin.Context, interruptID string) bool {
-	var conversationID string
-	if err := h.db.QueryRow(`SELECT conversation_id FROM hitl_interrupts WHERE id = ?`, strings.TrimSpace(interruptID)).Scan(&conversationID); err != nil {
+	s, err := h.hitlStoreOrErr()
+	if err != nil {
+		return false
+	}
+	conversationID, found, err := s.ConversationOwner(interruptID)
+	if err != nil || !found {
 		return false
 	}
 	return h.hitlConversationAllowed(c, conversationID)

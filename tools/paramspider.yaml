@@ -56,3 +56,16 @@ parameters:
       - 此参数会直接追加到命令末尾
     required: false
     format: "positional"
+# Capability manifest: identity, authorization, approval and egress
+# ceiling. The registry is fail-closed - a recipe without this
+# block cannot be executed. See docs/zh-CN/capability-platform-decoupling-research.md
+capability:
+  id: "core.paramspider"
+  version: "1.0.0"
+  class: "readonly"
+  permission: "agent:execute"
+  approval: "never"
+  runtime: "recipe:exec"
+  grants:
+    - "process.exec(paramspider)"
+    - "net.connect(target)"

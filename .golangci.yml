@@ -1,0 +1,46 @@
+# golangci-lint v2 配置。
+#
+# 这个仓库有 148k 行既有代码，一次性打开全部规则只会产出一堆无人处理的告警，
+# 最终结果是门禁被关掉。因此：规则集保守，且用 new-from-rev 只对**改动的行**生效。
+# 存量代码在被触碰时必须通过，未被触碰的代码不阻塞——这是能长期维持的采用方式。
+version: "2"
+
+run:
+  timeout: 10m
+  tests: true
+
+issues:
+  # 只门禁新增/修改的行。解耦每个阶段都要改代码，改动自然逐步收敛。
+  new-from-rev: origin/main
+  exclude-rules:
+    - path: '_test\.go'
+      linters:
+        - errcheck
+        - noctx
+
+linters:
+  default: standard
+  enable:
+    - errcheck       # 忽略错误在安全代码里是缺陷，不是风格问题
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - nilnesserr
+    - copyloopvar
+    - contextualver
+    - gochecknoglobals: false
+  settings:
+    errcheck:
+      # 写响应/关闭错误不能无声吞掉；其余保留显式 _ 赋值的要求。
+      check-blank: false
+      exclude-functions:
+        - (*go.uber.org/zap.Logger).Sync
+        - (io.Closer).Close
+        - fmt.Fprintf
+        - fmt.Fprint
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

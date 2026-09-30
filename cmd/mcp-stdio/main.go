@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cyberstrike-ai/internal/app"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/logger"
 	"cyberstrike-ai/internal/mcp"
@@ -32,8 +33,17 @@ func main() {
 	})
 	defer log.Sync()
 
+	// 单一装配点：stdio 与 HTTP 共用同一条能力策略管线。
+	authorizer, decorateContext, err := app.InstallStdioPolicy(cfg, log.Logger)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "装配能力策略失败: %v\n", err)
+		os.Exit(1)
+	}
+
 	// 创建MCP服务器
 	mcpServer := mcp.NewServer(log.Logger)
+	mcpServer.SetToolAuthorizer(authorizer)
+	mcpServer.SetRequestContextDecorator(decorateContext)
 	guard, err := toolguard.NewManager(cfg.EffectiveToolGuard())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "初始化调用拦截失败: %v\n", err)

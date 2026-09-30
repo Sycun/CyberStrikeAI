@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +15,6 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/cloudwego/eino/adk/filesystem"
 )
 
 func readTestPID(t *testing.T, path string) int {
@@ -87,28 +84,13 @@ func TestProcessScope_EinoBackgroundReturnsPromptlyAndIsOwned(t *testing.T) {
 			if !useFlag {
 				command += " &"
 			}
-			stream, err := NewEinoStreamingShell().ExecuteStreaming(ctx, &filesystem.ExecuteRequest{Command: command, RunInBackendGround: useFlag})
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer stream.Close()
-			done := make(chan error, 1)
-			go func() {
-				for {
-					_, err := stream.Recv()
-					if err != nil {
-						done <- err
-						return
-					}
-				}
-			}()
+			collector := runShell(t, ctx, command, useFlag)
+			// A background launch must end its stream at once; waiting for the job itself
+			// is the bug this guards against.
 			select {
-			case err := <-done:
-				if !errors.Is(err, io.EOF) {
-					t.Fatal(err)
-				}
+			case <-collector.closed:
 			case <-time.After(time.Second):
-				t.Fatal("background launch waited for job completion")
+				t.Fatalf("background launch waited for job completion; output=%q", collector.text())
 			}
 			pid := readTestPID(t, pidFile)
 			if err := scope.Close(); err != nil {

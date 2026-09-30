@@ -1552,3 +1552,15 @@ parameters:
       注意：不要用框架通用字段 additional_args（会被拆成裸 argv）。请用本字段或 http2。
     required: false
     flag: "--additional-args"
+# Capability manifest: identity, authorization, approval and egress
+# ceiling. The registry is fail-closed - a recipe without this
+# block cannot be executed. See docs/zh-CN/capability-platform-decoupling-research.md
+capability:
+  id: "core.http-framework-test"
+  version: "1.0.0"
+  class: "mutating"
+  permission: "agent:local-execute"
+  runtime: "recipe:exec"
+  grants:
+    - "process.exec(python3)"
+    - "net.connect(target)"

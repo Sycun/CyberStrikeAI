@@ -27,7 +27,7 @@ func TestAssetToolsCRUDQueryAndPageLimit(t *testing.T) {
 	principal := authctx.NewPrincipal(user.ID, user.Username, database.RBACScopeAssigned, map[string]bool{
 		"asset:read": true, "asset:write": true, "asset:delete": true,
 	})
-	ctx := authctx.WithPrincipal(context.Background(), principal)
+	ctx := WithCapabilityApproval(authctx.WithPrincipal(context.Background(), principal))
 	server := mcp.NewServer(zap.NewNop())
 	server.SetToolAuthorizer(mcpToolAuthorizer(db))
 	registerAssetTools(server, db, zap.NewNop())
@@ -168,7 +168,7 @@ func TestAssetReadToolsRespectConversationProjectScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	principal := authctx.NewPrincipal("admin", "admin", database.RBACScopeAll, map[string]bool{"asset:read": true})
-	ctx := authctx.WithPrincipal(context.Background(), principal)
+	ctx := WithCapabilityApproval(authctx.WithPrincipal(context.Background(), principal))
 	server := mcp.NewServer(zap.NewNop())
 	server.SetToolAuthorizer(mcpToolAuthorizer(db))
 	registerAssetTools(server, db, zap.NewNop())

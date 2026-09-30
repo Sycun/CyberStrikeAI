@@ -202,6 +202,9 @@ hitl:
     model: "" # openai 后端建议填小模型；typesafe 后端留空使用 jev-latest
   # 已决策审计日志保留天数（与 MCP 监控一致；省略默认 90；0 表示不自动清理）
   retention_days: 90
+  # 免审批白名单是**运维者所有的**交集半边：一个工具必须同时出现在这里和会话白名单里
+  # 才会豁免审批；侧栏/API 的请求体只能缩小、不能拓宽。destructive 级能力（执行模型提供的
+  # 代码、payload 生成、C2 任务下发等）无论是否出现在这里都仍需逐次人工授权，无法豁免。
   # 按你环境里的真实工具名增删（与侧栏一致、小写不敏感）；不需要全局免审批可改为 []
   tool_whitelist: [read_file, ls, list_dir, glob, grep, tool_search, upsert_project_fact, get_project_fact, list_project_facts, search_project_facts, list_vulnerabilities, get_vulnerability, get_asset, query_assets, list_knowledge_risk_types, get_tool_execution, wait_tool_execution, batch_task_list, batch_task_get, manage_webshell_list, c2_event, c2_file]
   # audit_agent_prompt: |  # 审批模式；留空使用内置默认，可在「人机协同」页编辑。openai 后端作聊天提示词；typesafe 后端作为 Jev 组织策略
@@ -589,3 +592,55 @@ project:
   fact_index_path_max_runes: 10000
   fact_summary_max_runes: 24000
   default_inject_deprecated: false
+
+# ---------------------------------------------------------------------------
+# stdio MCP 桥（cmd/mcp-stdio）的身份声明
+# ---------------------------------------------------------------------------
+# stdio 入口与 HTTP 服务共用同一条能力策略管线（没有第二套装配路径）。它没有交互式
+# 登录，所以身份必须由运维者在这里显式声明；未声明权限集时该进程拒绝一切工具调用。
+# destructive 级能力在这里也永远无法执行：stdio 没有人工审批通道。
+mcp_stdio:
+  principal_user_id: ""       # 例如 stdio-bridge；留空则使用内置占位身份（无权限）
+  principal_username: ""
+  scope: ""                   # all | assigned | own；留空按权限默认
+  permissions: []             # 例如 [agent:execute, monitor:read, agent:local-execute]
+
+# ---------------------------------------------------------------------------
+# 插件运行时（cmd 外进程内能力主机）
+# ---------------------------------------------------------------------------
+# 一个信任域 = 一个子进程。懒启动、崩溃后下一次调用自动重启；子进程环境按白名单
+# 继承（含 KEY/TOKEN/SECRET/PASSWORD 的键名会被拒绝转发），凭据不经环境变量下发；
+# 出网只能走主机侧 CONNECT 代理，代理策略 = 清单声明 ∩ 运维者批准的 (host, ports,
+# method, valid_minutes) 元组，批准集为空时全部拒绝。
+# 注意：声明了 plugin-host 运行时而这里未启用时，该能力在执行处被拒绝，不会退回
+# 进程内执行。代理本身不是 OS 级网络边界（raw socket / loopback 可绕过），要做硬
+# 边界需要每实例 netns，目前 processguard 只提供 cgroup/rlimit 约束。
+plugin_host:
+  enabled: false
+  domains:
+    # acme:
+    #   binary: plugins/acme/csai-plugin-acme   # 相对路径按 config.yaml 所在目录解析
+    #   args: []
+    #   workdir: ""
+    #   inherited_env_keys: [PATH, HOME, LANG, TZ]
+    #   grants: ["net.connect(target)", "process.exec(nmap)"]
+    #   strict_egress: true
+    #   approved_targets:
+    #     - host: scan.example
+    #       ports: [443]
+    #       method: CONNECT
+    #       valid_minutes: 60                   # 0 表示不按时间窗过期
+    #   idle_timeout_seconds: 300
+    #   call_timeout_seconds: 120
+    #   start_timeout_seconds: 15
+
+# ---------------------------------------------------------------------------
+# 制品信任与撤销（客户端强制，无 ignoreUnverified 逃逸阀）
+# ---------------------------------------------------------------------------
+artifacts:
+  # 撤销清单：digest 级 + publisher 级。启动时装载并隔离命中能力，之后每次调用前再查。
+  revocations_path: ""          # 例如 artifacts/revocations.json；留空表示暂无撤销记录
+  trust_store_path: ""          # publisher 公钥表（Ed25519），只由运维者写入
+  install_dir: ""               # 已安装制品目录
+  quarantine_dir: ""            # 隔离区：保留可见供复盘，不删除
+  refresh_minutes: 0            # 0 表示不自动刷新（气隙部署保持关闭）

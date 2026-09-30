@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/agent"
+	"cyberstrike-ai/internal/assets"
 	"cyberstrike-ai/internal/audit"
 	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/c2"
@@ -32,8 +33,10 @@ import (
 	"cyberstrike-ai/internal/multiagent"
 	"cyberstrike-ai/internal/robot"
 	"cyberstrike-ai/internal/security"
+	"cyberstrike-ai/internal/settings"
 	"cyberstrike-ai/internal/skillpackage"
 	"cyberstrike-ai/internal/storage"
+	"cyberstrike-ai/internal/store"
 	"cyberstrike-ai/internal/toolguard"
 
 	"github.com/gin-gonic/gin"
@@ -147,9 +150,27 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	if err := handler.NewHITLManager(db, log.Logger).EnsureSchema(); err != nil {
 		log.Logger.Warn("初始化 HITL 表失败", zap.Error(err))
 	}
-	hitlRetention := hitl.NewService(db, cfg, log.Logger)
+	handler.NewHITLManager(db, log.Logger).SetGlobalWhitelist(cfg.Hitl.ToolWhitelist)
+	hitlRetention := hitl.NewService(store.NewHITL(db.DB), cfg, log.Logger)
 	hitlRetention.PurgeExpired()
 	hitl.StartRetentionLoop(hitlRetention, log.Logger)
+
+	if _, err := InstallCapabilityRegistry(cfg.Security.Tools, log.Logger); err != nil {
+		return nil, fmt.Errorf("装配能力策略注册表失败: %w", err)
+	}
+
+	// 撤销清单在启动时装载并把命中的能力隔离出注册表；此后每次调用还会再查一次，
+	// 所以一台从未再连过 registry 的机器也不会继续执行已被撤销的制品。
+	if err := LoadRevocations(cfg.Artifacts.RevocationsPath, log.Logger); err != nil {
+		return nil, fmt.Errorf("装载能力撤销清单失败: %w", err)
+	}
+	if isolated := IsolateRevoked(); len(isolated) > 0 {
+		log.Logger.Warn("已撤销的能力被隔离出注册表", zap.Strings("capabilities", isolated))
+	}
+
+	// 插件主机进程按空闲时间回收；未启用配置段时这里返回 nil，
+	// 声明了插件运行时的能力会在执行处 fail-closed。
+	startPluginHostReaper(context.Background(), buildPluginHost(cfg, configPath, log.Logger), log.Logger)
 
 	// 创建MCP服务器（带数据库持久化）
 	mcpServer := mcp.NewServerWithStorage(log.Logger, db)
@@ -275,7 +296,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 
 		// 创建知识库API处理器
 		knowledgeHandler = handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, db, log.Logger)
-		knowledgeHandler.SetAudit(auditSvc)
+		bindAudit(knowledgeHandler, auditSvc)
 		log.Logger.Info("知识库模块初始化完成", zap.Bool("handler_created", knowledgeHandler != nil))
 
 		// 扫描知识库并建立索引（异步）
@@ -409,7 +430,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	storageService := storage.NewService(storageCleaner, cfg, log.Logger)
 	storage.StartRetentionLoop(storageService, log.Logger)
 	storageHandler := handler.NewStorageHandler(storageCleaner, cfg, log.Logger)
-	storageHandler.SetAudit(auditSvc)
+	bindAudit(storageHandler, auditSvc)
 
 	agent.SetPromptBaseDir(configDir)
 
@@ -424,56 +445,61 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		log.Logger.Warn("创建 agents 目录失败", zap.String("path", agentsDir), zap.Error(err))
 	}
 	markdownAgentsHandler := handler.NewMarkdownAgentsHandler(agentsDir)
-	markdownAgentsHandler.SetAudit(auditSvc)
+	bindAudit(markdownAgentsHandler, auditSvc)
 	log.Logger.Debug("多代理 Markdown 子 Agent 目录", zap.String("agentsDir", agentsDir))
 
 	// 创建处理器
+	// One snapshot store serves every handler that reads or rewrites configuration
+	// at runtime. This is what replaces the shared *config.Config pointer that was
+	// written from several handlers under different locks (S4).
+	settingsStore := settings.New(cfg)
+
 	agentHandler := handler.NewAgentHandler(agent, db, cfg, log.Logger)
-	agentHandler.SetAudit(auditSvc)
+	agentHandler.SetSettings(settingsStore)
+	bindAudit(agentHandler, auditSvc)
 	agentHandler.SetAgentsMarkdownDir(agentsDir)
 	// 如果知识库已启用，设置知识库管理器到AgentHandler以便记录检索日志
 	if knowledgeManager != nil {
 		agentHandler.SetKnowledgeManager(knowledgeManager)
 	}
 	monitorHandler := handler.NewMonitorHandler(mcpServer, executor, db, log.Logger)
-	monitorHandler.SetAudit(auditSvc)
+	bindAudit(monitorHandler, auditSvc)
 	monitorHandler.SetMonitorRetention(monitorRetention)
 	monitorHandler.SetExternalMCPManager(externalMCPMgr) // 设置外部MCP管理器，以便获取外部MCP执行记录
 	monitorHandler.SetTaskManager(agentHandler.TaskManager())
 	monitorHandler.SetAgentHandler(agentHandler)
 	notificationHandler := handler.NewNotificationHandler(db, agentHandler, log.Logger)
 	authHandler := handler.NewAuthHandler(authManager, cfg, configPath, log.Logger)
-	authHandler.SetAudit(auditSvc)
+	bindAudit(authHandler, auditSvc)
 	attackChainHandler := handler.NewAttackChainHandler(db, &cfg.OpenAI, log.Logger)
 	vulnerabilityHandler := handler.NewVulnerabilityHandler(db, log.Logger)
 	assetHandler := handler.NewAssetHandler(db, log.Logger)
 	projectHandler := handler.NewProjectHandler(db, log.Logger)
 	rbacHandler := handler.NewRBACHandler(db, log.Logger)
-	rbacHandler.SetAudit(auditSvc)
+	bindAudit(rbacHandler, auditSvc)
 	rbacHandler.SetAuthManager(authManager)
 	workflowHandler := handler.NewWorkflowHandler(db, log.Logger)
-	workflowHandler.SetAudit(auditSvc)
+	bindAudit(workflowHandler, auditSvc)
 	workflowHandler.SetRuntime(agent, cfg)
-	vulnerabilityHandler.SetAudit(auditSvc)
+	bindAudit(vulnerabilityHandler, auditSvc)
 	webshellHandler := handler.NewWebShellHandler(log.Logger, db)
-	webshellHandler.SetAudit(auditSvc)
+	bindAudit(webshellHandler, auditSvc)
 	chatUploadsHandler := handler.NewChatUploadsHandler(log.Logger, db)
-	chatUploadsHandler.SetAudit(auditSvc)
+	bindAudit(chatUploadsHandler, auditSvc)
 	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
 	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
 	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger)
+	configHandler.SetSettings(settingsStore)
 	configHandler.SetDB(db)
 	configHandler.SetToolGuard(toolGuard)
-	configHandler.SetAudit(auditSvc)
-	agentHandler.SetHitlToolWhitelistSaver(configHandler)
-	agentHandler.SetHitlAuditStrategySaver(configHandler)
-	agentHandler.SetHitlDefaultReviewerSaver(configHandler)
+	bindAudit(configHandler, auditSvc)
+	agentHandler.SetHitlConfigSaver(configHandler)
 	externalMCPHandler := handler.NewExternalMCPHandler(externalMCPMgr, cfg, configPath, log.Logger)
-	externalMCPHandler.SetAudit(auditSvc)
+	bindAudit(externalMCPHandler, auditSvc)
 	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger)
-	roleHandler.SetAudit(auditSvc)
+	bindAudit(roleHandler, auditSvc)
 	skillsHandler := handler.NewSkillsHandler(cfg, configPath, log.Logger)
-	skillsHandler.SetAudit(auditSvc)
+	bindAudit(skillsHandler, auditSvc)
 	fofaHandler := handler.NewFofaHandler(cfg, log.Logger)
 	terminalHandler := handler.NewTerminalHandler(log.Logger)
 	if db != nil {
@@ -488,16 +514,16 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		registerC2Tools(mcpServer, c2Manager, log.Logger, cfg.Server.Port)
 	}
 	c2Handler := handler.NewC2Handler(c2Manager, log.Logger)
-	c2Handler.SetAudit(auditSvc)
+	bindAudit(c2Handler, auditSvc)
 
 	// 创建OpenAPI处理器
 	conversationHandler := handler.NewConversationHandler(db, log.Logger)
-	conversationHandler.SetAudit(auditSvc)
+	bindAudit(conversationHandler, auditSvc)
 	conversationHandler.SetTaskStopper(agentHandler)
 	conversationHandler.SetTaskStateProvider(agentHandler)
 	auditHandler := handler.NewAuditHandler(db, auditSvc, log.Logger)
 	robotHandler := handler.NewRobotHandler(cfg, db, agentHandler, log.Logger)
-	robotHandler.SetAudit(auditSvc)
+	bindAudit(robotHandler, auditSvc)
 	db.SetVulnerabilityCreatedHook(robotHandler.NotifyNewVulnerability)
 	openAPIHandler := handler.NewOpenAPIHandler(db, log.Logger, conversationHandler, agentHandler)
 
@@ -541,6 +567,14 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		return nil
 	}
 	configHandler.SetVulnerabilityToolRegistrar(vulnerabilityRegistrar)
+	configHandler.SetCapabilityRefresher(func(tools []config.ToolConfig) error {
+		rejections, err := RefreshRecipeLayer(tools)
+		for _, r := range rejections {
+			log.Logger.Warn("能力配方被拒绝，调用将 fail-closed",
+				zap.String("tool", r.ToolName), zap.String("reason", r.Reason))
+		}
+		return err
+	})
 
 	// 设置 WebShell 工具注册器（ApplyConfig 时重新注册）
 	webshellRegistrar := func() error {
@@ -610,39 +644,38 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	})
 
 	// 设置路由（使用 App 实例以便动态获取 handler）
-	setupRoutes(
-		router,
-		authHandler,
-		agentHandler,
-		monitorHandler,
-		notificationHandler,
-		conversationHandler,
-		robotHandler,
-		wechatRobotHandler,
-		configHandler,
-		externalMCPHandler,
-		attackChainHandler,
-		app, // 传递 App 实例以便动态获取 knowledgeHandler
-		vulnerabilityHandler,
-		assetHandler,
-		projectHandler,
-		workflowHandler,
-		webshellHandler,
-		chatUploadsHandler,
-		roleHandler,
-		skillsHandler,
-		markdownAgentsHandler,
-		fofaHandler,
-		terminalHandler,
-		app.c2Handler,
-		auditHandler,
-		auditSvc,
-		rbacHandler,
-		mcpServer,
-		authManager,
-		openAPIHandler,
-	)
-
+	setupRoutes(routeDeps{
+		app:                   app,
+		router:                router,
+		authHandler:           authHandler,
+		agentHandler:          agentHandler,
+		monitorHandler:        monitorHandler,
+		notificationHandler:   notificationHandler,
+		conversationHandler:   conversationHandler,
+		robotHandler:          robotHandler,
+		wechatRobotHandler:    wechatRobotHandler,
+		configHandler:         configHandler,
+		externalMCPHandler:    externalMCPHandler,
+		attackChainHandler:    attackChainHandler,
+		vulnerabilityHandler:  vulnerabilityHandler,
+		assetHandler:          assetHandler,
+		projectHandler:        projectHandler,
+		workflowHandler:       workflowHandler,
+		webshellHandler:       webshellHandler,
+		chatUploadsHandler:    chatUploadsHandler,
+		roleHandler:           roleHandler,
+		skillsHandler:         skillsHandler,
+		markdownAgentsHandler: markdownAgentsHandler,
+		fofaHandler:           fofaHandler,
+		terminalHandler:       terminalHandler,
+		c2Handler:             app.c2Handler,
+		auditHandler:          auditHandler,
+		auditSvc:              auditSvc,
+		rbacHandler:           rbacHandler,
+		mcpServer:             mcpServer,
+		authManager:           authManager,
+		openAPIHandler:        openAPIHandler,
+	})
 	return app, nil
 
 }
@@ -915,38 +948,51 @@ func (a *App) RestartRobotConnections() {
 }
 
 // setupRoutes 设置路由
-func setupRoutes(
-	router *gin.Engine,
-	authHandler *handler.AuthHandler,
-	agentHandler *handler.AgentHandler,
-	monitorHandler *handler.MonitorHandler,
-	notificationHandler *handler.NotificationHandler,
-	conversationHandler *handler.ConversationHandler,
-	robotHandler *handler.RobotHandler,
-	wechatRobotHandler *handler.WechatRobotHandler,
-	configHandler *handler.ConfigHandler,
-	externalMCPHandler *handler.ExternalMCPHandler,
-	attackChainHandler *handler.AttackChainHandler,
-	app *App, // 传递 App 实例以便动态获取 knowledgeHandler
-	vulnerabilityHandler *handler.VulnerabilityHandler,
-	assetHandler *handler.AssetHandler,
-	projectHandler *handler.ProjectHandler,
-	workflowHandler *handler.WorkflowHandler,
-	webshellHandler *handler.WebShellHandler,
-	chatUploadsHandler *handler.ChatUploadsHandler,
-	roleHandler *handler.RoleHandler,
-	skillsHandler *handler.SkillsHandler,
-	markdownAgentsHandler *handler.MarkdownAgentsHandler,
-	fofaHandler *handler.FofaHandler,
-	terminalHandler *handler.TerminalHandler,
-	c2Handler *handler.C2Handler,
-	auditHandler *handler.AuditHandler,
-	auditSvc *audit.Service,
-	rbacHandler *handler.RBACHandler,
-	mcpServer *mcp.Server,
-	authManager *security.AuthManager,
-	openAPIHandler *handler.OpenAPIHandler,
-) {
+// routeDeps is everything the HTTP wiring needs, assembled once during startup.
+// It replaces the 30-positional-parameter signature, where adding a handler meant
+// editing both the declaration and the one call site, in order.
+type routeDeps struct {
+	app                   *App
+	router                *gin.Engine
+	authHandler           *handler.AuthHandler
+	agentHandler          *handler.AgentHandler
+	monitorHandler        *handler.MonitorHandler
+	notificationHandler   *handler.NotificationHandler
+	conversationHandler   *handler.ConversationHandler
+	robotHandler          *handler.RobotHandler
+	wechatRobotHandler    *handler.WechatRobotHandler
+	configHandler         *handler.ConfigHandler
+	externalMCPHandler    *handler.ExternalMCPHandler
+	attackChainHandler    *handler.AttackChainHandler
+	vulnerabilityHandler  *handler.VulnerabilityHandler
+	assetHandler          *handler.AssetHandler
+	projectHandler        *handler.ProjectHandler
+	workflowHandler       *handler.WorkflowHandler
+	webshellHandler       *handler.WebShellHandler
+	chatUploadsHandler    *handler.ChatUploadsHandler
+	roleHandler           *handler.RoleHandler
+	skillsHandler         *handler.SkillsHandler
+	markdownAgentsHandler *handler.MarkdownAgentsHandler
+	fofaHandler           *handler.FofaHandler
+	terminalHandler       *handler.TerminalHandler
+	c2Handler             *handler.C2Handler
+	auditHandler          *handler.AuditHandler
+	auditSvc              *audit.Service
+	rbacHandler           *handler.RBACHandler
+	mcpServer             *mcp.Server
+	authManager           *security.AuthManager
+	openAPIHandler        *handler.OpenAPIHandler
+}
+
+func setupRoutes(deps routeDeps) {
+	app := deps.app
+	router := deps.router
+	authHandler := deps.authHandler
+	robotHandler := deps.robotHandler
+	auditSvc := deps.auditSvc
+	authManager := deps.authManager
+	openAPIHandler := deps.openAPIHandler
+
 	// API路由
 	api := router.Group("/api")
 
@@ -986,471 +1032,37 @@ func setupRoutes(
 			})
 		}
 	}))
-	{
-		protected.GET("/rbac/me", rbacHandler.Me)
-		protected.GET("/rbac/metadata", rbacHandler.Metadata)
-		protected.GET("/rbac/users", rbacHandler.ListUsers)
-		protected.POST("/rbac/users", rbacHandler.CreateUser)
-		protected.PUT("/rbac/users/:id", rbacHandler.UpdateUser)
-		protected.DELETE("/rbac/users/:id", rbacHandler.DeleteUser)
-		protected.GET("/rbac/roles", rbacHandler.ListRoles)
-		protected.POST("/rbac/roles", rbacHandler.CreateRole)
-		protected.PUT("/rbac/roles/:id", rbacHandler.UpdateRole)
-		protected.DELETE("/rbac/roles/:id", rbacHandler.DeleteRole)
-		protected.GET("/rbac/resource-assignments", rbacHandler.ListResourceAssignments)
-		protected.GET("/rbac/resources", rbacHandler.ListAssignableResources)
-		protected.POST("/rbac/resource-assignments", rbacHandler.AssignResource)
-		protected.DELETE("/rbac/resource-assignments/:id", rbacHandler.DeleteResourceAssignment)
+	// Per-domain registrars. The route table they produce is asserted against
+	// testdata/routes.golden.txt, so moving a registration cannot silently
+	// change which paths exist.
 
-		// 机器人测试（需登录）：POST /api/robot/test，body: {"platform":"dingtalk","user_id":"test","text":"帮助"}，用于验证机器人逻辑
-		protected.POST("/robot/test", robotHandler.HandleRobotTest)
-
-		// 微信 iLink 扫码绑定（需登录）
-		protected.POST("/robot/wechat/qrcode", wechatRobotHandler.HandleWechatQRCode)
-		protected.GET("/robot/wechat/qrcode/status", wechatRobotHandler.HandleWechatQRCodeStatus)
-		protected.POST("/robot/wechat/qrcode/verify", wechatRobotHandler.HandleWechatVerifyCode)
-		protected.GET("/robot/wechat/status", wechatRobotHandler.HandleWechatStatus)
-
-		// Eino ADK 单代理（ChatModelAgent + Runner；不依赖 multi_agent.enabled）
-		protected.POST("/eino-agent", agentHandler.EinoSingleAgentLoop)
-		protected.POST("/eino-agent/stream", agentHandler.EinoSingleAgentLoopStream)
-		protected.GET("/hitl/pending", agentHandler.ListHITLPending)
-		protected.GET("/hitl/logs", agentHandler.ListHITLLogs)
-		protected.DELETE("/hitl/logs", agentHandler.DeleteHITLLogs)
-		protected.GET("/hitl/logs/:id", agentHandler.GetHITLLog)
-		protected.POST("/hitl/decision", agentHandler.DecideHITLInterrupt)
-		protected.POST("/hitl/dismiss", agentHandler.DismissHITLInterrupt)
-		protected.GET("/hitl/config/:conversationId", agentHandler.GetHITLConversationConfig)
-		protected.PUT("/hitl/config", agentHandler.UpsertHITLConversationConfig)
-		protected.GET("/hitl/tool-whitelist", agentHandler.GetHITLGlobalToolWhitelist)
-		protected.PUT("/hitl/tool-whitelist", agentHandler.SetHITLGlobalToolWhitelist)
-		protected.POST("/hitl/tool-whitelist", agentHandler.MergeHITLGlobalToolWhitelist)
-		protected.GET("/hitl/default-config", agentHandler.GetHITLDefaultConfig)
-		protected.PUT("/hitl/default-config", agentHandler.UpdateHITLDefaultConfig)
-		protected.GET("/hitl/default-reviewer", agentHandler.GetHITLDefaultReviewer)
-		protected.PUT("/hitl/default-reviewer", agentHandler.UpdateHITLDefaultReviewer)
-		protected.GET("/hitl/audit-strategy", agentHandler.GetHITLAuditStrategy)
-		protected.PUT("/hitl/audit-strategy", agentHandler.UpdateHITLAuditStrategy)
-		// Agent Loop 取消与任务列表
-		protected.POST("/agent-loop/cancel", agentHandler.CancelAgentLoop)
-		protected.GET("/agent-loop/tasks", agentHandler.ListAgentTasks)
-		protected.GET("/agent-loop/task-events", agentHandler.SubscribeAgentTaskEvents)
-		protected.GET("/agent-loop/tasks/completed", agentHandler.ListCompletedTasks)
-
-		// Eino DeepAgent 多代理（与单 Agent 并存，需 config.multi_agent.enabled）
-		// 多代理路由常注册；是否可用由运行时 h.config.MultiAgent.Enabled 决定（应用配置后无需重启）
-		protected.POST("/multi-agent", agentHandler.MultiAgentLoop)
-		protected.POST("/multi-agent/stream", agentHandler.MultiAgentLoopStream)
-		protected.GET("/multi-agent/markdown-agents", markdownAgentsHandler.ListMarkdownAgents)
-		protected.GET("/multi-agent/markdown-agents/:filename", markdownAgentsHandler.GetMarkdownAgent)
-		protected.POST("/multi-agent/markdown-agents", markdownAgentsHandler.CreateMarkdownAgent)
-		protected.PUT("/multi-agent/markdown-agents/:filename", markdownAgentsHandler.UpdateMarkdownAgent)
-		protected.DELETE("/multi-agent/markdown-agents/:filename", markdownAgentsHandler.DeleteMarkdownAgent)
-
-		// 信息收集 - FOFA 查询（后端代理）
-		protected.POST("/fofa/search", fofaHandler.Search)
-		// 信息收集 - 自然语言解析为 FOFA 语法（需人工确认后再查询）
-		protected.POST("/fofa/parse", fofaHandler.ParseNaturalLanguage)
-
-		// 资产管理
-		protected.GET("/assets", assetHandler.List)
-		protected.GET("/assets/selection", assetHandler.Selection)
-		protected.GET("/assets/stats", assetHandler.Stats)
-		protected.POST("/assets/import", assetHandler.Import)
-		protected.POST("/assets/scan-links", assetHandler.RecordScans)
-		protected.PUT("/assets/bulk", assetHandler.BulkUpdate)
-		protected.PUT("/assets/project-binding", assetHandler.UpdateProjectBinding)
-		protected.POST("/assets/batch-delete", assetHandler.BatchDelete)
-		protected.POST("/assets/merge", security.RequirePermission("asset:write"), assetHandler.Merge)
-		protected.PUT("/assets/:id", assetHandler.Update)
-		protected.DELETE("/assets/:id", assetHandler.Delete)
-
-		// 批量任务管理
-		protected.POST("/batch-tasks", agentHandler.CreateBatchQueue)
-		protected.GET("/batch-tasks", agentHandler.ListBatchQueues)
-		protected.GET("/batch-tasks/:queueId", agentHandler.GetBatchQueue)
-		protected.POST("/batch-tasks/:queueId/start", agentHandler.StartBatchQueue)
-		protected.POST("/batch-tasks/:queueId/rerun", agentHandler.RerunBatchQueue)
-		protected.POST("/batch-tasks/:queueId/pause", agentHandler.PauseBatchQueue)
-		protected.PUT("/batch-tasks/:queueId/metadata", agentHandler.UpdateBatchQueueMetadata)
-		protected.PUT("/batch-tasks/:queueId/schedule", agentHandler.UpdateBatchQueueSchedule)
-		protected.PUT("/batch-tasks/:queueId/schedule-enabled", agentHandler.SetBatchQueueScheduleEnabled)
-		protected.DELETE("/batch-tasks/:queueId", agentHandler.DeleteBatchQueue)
-		protected.PUT("/batch-tasks/:queueId/tasks/:taskId", agentHandler.UpdateBatchTask)
-		protected.POST("/batch-tasks/:queueId/tasks/:taskId/run", agentHandler.RunSingleBatchTask)
-		protected.POST("/batch-tasks/:queueId/tasks", agentHandler.AddBatchTask)
-		protected.DELETE("/batch-tasks/:queueId/tasks/:taskId", agentHandler.DeleteBatchTask)
-
-		// 对话历史
-		protected.GET("/usage/tokens", conversationHandler.GetTokenUsageStats)
-		protected.POST("/conversations", conversationHandler.CreateConversation)
-		protected.GET("/conversations", conversationHandler.ListConversations)
-		protected.GET("/conversations/:id", conversationHandler.GetConversation)
-		protected.GET("/conversations/:id/token-usage", conversationHandler.GetConversationTokenUsageStats)
-		protected.GET("/conversations/:id/plan-tasks", conversationHandler.GetConversationPlanTasks)
-		protected.GET("/messages/:id/process-details", conversationHandler.GetMessageProcessDetails)
-		protected.GET("/process-details/:id", conversationHandler.GetProcessDetail)
-		protected.PUT("/conversations/:id", conversationHandler.UpdateConversation)
-		protected.PUT("/conversations/:id/project", conversationHandler.SetConversationProject)
-		protected.DELETE("/conversations/:id", conversationHandler.DeleteConversation)
-		protected.POST("/conversations/:id/delete-turn", conversationHandler.DeleteConversationTurn)
-		protected.PUT("/conversations/:id/pinned", conversationHandler.UpdateConversationPinned)
-
-		// 监控
-		protected.GET("/monitor", monitorHandler.Monitor)
-		protected.GET("/monitor/execution/:id", monitorHandler.GetExecution)
-		protected.POST("/monitor/execution/:id/cancel", monitorHandler.CancelExecution)
-		protected.POST("/monitor/executions/names", monitorHandler.BatchGetToolNames)
-		protected.DELETE("/monitor/execution/:id", monitorHandler.DeleteExecution)
-		protected.DELETE("/monitor/executions", monitorHandler.DeleteExecutions)
-		protected.GET("/monitor/stats", monitorHandler.GetStats)
-		protected.GET("/monitor/calls-timeline", monitorHandler.GetCallsTimeline)
-		protected.GET("/notifications/summary", notificationHandler.GetSummary)
-		protected.POST("/notifications/read", notificationHandler.MarkRead)
-
-		// 配置管理
-		protected.GET("/config", configHandler.GetConfig)
-		protected.GET("/tool-guard", configHandler.GetToolGuard)
-		protected.PUT("/tool-guard", configHandler.UpdateToolGuard)
-		protected.POST("/tool-guard/test", configHandler.TestToolGuard)
-		protected.GET("/config/tools", configHandler.GetTools)
-		protected.GET("/config/tools/:name/schema", configHandler.GetToolSchema)
-		protected.PUT("/config", configHandler.UpdateConfig)
-		protected.POST("/config/apply", configHandler.ApplyConfig)
-		protected.POST("/config/test-openai", configHandler.TestOpenAI)
-		protected.POST("/config/test-typesafe", configHandler.TestTypeSafe)
-		protected.POST("/config/test-vision", configHandler.TestVision)
-		protected.POST("/config/list-models", configHandler.ListModels)
-
-		// 系统设置 - 终端（执行命令，提高运维效率）
-		protected.POST("/terminal/run", terminalHandler.RunCommand)
-		protected.POST("/terminal/run/stream", terminalHandler.RunCommandStream)
-		protected.GET("/terminal/ws", terminalHandler.RunCommandWS)
-
-		// 平台审计日志
-		protected.GET("/audit/meta", auditHandler.Meta)
-		protected.GET("/audit/summary", auditHandler.Summary)
-		protected.GET("/audit/logs", auditHandler.ListLogs)
-		protected.GET("/audit/logs/export", auditHandler.ExportLogs)
-		protected.GET("/audit/logs/:id", auditHandler.GetLog)
-
-		// 运行空间占用与垃圾清理
-		protected.GET("/storage/meta", app.storageHandler.Meta)
-		protected.GET("/storage/status", app.storageHandler.Status)
-		protected.POST("/storage/cleanup", app.storageHandler.Cleanup)
-
-		// 外部MCP管理
-		protected.GET("/external-mcp", externalMCPHandler.GetExternalMCPs)
-		protected.GET("/external-mcp/stats", externalMCPHandler.GetExternalMCPStats)
-		protected.GET("/external-mcp/:name", externalMCPHandler.GetExternalMCP)
-		protected.PUT("/external-mcp/:name", externalMCPHandler.AddOrUpdateExternalMCP)
-		protected.DELETE("/external-mcp/:name", externalMCPHandler.DeleteExternalMCP)
-		protected.POST("/external-mcp/:name/start", externalMCPHandler.StartExternalMCP)
-		protected.POST("/external-mcp/:name/stop", externalMCPHandler.StopExternalMCP)
-
-		// 攻击链可视化
-		protected.GET("/attack-chain/:conversationId", attackChainHandler.GetAttackChain)
-		protected.POST("/attack-chain/:conversationId/regenerate", attackChainHandler.RegenerateAttackChain)
-
-		// 知识库管理（始终注册路由，通过 App 实例动态获取 handler）
-		knowledgeRoutes := protected.Group("/knowledge")
-		{
-			knowledgeRoutes.GET("/categories", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"categories": []string{},
-						"enabled":    false,
-						"message":    "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.GetCategories(c)
-			})
-			knowledgeRoutes.GET("/items", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"items":   []interface{}{},
-						"enabled": false,
-						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.GetItems(c)
-			})
-			knowledgeRoutes.GET("/items/:id", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled": false,
-						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.GetItem(c)
-			})
-			knowledgeRoutes.POST("/items", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled": false,
-						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.CreateItem(c)
-			})
-			knowledgeRoutes.PUT("/items/:id", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled": false,
-						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.UpdateItem(c)
-			})
-			knowledgeRoutes.DELETE("/items/:id", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled": false,
-						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.DeleteItem(c)
-			})
-			knowledgeRoutes.GET("/index-status", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled":          false,
-						"total_items":      0,
-						"indexed_items":    0,
-						"progress_percent": 0,
-						"is_complete":      false,
-						"message":          "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.GetIndexStatus(c)
-			})
-			knowledgeRoutes.POST("/index", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled": false,
-						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.StartIndex(c)
-			})
-			knowledgeRoutes.POST("/scan", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled": false,
-						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.ScanKnowledgeBase(c)
-			})
-			knowledgeRoutes.GET("/retrieval-logs", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"logs":    []interface{}{},
-						"enabled": false,
-						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.GetRetrievalLogs(c)
-			})
-			knowledgeRoutes.DELETE("/retrieval-logs/:id", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled": false,
-						"error":   "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.DeleteRetrievalLog(c)
-			})
-			knowledgeRoutes.POST("/search", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"results": []interface{}{},
-						"enabled": false,
-						"message": "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.Search(c)
-			})
-			knowledgeRoutes.GET("/stats", func(c *gin.Context) {
-				if app.knowledgeHandler == nil {
-					c.JSON(http.StatusOK, gin.H{
-						"enabled":          false,
-						"total_categories": 0,
-						"total_items":      0,
-						"message":          "知识库功能未启用，请前往系统设置启用知识检索功能",
-					})
-					return
-				}
-				app.knowledgeHandler.GetStats(c)
-			})
-		}
-
-		// 漏洞管理
-		protected.GET("/vulnerabilities", vulnerabilityHandler.ListVulnerabilities)
-		protected.GET("/vulnerabilities/export", vulnerabilityHandler.ExportVulnerabilities)
-		protected.DELETE("/vulnerabilities/batch", vulnerabilityHandler.BatchDeleteVulnerabilities)
-		protected.GET("/vulnerabilities/filter-options", vulnerabilityHandler.GetVulnerabilityFilterOptions)
-		protected.GET("/vulnerabilities/stats", vulnerabilityHandler.GetVulnerabilityStats)
-		protected.GET("/vulnerability-alerts/subscription", vulnerabilityHandler.GetMyAlertSubscription)
-		protected.PUT("/vulnerability-alerts/subscription", vulnerabilityHandler.UpdateMyAlertSubscription)
-		protected.GET("/vulnerabilities/:id", vulnerabilityHandler.GetVulnerability)
-		protected.POST("/vulnerabilities", vulnerabilityHandler.CreateVulnerability)
-		protected.PUT("/vulnerabilities/:id", vulnerabilityHandler.UpdateVulnerability)
-		protected.DELETE("/vulnerabilities/:id", vulnerabilityHandler.DeleteVulnerability)
-
-		// 项目管理与事实黑板
-		protected.GET("/projects/dashboard-summary", projectHandler.GetDashboardSummary)
-		protected.GET("/projects", projectHandler.ListProjects)
-		protected.POST("/projects", projectHandler.CreateProject)
-		protected.GET("/projects/:id/stats", projectHandler.GetProjectStats)
-		protected.GET("/projects/:id/conversations", projectHandler.ListProjectConversations)
-		protected.GET("/projects/:id", projectHandler.GetProject)
-		protected.PUT("/projects/:id", projectHandler.UpdateProject)
-		protected.DELETE("/projects/:id", projectHandler.DeleteProject)
-		protected.GET("/projects/:id/fact-graph", projectHandler.GetFactGraph)
-		protected.GET("/projects/:id/fact-edges", projectHandler.ListFactEdges)
-		protected.POST("/projects/:id/fact-edges", projectHandler.CreateFactEdge)
-		protected.DELETE("/projects/:id/fact-edges/:edgeId", projectHandler.DeleteFactEdge)
-		protected.POST("/projects/:id/promote-attack-chain/:conversationId", projectHandler.PromoteAttackChain)
-		protected.GET("/projects/:id/facts", projectHandler.ListFacts)
-		protected.POST("/projects/:id/facts", projectHandler.CreateFact)
-		protected.PUT("/projects/:id/facts/:factId", projectHandler.UpdateFact)
-		protected.DELETE("/projects/:id/facts/:factId", projectHandler.DeleteFact)
-		protected.POST("/projects/:id/facts/deprecate", projectHandler.DeprecateFact)
-		protected.POST("/projects/:id/facts/restore", projectHandler.RestoreFact)
-
-		// WebShell 管理（代理执行 + 连接配置存 SQLite）
-		protected.GET("/webshell/connections", webshellHandler.ListConnections)
-		protected.POST("/webshell/connections", webshellHandler.CreateConnection)
-		protected.GET("/webshell/connections/:id/ai-history", webshellHandler.GetAIHistory)
-		protected.GET("/webshell/connections/:id/ai-conversations", webshellHandler.ListAIConversations)
-		protected.GET("/webshell/connections/:id/state", webshellHandler.GetConnectionState)
-		protected.PUT("/webshell/connections/:id", webshellHandler.UpdateConnection)
-		protected.PUT("/webshell/connections/:id/state", webshellHandler.SaveConnectionState)
-		protected.DELETE("/webshell/connections/:id", webshellHandler.DeleteConnection)
-		protected.POST("/webshell/exec", webshellHandler.Exec)
-		protected.POST("/webshell/file", webshellHandler.FileOp)
-
-		// C2 管理（未启用时返回 503，避免 Handler 空指针）
-		c2Routes := protected.Group("/c2")
-		c2Routes.Use(func(c *gin.Context) {
-			if app.c2Manager == nil {
-				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
-					"error":   "c2_disabled",
-					"message": "C2 功能已在系统设置中关闭",
-					"enabled": false,
-				})
-				return
-			}
-			c.Next()
-		})
-		c2Routes.GET("/listeners", c2Handler.ListListeners)
-		c2Routes.POST("/listeners", c2Handler.CreateListener)
-		c2Routes.GET("/listeners/:id", c2Handler.GetListener)
-		c2Routes.PUT("/listeners/:id", c2Handler.UpdateListener)
-		c2Routes.DELETE("/listeners/:id", c2Handler.DeleteListener)
-		c2Routes.POST("/listeners/:id/start", c2Handler.StartListener)
-		c2Routes.POST("/listeners/:id/stop", c2Handler.StopListener)
-		c2Routes.GET("/sessions", c2Handler.ListSessions)
-		c2Routes.DELETE("/sessions", c2Handler.DeleteSessions)
-		c2Routes.GET("/sessions/:id", c2Handler.GetSession)
-		c2Routes.DELETE("/sessions/:id", c2Handler.DeleteSession)
-		c2Routes.PUT("/sessions/:id/sleep", c2Handler.SetSessionSleep)
-		c2Routes.PUT("/sessions/:id/note", c2Handler.SetSessionNote)
-		c2Routes.GET("/tasks", c2Handler.ListTasks)
-		c2Routes.DELETE("/tasks", c2Handler.DeleteTasks)
-		c2Routes.GET("/tasks/:id", c2Handler.GetTask)
-		c2Routes.POST("/tasks", c2Handler.CreateTask)
-		c2Routes.POST("/tasks/:id/cancel", c2Handler.CancelTask)
-		c2Routes.GET("/tasks/:id/wait", c2Handler.WaitTask)
-		c2Routes.POST("/sessions/:id/tasks", c2Handler.CreateTask)
-		c2Routes.POST("/payloads/oneliner", c2Handler.PayloadOneliner)
-		c2Routes.POST("/payloads/build", c2Handler.PayloadBuild)
-		c2Routes.GET("/payloads/:id/download", c2Handler.PayloadDownload)
-		c2Routes.GET("/events", c2Handler.ListEvents)
-		c2Routes.DELETE("/events", c2Handler.DeleteEvents)
-		c2Routes.GET("/events/stream", c2Handler.EventStream)
-		c2Routes.POST("/files/upload", c2Handler.UploadFileForImplant)
-		c2Routes.GET("/files", c2Handler.ListFiles)
-		c2Routes.GET("/tasks/:id/result-file", c2Handler.DownloadResultFile)
-		c2Routes.GET("/profiles", c2Handler.ListProfiles)
-		c2Routes.GET("/profiles/:id", c2Handler.GetProfile)
-		c2Routes.POST("/profiles", c2Handler.CreateProfile)
-		c2Routes.PUT("/profiles/:id", c2Handler.UpdateProfile)
-		c2Routes.DELETE("/profiles/:id", c2Handler.DeleteProfile)
-
-		// 对话附件（chat_uploads）管理
-		protected.GET("/chat-uploads", chatUploadsHandler.List)
-		protected.GET("/chat-uploads/export", chatUploadsHandler.Export)
-		protected.GET("/chat-uploads/download", chatUploadsHandler.Download)
-		protected.GET("/chat-uploads/path", chatUploadsHandler.ResolvePath)
-		protected.GET("/chat-uploads/content", chatUploadsHandler.GetContent)
-		protected.POST("/chat-uploads", chatUploadsHandler.Upload)
-		protected.POST("/chat-uploads/mkdir", chatUploadsHandler.Mkdir)
-		protected.DELETE("/chat-uploads", chatUploadsHandler.Delete)
-		protected.PUT("/chat-uploads/rename", chatUploadsHandler.Rename)
-		protected.PUT("/chat-uploads/content", chatUploadsHandler.PutContent)
-
-		// 角色管理
-		protected.GET("/roles", roleHandler.GetRoles)
-		protected.GET("/roles/:name", roleHandler.GetRole)
-		protected.POST("/roles", roleHandler.CreateRole)
-		protected.PUT("/roles/:name", roleHandler.UpdateRole)
-		protected.DELETE("/roles/:name", roleHandler.DeleteRole)
-
-		// 工作流定义（图结构固定，业务字段保存在 graph_json 中）
-		protected.GET("/workflows/runs/pending", workflowHandler.ListPendingRuns)
-		protected.GET("/workflows/runs/:runId/replay", workflowHandler.ReplayRun)
-		protected.GET("/workflows/runs/:runId", workflowHandler.GetRun)
-		protected.POST("/workflows/runs/:runId/resume", workflowHandler.ResumeRun)
-		protected.POST("/workflows/validate", workflowHandler.Validate)
-		protected.POST("/workflows/dry-run", workflowHandler.DryRun)
-		protected.POST("/workflows/generate-draft", workflowHandler.GenerateDraft)
-		protected.GET("/workflows/:id/package", workflowHandler.ExportPackage)
-		protected.POST("/workflow-package-inspections", workflowHandler.CreatePackageInspection)
-		protected.GET("/workflow-package-inspections/:inspectionId", workflowHandler.GetPackageInspection)
-		protected.POST("/workflow-package-imports", workflowHandler.ApplyPackageImport)
-		protected.GET("/workflow-package-imports/:importId", workflowHandler.GetPackageImport)
-		protected.GET("/workflows", workflowHandler.List)
-		protected.GET("/workflows/:id", workflowHandler.Get)
-		protected.POST("/workflows", workflowHandler.Create)
-		protected.PUT("/workflows/:id", workflowHandler.Update)
-		protected.DELETE("/workflows/:id", workflowHandler.Delete)
-
-		// Skills管理（具体路径需注册在 /skills/:name 之前）
-		protected.GET("/skills", skillsHandler.GetSkills)
-		protected.GET("/skills/stats", skillsHandler.GetSkillStats)
-		protected.DELETE("/skills/stats", skillsHandler.ClearSkillStats)
-		protected.GET("/skills/:name/files", skillsHandler.ListSkillPackageFiles)
-		protected.GET("/skills/:name/file", skillsHandler.GetSkillPackageFile)
-		protected.PUT("/skills/:name/file", skillsHandler.PutSkillPackageFile)
-		protected.GET("/skills/:name/bound-roles", skillsHandler.GetSkillBoundRoles)
-		protected.POST("/skills", skillsHandler.CreateSkill)
-		protected.PUT("/skills/:name", skillsHandler.UpdateSkill)
-		protected.DELETE("/skills/:name", skillsHandler.DeleteSkill)
-		protected.DELETE("/skills/:name/stats", skillsHandler.ClearSkillStatsByName)
-		protected.GET("/skills/:name", skillsHandler.GetSkill)
-
-		// MCP端点
-		protected.POST("/mcp", func(c *gin.Context) {
-			mcpServer.HandleHTTP(c.Writer, c.Request)
-		})
-
-		// OpenAPI结果聚合端点（可选，用于获取对话的完整结果）
-		protected.GET("/conversations/:id/results", openAPIHandler.GetConversationResults)
-	}
+	deps.registerAgentRoutes(protected)
+	deps.registerAssetRoutes(protected)
+	deps.registerAttackChainRoutes(protected)
+	deps.registerAuditRoutes(protected)
+	deps.registerC2Routes(protected)
+	deps.registerConfigRoutes(protected)
+	deps.registerConversationRoutes(protected)
+	deps.registerFofaRoutes(protected)
+	deps.registerHitlRoutes(protected)
+	deps.registerToolGuardRoutes(protected)
+	deps.registerStorageRoutes(protected)
+	deps.registerExternalMCPRoutes(protected)
+	deps.registerChatUploadsRoutes(protected)
+	deps.registerKnowledgeRoutes(protected)
+	deps.registerMcpRoutes(protected)
+	deps.registerMonitorRoutes(protected)
+	deps.registerNotificationRoutes(protected)
+	deps.registerProjectRoutes(protected)
+	deps.registerRbacRoutes(protected)
+	deps.registerRobotRoutes(protected)
+	deps.registerRoleRoutes(protected)
+	deps.registerSkillRoutes(protected)
+	deps.registerTaskRoutes(protected)
+	deps.registerTerminalRoutes(protected)
+	deps.registerVulnerabilityRoutes(protected)
+	deps.registerWebshellRoutes(protected)
+	deps.registerWorkflowRoutes(protected)
 
 	// OpenAPI规范（需要认证，避免暴露API结构信息）
 	protected.GET("/openapi/spec", openAPIHandler.GetOpenAPISpec)
@@ -1460,9 +1072,15 @@ func setupRoutes(
 		c.HTML(http.StatusOK, "api-docs.html", nil)
 	})
 
-	// 静态文件
-	router.Static("/static", "./web/static")
-	router.LoadHTMLGlob("web/templates/*")
+	// 静态文件与前端模板：磁盘上有 web/ 时优先用磁盘（改模板免重编译），
+	// 否则回落到内嵌副本，二进制在任意工作目录下都能起。
+	webDir := assets.ResolveWebDir("")
+	tmpl, err := assets.Templates(webDir)
+	if err != nil {
+		app.logger.Fatal("前端模板加载失败", err)
+	}
+	router.SetHTMLTemplate(tmpl)
+	router.StaticFS("/static", http.FS(assets.StaticFS(webDir)))
 
 	// 前端页面
 	router.GET("/", func(c *gin.Context) {
@@ -2140,7 +1758,7 @@ func initializeKnowledge(
 	// 创建知识库API处理器
 	knowledgeHandler := handler.NewKnowledgeHandler(knowledgeManager, knowledgeRetriever, knowledgeIndexer, db, logger)
 	if app != nil && app.auditSvc != nil {
-		knowledgeHandler.SetAudit(app.auditSvc)
+		bindAudit(knowledgeHandler, app.auditSvc)
 	}
 	logger.Info("知识库模块初始化完成", zap.Bool("handler_created", knowledgeHandler != nil))
 

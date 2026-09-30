@@ -56,6 +56,7 @@ type Server struct {
 	toolAuthorizer         func(context.Context, string, map[string]interface{}) error
 	toolGuard              *toolguard.Manager
 	executionService       *ExecutionService
+	ctxDecorator           func(context.Context) context.Context
 	toolWaitTimeout        time.Duration
 	toolResultMaxBytes     int
 	spillRootDir           string
@@ -1673,6 +1674,25 @@ func (s *Server) RegisterResource(resource *Resource) {
 	s.resources[resource.URI] = resource
 }
 
+// SetRequestContextDecorator lets an assembly path bind identity and policy
+// context onto every stdio request, so no entry point can execute without the
+// process-wide authorization pipeline.
+func (s *Server) SetRequestContextDecorator(fn func(context.Context) context.Context) {
+	s.mu.Lock()
+	s.ctxDecorator = fn
+	s.mu.Unlock()
+}
+
+func (s *Server) requestContext(base context.Context) context.Context {
+	s.mu.RLock()
+	decorate := s.ctxDecorator
+	s.mu.RUnlock()
+	if decorate == nil {
+		return base
+	}
+	return decorate(base)
+}
+
 // HandleStdio 处理标准输入输出（用于 stdio 传输模式）
 // MCP 协议使用换行分隔的 JSON-RPC 消息；管道下需每次写入后 Flush，否则客户端会读不到响应
 func (s *Server) HandleStdio() error {
@@ -1706,7 +1726,7 @@ func (s *Server) HandleStdio() error {
 		}
 
 		// 处理消息
-		response := s.handleMessage(context.Background(), &msg)
+		response := s.handleMessage(s.requestContext(context.Background()), &msg)
 
 		// 如果是通知（response 为 nil），不需要发送响应
 		if response == nil {

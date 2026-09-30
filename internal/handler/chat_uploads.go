@@ -43,7 +43,7 @@ const (
 type ChatUploadsHandler struct {
 	logger *zap.Logger
 	audit  *audit.Service
-	db     *database.DB
+	db     database.ChatUploadsStore
 }
 
 // SetAudit wires platform audit logging.
@@ -55,7 +55,7 @@ func (h *ChatUploadsHandler) SetAudit(s *audit.Service) {
 func NewChatUploadsHandler(logger *zap.Logger, databases ...*database.DB) *ChatUploadsHandler {
 	h := &ChatUploadsHandler{logger: logger}
 	if len(databases) > 0 {
-		h.db = databases[0]
+		h.db = database.Narrow[database.ChatUploadsStore](databases[0])
 	}
 	return h
 }

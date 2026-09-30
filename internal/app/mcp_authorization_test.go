@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cyberstrike-ai/internal/authctx"
+	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
@@ -38,10 +39,19 @@ func TestMCPToolAuthorizerEnforcesPermissionAndResource(t *testing.T) {
 	principal := authctx.NewPrincipal(user.ID, user.Username, database.RBACScopeAssigned, map[string]bool{"mcp:write": true, "webshell:write": true})
 	ctx := authctx.WithPrincipal(context.Background(), principal)
 	authorize := mcpToolAuthorizer(db)
-	if err := authorize(ctx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": "ws_allowed"}); err != nil {
-		t.Fatalf("allowed resource denied: %v", err)
+
+	// webshell_exec 是 destructive 能力：即使权限与资源都通过，没有人工授权也必须拒绝。
+	if err := authorize(ctx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": "ws_allowed"}); err == nil {
+		t.Fatal("destructive capability ran without a human decision")
+	} else if !strings.Contains(err.Error(), "per-call human authorization") {
+		t.Fatalf("destructive gate produced the wrong denial: %v", err)
 	}
-	if err := authorize(ctx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": "ws_hidden"}); err == nil {
+
+	approved := WithCapabilityApproval(ctx)
+	if err := authorize(approved, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": "ws_allowed"}); err != nil {
+		t.Fatalf("allowed resource denied after approval: %v", err)
+	}
+	if err := authorize(approved, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": "ws_hidden"}); err == nil {
 		t.Fatal("foreign webshell resource was allowed")
 	}
 	if err := authorize(ctx, builtin.ToolManageWebshellDelete, map[string]interface{}{"connection_id": "ws_allowed"}); err == nil {
@@ -108,19 +118,19 @@ func TestMCPToolAuthorizerEnforcesConversationProjectBoundary(t *testing.T) {
 	projectCtx := authctx.WithPrincipal(mcp.WithMCPProjectID(mcp.WithMCPConversationID(context.Background(), projectConv.ID), project.ID), principal)
 	projectCtxFromConversationOnly := authctx.WithPrincipal(mcp.WithMCPConversationID(context.Background(), projectConv.ID), principal)
 
-	if err := authorize(unboundCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err == nil {
+	if err := authorize(WithCapabilityApproval(unboundCtx), builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err == nil {
 		t.Fatal("unbound conversation was allowed to use project-bound webshell")
 	}
-	if err := authorize(unboundCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsUnbound.ID}); err != nil {
+	if err := authorize(WithCapabilityApproval(unboundCtx), builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsUnbound.ID}); err != nil {
 		t.Fatalf("unbound webshell denied in unbound conversation: %v", err)
 	}
-	if err := authorize(projectCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err != nil {
+	if err := authorize(WithCapabilityApproval(projectCtx), builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err != nil {
 		t.Fatalf("project webshell denied in project conversation: %v", err)
 	}
-	if err := authorize(projectCtxFromConversationOnly, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err != nil {
+	if err := authorize(WithCapabilityApproval(projectCtxFromConversationOnly), builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsProject.ID}); err != nil {
 		t.Fatalf("project webshell denied when only conversation id is present: %v", err)
 	}
-	if err := authorize(projectCtx, builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsUnbound.ID}); err == nil {
+	if err := authorize(WithCapabilityApproval(projectCtx), builtin.ToolWebshellExec, map[string]interface{}{"connection_id": wsUnbound.ID}); err == nil {
 		t.Fatal("project conversation was allowed to use unbound webshell by id")
 	}
 	if err := authorize(unboundCtx, builtin.ToolC2Session, map[string]interface{}{"action": "get", "session_id": session.ID}); err == nil {
@@ -249,6 +259,24 @@ func TestExternalMCPRequiresDedicatedPermission(t *testing.T) {
 }
 
 func TestConfiguredCommandToolRequiresLocalExecutePermission(t *testing.T) {
+	// A recipe is only executable when its manifest is registered. This replaces
+	// the old default branch, where any tool name outside the builtin switch fell
+	// through to agent:local-execute.
+	rejections, err := RefreshRecipeLayer([]config.ToolConfig{{
+		Name:    "nmap_scan",
+		Command: "nmap",
+		Capability: &config.CapabilityManifest{
+			ID: "core.nmap_scan", Class: "mutating",
+			Permission: "agent:local-execute", Grants: []string{"net.connect(target)"},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("recipe registration failed: %v (%+v)", err, rejections)
+	}
+	t.Cleanup(func() {
+		_, _ = RefreshRecipeLayer(nil)
+	})
+
 	authorize := mcpToolAuthorizer(nil)
 	agentOnly := authctx.WithPrincipal(context.Background(), authctx.NewPrincipal("u1", "user", database.RBACScopeAssigned, map[string]bool{"agent:execute": true}))
 	if err := authorize(agentOnly, "nmap_scan", nil); err == nil {
@@ -257,5 +285,9 @@ func TestConfiguredCommandToolRequiresLocalExecutePermission(t *testing.T) {
 	local := authctx.WithPrincipal(context.Background(), authctx.NewPrincipal("u1", "user", database.RBACScopeAssigned, map[string]bool{"agent:local-execute": true}))
 	if err := authorize(local, "nmap_scan", nil); err != nil {
 		t.Fatalf("agent:local-execute rejected: %v", err)
+	}
+	// Undeclared names must fail closed instead of inheriting the coarse permission.
+	if err := authorize(local, "community_unregistered_tool", nil); err == nil {
+		t.Fatal("an unregistered capability was allowed by the coarse fallback")
 	}
 }

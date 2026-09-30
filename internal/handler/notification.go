@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -10,6 +9,7 @@ import (
 
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/security"
+	"cyberstrike-ai/internal/store"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -17,12 +17,44 @@ import (
 
 // NotificationHandler 聚合通知（Phase 2：服务端统一计算）
 type NotificationHandler struct {
-	db           *database.DB
+	db           database.NotificationStore
 	agentHandler *AgentHandler
 	logger       *zap.Logger
+	// reads owns notification_reads_by_user. The handler builds no SQL for it.
+	reads notificationReadStore
+	// hitl is the approval queue this surface reports on; the interrupt table
+	// belongs to that domain, so this handler only ever asks it for a summary.
+	hitl pendingApprovalSource
+	// findings and failedRuns are other domains' tables this digest reads. The queries
+	// live with those domains so this handler assembles no SQL at all.
+	findings   recentFindingSource
+	failedRuns failedExecutionSource
 }
 
-const notificationReadMaxRows = 150
+// pendingApprovalSource is the notification handler's read surface for HITL.
+type pendingApprovalSource interface {
+	PendingApprovals(limit int, access store.Access) ([]store.PendingApproval, error)
+}
+
+// recentFindingSource is the read surface over the vulnerability domain.
+type recentFindingSource interface {
+	RecentFindings(sinceSec int64, limit int, access store.Access) ([]store.RecentFinding, error)
+}
+
+// failedExecutionSource is the read surface over the tool-execution domain.
+type failedExecutionSource interface {
+	FailedSince(sinceSec int64, limit int) ([]store.FailedExecution, error)
+}
+
+// notificationReadStore is the persistence surface this handler needs. Defining it
+// here (consumer side) is what keeps the handler from depending on the 361-method
+// *database.DB again: *store.NotificationReads satisfies it, and a test double can too.
+type notificationReadStore interface {
+	EnsureSchema() error
+	ReadStates(userID string, eventIDs []string) (map[string]bool, error)
+	MarkRead(userID string, eventIDs []string) (int, error)
+	Prune(userID string, maxRows int) error
+}
 
 // NotificationSummaryItem 通知项
 type NotificationSummaryItem struct {
@@ -54,11 +86,18 @@ type NotificationSummaryResponse struct {
 }
 
 func NewNotificationHandler(db *database.DB, agentHandler *AgentHandler, logger *zap.Logger) *NotificationHandler {
-	return &NotificationHandler{
-		db:           db,
+	handler := &NotificationHandler{
+		db:           database.Narrow[database.NotificationStore](db),
 		agentHandler: agentHandler,
 		logger:       logger,
 	}
+	if db != nil {
+		handler.reads = store.NewNotificationReads(db.DB)
+		handler.hitl = store.NewHITL(db.DB)
+		handler.findings = store.NewVulnerability(db.DB)
+		handler.failedRuns = store.NewExecution(db.DB)
+	}
+	return handler
 }
 
 func parseSinceMs(raw string) int64 {
@@ -140,116 +179,39 @@ func notificationAccessFromContext(c *gin.Context) database.RBACListAccess {
 	return database.RBACListAccess{UserID: session.UserID, Scope: session.Scope}
 }
 
-func appendConversationAccessSQL(query string, args []interface{}, column string, access database.RBACListAccess) (string, []interface{}) {
-	userID := strings.TrimSpace(access.UserID)
-	if access.Scope == database.RBACScopeAll {
-		return query, args
-	}
-	if userID == "" {
-		return query + ` AND 1=0`, args
-	}
-	query += ` AND ` + column + ` IS NOT NULL AND ` + column + ` <> '' AND (
-		EXISTS (SELECT 1 FROM conversations c WHERE c.id = ` + column + ` AND c.owner_user_id = ?)
-		OR EXISTS (
-			SELECT 1 FROM rbac_resource_assignments ra
-			WHERE ra.user_id = ? AND ra.resource_type = 'conversation' AND ra.resource_id = ` + column + `
-		)
-		OR EXISTS (
-			SELECT 1 FROM conversations c
-			JOIN projects p ON p.id = c.project_id
-			WHERE c.id = ` + column + ` AND p.owner_user_id = ?
-		)
-		OR EXISTS (
-			SELECT 1 FROM conversations c
-			JOIN rbac_resource_assignments pra ON pra.resource_id = c.project_id
-			WHERE c.id = ` + column + ` AND pra.user_id = ? AND pra.resource_type = 'project'
-		)
-	)`
-	args = append(args, userID, userID, userID, userID)
-	return query, args
-}
-
-func appendVulnerabilityNotificationAccessSQL(query string, args []interface{}, access database.RBACListAccess) (string, []interface{}) {
-	userID := strings.TrimSpace(access.UserID)
-	if access.Scope == database.RBACScopeAll {
-		return query, args
-	}
-	if userID == "" {
-		return query + ` AND 1=0`, args
-	}
-	query += ` AND (
-		owner_user_id = ?
-		OR EXISTS (
-			SELECT 1 FROM rbac_resource_assignments ra
-			WHERE ra.user_id = ? AND ra.resource_type = 'vulnerability' AND ra.resource_id = vulnerabilities.id
-		)
-		OR (
-			project_id IS NOT NULL AND project_id <> '' AND (
-				EXISTS (SELECT 1 FROM projects p WHERE p.id = vulnerabilities.project_id AND p.owner_user_id = ?)
-				OR EXISTS (
-					SELECT 1 FROM rbac_resource_assignments pra
-					WHERE pra.user_id = ? AND pra.resource_type = 'project' AND pra.resource_id = vulnerabilities.project_id
-				)
-			)
-		)
-		OR (
-			conversation_id IS NOT NULL AND conversation_id <> '' AND (
-				EXISTS (SELECT 1 FROM conversations c WHERE c.id = vulnerabilities.conversation_id AND c.owner_user_id = ?)
-				OR EXISTS (
-					SELECT 1 FROM rbac_resource_assignments cra
-					WHERE cra.user_id = ? AND cra.resource_type = 'conversation' AND cra.resource_id = vulnerabilities.conversation_id
-				)
-			)
-		)
-	)`
-	args = append(args, userID, userID, userID, userID, userID, userID)
-	return query, args
+// storeAccess re-expresses the legacy read scope for the domain stores, which do not
+// import internal/database: the scope strings are the same values, declared in each place.
+func storeAccess(access database.RBACListAccess) store.Access {
+	return store.Access{UserID: access.UserID, Scope: access.Scope}
 }
 
 func (h *NotificationHandler) loadPendingHITLItems(limit int, english bool, access database.RBACListAccess) ([]NotificationSummaryItem, error) {
-	query := `
-		SELECT
-			id,
-			conversation_id,
-			tool_name,
-			COALESCE(CAST(strftime('%s', created_at) AS INTEGER), 0)
-		FROM hitl_interrupts
-		WHERE status = 'pending'
-	`
-	args := []interface{}{}
-	query, args = appendConversationAccessSQL(query, args, "conversation_id", access)
-	query += ` ORDER BY created_at DESC
-		LIMIT ?
-	`
-	args = append(args, limit)
-	rows, err := h.db.Query(query, args...)
+	if h.hitl == nil {
+		return []NotificationSummaryItem{}, nil
+	}
+	pending, err := h.hitl.PendingApprovals(limit, storeAccess(access))
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	items := make([]NotificationSummaryItem, 0, limit)
-	for rows.Next() {
-		var id, conversationID, toolName string
-		var createdSec int64
-		if err := rows.Scan(&id, &conversationID, &toolName, &createdSec); err != nil {
-			continue
-		}
+	items := make([]NotificationSummaryItem, 0, len(pending))
+	for _, p := range pending {
+		conversationID := p.ConversationID
 		desc := i18nText(english, "会话 "+conversationID+" 的审批中断待处理", "Conversation "+conversationID+" has pending HITL approval")
-		if strings.TrimSpace(toolName) != "" {
-			desc = i18nText(english, "工具 "+toolName+" 等待审批", "Tool "+toolName+" is waiting for approval")
+		if strings.TrimSpace(p.ToolName) != "" {
+			desc = i18nText(english, "工具 "+p.ToolName+" 等待审批", "Tool "+p.ToolName+" is waiting for approval")
 		}
 		items = append(items, NotificationSummaryItem{
-			ID:             "hitl:" + id,
+			ID:             "hitl:" + p.ID,
 			Level:          "p0",
 			Type:           "hitl_pending",
 			Title:          i18nText(english, "HITL 待审批", "HITL Pending Approval"),
 			Desc:           desc,
-			Ts:             unixSecToRFC3339(createdSec),
+			Ts:             unixSecToRFC3339(p.CreatedAtSec),
 			Count:          1,
 			Actionable:     true,
 			Read:           false,
 			ConversationID: conversationID,
-			InterruptID:    id,
+			InterruptID:    p.ID,
 		})
 	}
 	return items, nil
@@ -257,28 +219,6 @@ func (h *NotificationHandler) loadPendingHITLItems(limit int, english bool, acce
 
 func (h *NotificationHandler) loadVulnerabilityItems(sinceMs int64, limit int, english bool, access database.RBACListAccess) ([]NotificationSummaryItem, map[string]int, error) {
 	sinceSec := normalizedSinceSec(sinceMs)
-	query := `
-		SELECT
-			id,
-			title,
-			severity,
-			conversation_id,
-			COALESCE(CAST(strftime('%s', created_at) AS INTEGER), 0)
-		FROM vulnerabilities
-		WHERE CAST(strftime('%s', created_at) AS INTEGER) > ?
-	`
-	args := []interface{}{sinceSec}
-	query, args = appendVulnerabilityNotificationAccessSQL(query, args, access)
-	query += `
-		ORDER BY created_at DESC
-		LIMIT ?
-	`
-	args = append(args, limit)
-	rows, err := h.db.Query(query, args...)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
 	items := make([]NotificationSummaryItem, 0, limit)
 	counts := map[string]int{
 		"newCriticalVulns": 0,
@@ -287,12 +227,18 @@ func (h *NotificationHandler) loadVulnerabilityItems(sinceMs int64, limit int, e
 		"newLowVulns":      0,
 		"newInfoVulns":     0,
 	}
-	for rows.Next() {
-		var id, title, severity, conversationID string
-		var createdSec int64
-		if err := rows.Scan(&id, &title, &severity, &conversationID, &createdSec); err != nil {
-			continue
-		}
+	if h.findings == nil {
+		return items, counts, nil
+	}
+	// A finding with no conversation used to disappear from this digest entirely: the
+	// nullable column scanned into a string, and the loop answered the Scan error with
+	// continue. The store now coalesces it, so project-level findings count too.
+	findings, err := h.findings.RecentFindings(sinceSec, limit, storeAccess(access))
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, f := range findings {
+		id, title, severity, conversationID, createdSec := f.ID, f.Title, f.Severity, f.ConversationID, f.CreatedAtSec
 		switch strings.ToLower(strings.TrimSpace(severity)) {
 		case "critical":
 			counts["newCriticalVulns"]++
@@ -373,29 +319,17 @@ func (h *NotificationHandler) loadC2SessionOnlineEvents(sinceMs int64, limit int
 
 func (h *NotificationHandler) loadFailedExecutionItems(sinceMs int64, limit int, english bool) ([]NotificationSummaryItem, int, error) {
 	sinceSec := normalizedSinceSec(sinceMs)
-	rows, err := h.db.Query(`
-		SELECT
-			id,
-			tool_name,
-			COALESCE(CAST(strftime('%s', start_time) AS INTEGER), 0)
-		FROM tool_executions
-		WHERE status = 'failed'
-		  AND CAST(strftime('%s', start_time) AS INTEGER) > ?
-		ORDER BY start_time DESC
-		LIMIT ?
-	`, sinceSec, limit)
+	items := make([]NotificationSummaryItem, 0, limit)
+	count := 0
+	if h.failedRuns == nil {
+		return items, count, nil
+	}
+	failed, err := h.failedRuns.FailedSince(sinceSec, limit)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer rows.Close()
-	items := make([]NotificationSummaryItem, 0, limit)
-	count := 0
-	for rows.Next() {
-		var id, toolName string
-		var startSec int64
-		if err := rows.Scan(&id, &toolName, &startSec); err != nil {
-			continue
-		}
+	for _, f := range failed {
+		id, toolName, startSec := f.ID, f.ToolName, f.StartSec
 		count++
 		if strings.TrimSpace(toolName) == "" {
 			toolName = i18nText(english, "未知工具", "unknown")
@@ -483,43 +417,11 @@ func (h *NotificationHandler) summarizeCompletedTasksSince(sinceMs int64, limit 
 	return items, len(items)
 }
 
-func buildPlaceholders(n int) string {
-	if n <= 0 {
-		return ""
-	}
-	out := make([]string, 0, n)
-	for i := 0; i < n; i++ {
-		out = append(out, "?")
-	}
-	return strings.Join(out, ",")
-}
-
 func (h *NotificationHandler) readStatesByIDs(userID string, ids []string) (map[string]bool, error) {
-	result := make(map[string]bool, len(ids))
-	userID = strings.TrimSpace(userID)
-	if len(ids) == 0 || userID == "" {
-		return result, nil
+	if h.reads == nil {
+		return map[string]bool{}, nil
 	}
-	holders := buildPlaceholders(len(ids))
-	query := "SELECT event_id FROM notification_reads_by_user WHERE user_id = ? AND event_id IN (" + holders + ")"
-	args := make([]interface{}, 0, len(ids)+1)
-	args = append(args, userID)
-	for _, id := range ids {
-		args = append(args, id)
-	}
-	rows, err := h.db.Query(query, args...)
-	if err != nil {
-		return result, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			continue
-		}
-		result[id] = true
-	}
-	return result, nil
+	return h.reads.ReadStates(userID, ids)
 }
 
 func (h *NotificationHandler) applyReadStates(userID string, items []NotificationSummaryItem) ([]NotificationSummaryItem, error) {
@@ -582,73 +484,17 @@ func countUnread(items []NotificationSummaryItem) int {
 	return total
 }
 
-func createNotificationReadTableIfNeeded(db *database.DB) error {
-	if db == nil {
-		return fmt.Errorf("db is nil")
-	}
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS notification_reads_by_user (
-			user_id TEXT NOT NULL,
-			event_id TEXT NOT NULL,
-			read_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY(user_id, event_id)
-		);
-	`)
-	if err != nil {
-		return err
-	}
-	_, idxErr := db.Exec(`CREATE INDEX IF NOT EXISTS idx_notification_reads_user_read_at ON notification_reads_by_user(user_id, read_at DESC);`)
-	return idxErr
-}
-
-func pruneNotificationReads(db *database.DB, userID string, maxRows int) error {
-	if db == nil {
-		return fmt.Errorf("db is nil")
-	}
-	userID = strings.TrimSpace(userID)
-	if maxRows <= 0 || userID == "" {
-		return nil
-	}
-	_, err := db.Exec(`
-		DELETE FROM notification_reads_by_user
-		WHERE user_id = ? AND event_id NOT IN (
-			SELECT event_id
-			FROM notification_reads_by_user
-			WHERE user_id = ?
-			ORDER BY read_at DESC, rowid DESC
-			LIMIT ?
-		)
-	`, userID, userID, maxRows)
-	return err
-}
-
 type markReadRequest struct {
 	EventIDs []string `json:"eventIds"`
 }
 
-func normalizeMarkableEventID(id string) (string, bool) {
-	v := strings.TrimSpace(id)
-	if v == "" {
-		return "", false
-	}
-	// 仅允许“可读后隐藏”的信息类事件；Actionable 事件不参与 read 标记。
-	allowedPrefixes := []string{
-		"vuln:",
-		"exec_failed:",
-		"task_completed:",
-		"c2evt:",
-	}
-	for _, prefix := range allowedPrefixes {
-		if strings.HasPrefix(v, prefix) {
-			return v, true
-		}
-	}
-	return "", false
-}
-
 // MarkRead 按事件 ID 标记已读
 func (h *NotificationHandler) MarkRead(c *gin.Context) {
-	if err := createNotificationReadTableIfNeeded(h.db); err != nil {
+	if h.reads == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare notification read table"})
+		return
+	}
+	if err := h.reads.EnsureSchema(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare notification read table"})
 		return
 	}
@@ -666,42 +512,17 @@ func (h *NotificationHandler) MarkRead(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authenticated user"})
 		return
 	}
-	tx, err := h.db.Begin()
+	marked, err := h.reads.MarkRead(session.UserID, req.EventIDs)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to begin transaction"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark read"})
 		return
 	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-	stmt, err := tx.Prepare(`
-		INSERT INTO notification_reads_by_user(user_id, event_id, read_at)
-		VALUES(?, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(user_id, event_id) DO UPDATE SET read_at = CURRENT_TIMESTAMP
-	`)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to prepare statement"})
-		return
-	}
-	defer stmt.Close()
-	marked := 0
-	for _, raw := range req.EventIDs {
-		id, ok := normalizeMarkableEventID(raw)
-		if !ok {
-			continue
+	// Retention is best-effort: a failed prune must not turn a successful mark into
+	// a 500, which is why it is reported apart from MarkRead's own error.
+	if marked > 0 {
+		if err := h.reads.Prune(session.UserID, store.MaxNotificationReadsPerUser); err != nil {
+			h.logger.Warn("裁剪通知已读记录失败", zap.Error(err))
 		}
-		if _, err := stmt.Exec(session.UserID, id); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to mark read"})
-			return
-		}
-		marked++
-	}
-	if err := tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to commit read marks"})
-		return
-	}
-	if err := pruneNotificationReads(h.db, session.UserID, notificationReadMaxRows); err != nil {
-		h.logger.Warn("裁剪通知已读记录失败", zap.Error(err))
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true, "marked": marked})
 }
@@ -713,7 +534,7 @@ func (h *NotificationHandler) GetSummary(c *gin.Context) {
 		return
 	}
 
-	if err := createNotificationReadTableIfNeeded(h.db); err != nil {
+	if err := h.reads.EnsureSchema(); err != nil {
 		h.logger.Warn("初始化通知已读表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize notification read table"})
 		return

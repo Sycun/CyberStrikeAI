@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -187,15 +186,10 @@ func (h *AgentHandler) executeOneBatchSubTask(queueID string, queue *BatchTaskQu
 		if h.taskEventBus == nil {
 			return
 		}
-		ev := StreamEvent{Type: eventType, Message: message, Data: data}
-		b, err := json.Marshal(ev)
-		if err != nil {
-			b = []byte(`{"type":"error","message":"marshal failed"}`)
+		line, ok := mirrorLine(eventType, message, data)
+		if !ok {
+			return
 		}
-		line := make([]byte, 0, len(b)+8)
-		line = append(line, []byte("data: ")...)
-		line = append(line, b...)
-		line = append(line, '\n', '\n')
 		h.taskEventBus.Publish(conversationID, line)
 	}
 
@@ -419,13 +413,9 @@ func (h *AgentHandler) handleBatchSubTaskRunError(
 	clientErr := multiagent.EinoClientRunErrorMessage(runErr)
 	errorMsg := "执行失败: " + clientErr
 	if assistantMessageID != "" {
-		if _, updateErr := h.db.Exec(
-			"UPDATE messages SET content = ?, updated_at = ? WHERE id = ?",
-			errorMsg,
-			time.Now(), assistantMessageID,
-		); updateErr != nil {
-			h.logger.Warn("更新失败后的助手消息失败", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.Error(updateErr))
-		}
+		// setMessageContent 已经把 messageId 与错误记进日志；这里的上下文（queueId/taskId）
+		// 就在上一条 Error 里。
+		_ = h.setMessageContent(assistantMessageID, errorMsg)
 		if err := h.db.AddProcessDetail(assistantMessageID, conversationID, "error", errorMsg, nil); err != nil {
 			h.logger.Warn("保存错误详情失败", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.Error(err))
 		}

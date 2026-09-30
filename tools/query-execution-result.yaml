@@ -156,4 +156,15 @@ parameters:
       - 可以结合 page 和 limit 参数控制返回结果
       - 如果同时指定 search 和 filter，会先应用 filter，再在结果中搜索
     required: false
-
+# Capability manifest: identity, authorization, approval and egress
+# ceiling. The registry is fail-closed - a recipe without this
+# block cannot be executed. See docs/zh-CN/capability-platform-decoupling-research.md
+capability:
+  id: "core.query_execution_result"
+  version: "1.0.0"
+  class: "readonly"
+  permission: "agent:execute"
+  approval: "never"
+  runtime: "go-internal"
+  grants:
+    - "db.query(executions)"

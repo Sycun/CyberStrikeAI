@@ -3,7 +3,6 @@ package handler
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"cyberstrike-ai/internal/agentfinalizer"
 	"cyberstrike-ai/internal/multiagent"
@@ -93,7 +92,7 @@ func (h *AgentHandler) persistFinalizationDecision(
 		}
 		return
 	}
-	_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", finalizationBlockedMessage(decision), time.Now(), assistantMessageID)
+	_ = h.setMessageContent(assistantMessageID, finalizationBlockedMessage(decision))
 }
 
 func (h *AgentHandler) finalizeCandidateForDelivery(
@@ -137,7 +136,7 @@ func (h *AgentHandler) finalizeCandidateForDeliveryWithPolicy(
 		}
 		return decision
 	}
-	_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", finalizationBlockedMessage(decision), time.Now(), assistantMessageID)
+	_ = h.setMessageContent(assistantMessageID, finalizationBlockedMessage(decision))
 	return decision
 }
 

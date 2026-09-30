@@ -2,9 +2,7 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -24,28 +22,23 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
+	// 与 sseKeepalive 共用：禁止并发写 ResponseWriter，否则会破坏 chunked 编码
+	// （ERR_INVALID_CHUNKED_ENCODING）。
+	var sseWriteMu sync.Mutex
+	stream := h.newAgentStream(c, &sseWriteMu)
+	defer stream.close()
+	sendEvent := stream.send
+
 	if h.config == nil || !h.config.MultiAgent.Enabled {
-		ev := StreamEvent{Type: "error", Message: "多代理未启用，请在设置或 config.yaml 中开启 multi_agent.enabled"}
-		b, _ := json.Marshal(ev)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", b)
-		done := StreamEvent{Type: "done", Message: ""}
-		db, _ := json.Marshal(done)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", db)
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		}
+		sendEvent("error", "多代理未启用，请在设置或 config.yaml 中开启 multi_agent.enabled", nil)
+		sendEvent("done", "", nil)
 		return
 	}
 
 	var req ChatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		event := StreamEvent{Type: "error", Message: "请求参数错误: " + err.Error()}
-		b, _ := json.Marshal(event)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", b)
-		done := StreamEvent{Type: "done", Message: ""}
-		db, _ := json.Marshal(done)
-		fmt.Fprintf(c.Writer, "data: %s\n\n", db)
-		c.Writer.Flush()
+		sendEvent("error", "请求参数错误: "+err.Error(), nil)
+		sendEvent("done", "", nil)
 		return
 	}
 
@@ -55,54 +48,17 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 	// 注意：baseCtx 会在后面创建；该变量用于闭包提前捕获引用。
 	var baseCtx context.Context
 
-	clientDisconnected := false
-	// 与 sseKeepalive 共用：禁止并发写 ResponseWriter，否则会破坏 chunked 编码（ERR_INVALID_CHUNKED_ENCODING）。
-	var sseWriteMu sync.Mutex
 	var ssePublishConversationID string
-	sendEvent := func(eventType, message string, data interface{}) {
+	stream.skip = func(eventType string) bool {
 		// 用户主动停止时，Eino 可能仍会并发上报 eventType=="error"。
 		// 为避免 UI 看到“取消错误 + cancelled 文案”两条回复，这里直接丢弃取消对应的 error。
-		if eventType == "error" && baseCtx != nil {
-			cause := context.Cause(baseCtx)
-			if errors.Is(cause, ErrTaskCancelled) || errors.Is(cause, multiagent.ErrInterruptContinue) {
-				return
-			}
+		if eventType != "error" || baseCtx == nil {
+			return false
 		}
-		ev := StreamEvent{Type: eventType, Message: message, Data: data}
-		b, errMarshal := json.Marshal(ev)
-		if errMarshal != nil {
-			b = []byte(`{"type":"error","message":"marshal failed"}`)
-		}
-		sseLine := make([]byte, 0, len(b)+8)
-		sseLine = append(sseLine, []byte("data: ")...)
-		sseLine = append(sseLine, b...)
-		sseLine = append(sseLine, '\n', '\n')
-		if ssePublishConversationID != "" && h.taskEventBus != nil {
-			h.taskEventBus.Publish(ssePublishConversationID, sseLine)
-		}
-		if clientDisconnected {
-			return
-		}
-		select {
-		case <-c.Request.Context().Done():
-			clientDisconnected = true
-			return
-		default:
-		}
-		sseWriteMu.Lock()
-		_, err := c.Writer.Write(sseLine)
-		if err != nil {
-			sseWriteMu.Unlock()
-			clientDisconnected = true
-			return
-		}
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		} else {
-			c.Writer.Flush()
-		}
-		sseWriteMu.Unlock()
+		cause := context.Cause(baseCtx)
+		return errors.Is(cause, ErrTaskCancelled) || errors.Is(cause, multiagent.ErrInterruptContinue)
 	}
+	stream.conversationID = func() string { return ssePublishConversationID }
 
 	h.logger.Info("收到 Eino DeepAgent 流式请求",
 		zap.String("conversationId", req.ConversationID),
@@ -186,7 +142,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 			sendEvent("error", errorMsg, nil)
 		}
 		if assistantMessageID != "" {
-			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errorMsg, time.Now(), assistantMessageID)
+			_ = h.setMessageContent(assistantMessageID, errorMsg)
 		}
 		sendEvent("done", "", map[string]interface{}{"conversationId": conversationID})
 		timeoutCancel()
@@ -375,7 +331,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 			h.tasks.UpdateTaskStatus(conversationID, taskStatus)
 			timeoutMsg := "任务执行超时，已自动终止。"
 			if assistantMessageID != "" {
-				_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", timeoutMsg, time.Now(), assistantMessageID)
+				_ = h.setMessageContent(assistantMessageID, timeoutMsg)
 				_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "timeout", timeoutMsg, nil)
 			}
 			sendEvent("error", timeoutMsg, map[string]interface{}{
@@ -394,7 +350,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 		clientErr := multiagent.EinoClientRunErrorMessage(runErr)
 		errMsg := "执行失败: " + clientErr
 		if assistantMessageID != "" {
-			_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errMsg, time.Now(), assistantMessageID)
+			_ = h.setMessageContent(assistantMessageID, errMsg)
 			_ = h.db.AddProcessDetail(assistantMessageID, conversationID, "error", errMsg, nil)
 		}
 		errData := multiagent.EinoClientRunErrorFields(runErr)
@@ -537,7 +493,7 @@ func (h *AgentHandler) MultiAgentLoop(c *gin.Context) {
 			clientErr := multiagent.EinoClientRunErrorMessage(runErr)
 			errMsg := "执行失败: " + clientErr
 			if prep.AssistantMessageID != "" {
-				_, _ = h.db.Exec("UPDATE messages SET content = ?, updated_at = ? WHERE id = ?", errMsg, time.Now(), prep.AssistantMessageID)
+				_ = h.setMessageContent(prep.AssistantMessageID, errMsg)
 			}
 			errData := multiagent.EinoClientRunErrorFields(runErr)
 			errData["error"] = errMsg

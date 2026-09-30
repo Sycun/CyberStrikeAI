@@ -1,0 +1,77 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gate:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: go build ./...
+      # -race 是门禁：共享配置快照与 HITL 审批状态都依赖它才能发现竞态。
+      - name: Test (race)
+        run: make test-race
+      - name: Vet
+        run: make vet
+      # ratchet：仓库有 29 个上游遗留文件不是 gofmt 形态，门禁只要求不再增加。
+      - name: gofmt (ratchet)
+        run: make fmt-check
+      # P6 收敛判据：Eino 只能收在越来越少的包里。逐包基线，新引入的包直接红。
+      - name: Layering (Eino convergence + handler size ratchets)
+        run: make layering-check
+  capability:
+    name: Capability manifest gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.3.0
+          args: --timeout=10m
+      - name: Lint
+        run: golangci-lint run
+      # 每个 tools/*.yaml 必须带可执行的 capability 清单，且生成物必须与清单一致。
+      - name: Recipe manifests and generated catalog
+        run: go test -count=1 ./internal/app/ -run 'Shipped|Declared|Catalog|Capability|Recipe|Approval'
+      - name: Regenerate catalog and fail on drift
+        run: |
+          set -euo pipefail
+          go run ./internal/capability/gen -root .
+          if ! git diff --exit-code -- web/static/js/generated docs/zh-CN/capability-catalog.md internal/capability/testdata; then
+            echo "capability catalog is stale: run 'make generate' and commit the result" >&2
+            exit 1
+          fi
+      # Provider 方言目录：表 = 已发布的 JSON/Markdown，逐字段与逐字节一致。
+      - name: Regenerate provider catalog and fail on drift
+        run: |
+          set -euo pipefail
+          go run ./internal/provider/gen -root .
+          if ! git diff --exit-code -- internal/provider/testdata docs/zh-CN/provider-catalog.md; then
+            echo "provider catalog is stale: run 'make generate' and commit the result" >&2
+            exit 1
+          fi
+      # SSE 事件契约：注册表 = 代码实际发射名 = 已提交清单，三个方向都要一致。
+      - name: SSE event contract gates
+        run: go test -count=1 ./internal/handler/ -run 'SSEInventoryMatchesGolden|AgentSSEKinds|TerminalSSEKinds|HandwrittenSSEFramesRatchet'
+      - name: Regenerate SSE inventory and fail on drift
+        run: |
+          set -euo pipefail
+          go run ./internal/sse/gen -root .
+          if ! git diff --exit-code -- internal/sse/testdata web/static/js/generated docs/zh-CN/sse-event-catalog.md; then
+            echo "SSE event catalog is stale: run 'make generate' and commit the result" >&2
+            exit 1
+          fi

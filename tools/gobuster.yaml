@@ -51,3 +51,15 @@ parameters:
     description: "额外的Gobuster参数"
     required: false
     format: "positional"
+# Capability manifest: identity, authorization, approval and egress
+# ceiling. The registry is fail-closed - a recipe without this
+# block cannot be executed. See docs/zh-CN/capability-platform-decoupling-research.md
+capability:
+  id: "core.gobuster"
+  version: "1.0.0"
+  class: "mutating"
+  permission: "agent:local-execute"
+  runtime: "recipe:exec"
+  grants:
+    - "process.exec(gobuster)"
+    - "net.connect(target)"

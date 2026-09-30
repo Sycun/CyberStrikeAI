@@ -8,9 +8,11 @@ This guide is for contributors extending CyberStrikeAI. The project is a Go sing
 
 ```text
 cmd/server/              service entrypoint
-internal/app/            app wiring, routes, MCP tool registration
+internal/app/            app wiring, routes, MCP tool registration, capability policy assembly (the only assembly point)
+internal/capability/     capability identity, manifest, authorization and approval floor (leaf package; depends on no business package)
 internal/handler/        HTTP handlers
-internal/database/       SQLite access
+internal/database/       SQLite access (legacy surface; new domains go to internal/store)
+internal/store/          per-domain persistence: one file per domain, takes only *sql.DB, testable against a real database
 internal/security/       auth, rate limits, shell execution
 internal/mcp/            MCP server and external MCP manager
 internal/multiagent/     Eino single-agent, multi-agent, middleware
@@ -39,7 +41,10 @@ The frontend is static. Most JS/CSS/template changes only require a browser refr
 
 Do not add only a handler. A complete module usually needs:
 
-1. Data model and SQLite migration.
+1. Data model and SQLite migration. New domains live in `internal/store/` (one owner per table,
+   handlers depend on a consumer-side interface); only existing domains still grow in
+   `internal/database/`. The HTTP layer must not contain raw SQL — `TestHandlerRawSQLRatchet`
+   ratchets `h.db` and `m.db` separately and only allows the counts down.
 2. Handler: parameters, errors, pagination/filtering.
 3. Audit: management actions.
 4. Monitor: long-running execution state.
@@ -104,7 +109,13 @@ High-value tests:
 
 ## Source Anchors
 
-- App wiring: `internal/app/app.go`
+- App wiring: `internal/app/app.go`; per-domain registrars in `internal/app/routes_<domain>.go`.
+  `setupRoutes` only builds groups, attaches middleware and calls the registrars - the old rule that
+  every route live in one function is gone (that function was 558 lines with 30 positional params).
+  `TestRouteTableMatchesGolden` asserts the served paths against `testdata/routes.golden.txt` (278 routes),
+  so moving a registration cannot silently change the surface. Regenerate deliberately:
+  `CSAI_WRITE_ROUTE_GOLDEN=1 go test ./internal/routes -run TestWriteGolden`.
+- Capability policy: `internal/capability/policy_builtin.go` (built-in tools) or the `capability:` block in `tools/<name>.yaml` (recipes). A tool with no registered manifest is refused at execution; there is no coarse fallback. Built-ins need no Go change when they are recipes, and `make generate` refreshes the derived catalog, frontend enum and argument schemas.
 - Config apply: `internal/handler/config.go`
 - OpenAPI: `internal/handler/openapi.go`
 - Tool executor: `internal/security/executor.go`
