@@ -194,8 +194,15 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   下当场报出写与迭代的竞争；这正是角色 API 过去做的事（GET 请求里也会原地 `make` 那张 map）。
 - 角色一侧已经接通到运行路径：写 = 「写文件 → 进表 → 发布新快照」，读 = `currentRoles(h.config)`
   （`internal/handler/live_config.go`），装配漏装活配置快照会让 `make wiring-check` 变红——
-  而这个漏接**编译得过、启用路径测试也全绿**，所以它必须是门禁。agent/skill/tool 的运行路径
-  仍各自按目录重扫，`bundles/README.md` 的表逐行写明差距。
+  而这个漏接**编译得过、启用路径测试也全绿**，所以它必须是门禁。
+- skill 一侧同样接通了，并且是**换了实现**才接通的：Eino 自带的 backend 只接受一个 `BaseDir`，
+  所以能力包里的 skill 结构上不可能被读到。`internal/einoskill` 改为用能力表实现那个两方法接口
+  （不建符号链接、不复制别人的文件），`internal/multiagent` 在有表时优先用它。
+  替换厂商实现的风险由 **拿厂商当真相源** 的比对测试挡住：`TestBackendMatchesEinoBackend`
+  对内置 23 个 skill 逐个比对 front matter、正文与 base directory；另有一条
+  `TestTabInBodyIsNotStripped` 挡住"照抄厂商的 stripLineNumbers"——那是因为它们的
+  local backend 会给每行加 `N\t` 前缀，直接读磁盘再照抄会把正文里真实的制表符前截断。
+  agents/tools 的运行路径仍各自按目录重扫，`bundles/README.md` 的表逐行写明差距。
 
 ## 十三、尚未实现（下一阶段）
 
@@ -233,7 +240,9 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   `docs/zh-CN/provider-catalog.md` + `internal/provider/testdata/provider-catalog.golden.json` 为产物）、
   Eino 收口至 ≤1 包（**已进门禁并在收**：`internal/layering` 对适配包之外的每个包钉基线、
   新引入包直接硬失败，`make layering-check` 进 CI；总引入包 11→6，
-  适配边界之外的债面 8 包/100 文件 → 3 包/96 文件，Eino 生产文件总数 104 不变——
+  适配边界之外的债面 8 包/100 文件 → 3 包/96 文件，Eino 生产文件总数 104 → 105——
+  前几片是"代码搬进适配层、总数不变"；那 +1 是 `internal/einoskill`（见第十二节），
+  它换掉的是 Eino skill backend 只能读一个 BaseDir 这条**能力上限**，不是搬家；债面没有退化——
   `internal/vision`、`internal/handler`、`internal/reasoning`、`internal/security` 等片已搬进适配层，
   剩下的 `multiagent`/`knowledge`/`workflow` 是 Eino 编排的宿主，要把它们抽干净需要接口化而非搬家）、
   20 对孪生函数合并（判据已有=方言一致性套件）。

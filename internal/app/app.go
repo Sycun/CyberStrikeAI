@@ -461,6 +461,15 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	// a plug-in take effect - no restart, and no reader ever sees a half-updated map.
 	pluginTable := plugin.NewTable()
 	handler.InstallSettingsStore(settingsStore)
+	// Publish the table globally only once it actually holds the shipped capabilities: the skill
+	// middleware prefers the table over its single-directory backend, so installing an empty one
+	// after a failed scan would take skills away from every run instead of leaving the old
+	// behaviour in place.
+	if err := scanBuiltInCapabilities(pluginTable, cfg, configPath, log.Logger); err != nil {
+		log.Logger.Error("内置能力扫描失败，能力表不启用（运行路径退回单目录行为）", zap.Error(err))
+	} else {
+		plugin.Install(pluginTable)
+	}
 
 	agentHandler := handler.NewAgentHandler(agent, db, cfg, log.Logger)
 	agentHandler.SetSettings(settingsStore)

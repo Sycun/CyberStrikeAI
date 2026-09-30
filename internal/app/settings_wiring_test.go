@@ -27,7 +27,9 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 	fset := token.NewFileSet()
 	installed := 0
 	published := 0
+	tableInstalled := 0
 	scanned := 0
+	scannedCalled := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -45,12 +47,20 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 			}
 			sel, ok := call.Fun.(*ast.SelectorExpr)
 			if !ok {
+				// A bare call in this package: the capability scan, which lives here.
+				if id, isIdent := call.Fun.(*ast.Ident); isIdent && id.Name == "scanBuiltInCapabilities" {
+					scannedCalled++
+				}
 				return true
 			}
 			switch sel.Sel.Name {
 			case "InstallSettingsStore":
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "handler" {
 					installed++
+				}
+			case "Install":
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "plugin" {
+					tableInstalled++
 				}
 			case "Reload":
 				published++
@@ -66,11 +76,21 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 			"(0 means every handler silently falls back to the boot config; more than 1 means two "+
 			"snapshots can disagree)", installed)
 	}
+	if tableInstalled != 1 {
+		t.Fatalf("plugin.Install is called %d times in internal/app, want exactly 1: without a global "+
+			"table the skill middleware silently keeps the single-directory backend, so a bundle's "+
+			"skills would look installed while nothing served them", tableInstalled)
+	}
+	if scannedCalled < 1 {
+		t.Fatalf("scanBuiltInCapabilities is never called: the table would be empty, and preferring it " +
+			"over Eino's backend would take every shipped skill away from a run")
+	}
 	if published < 1 {
 		t.Fatalf("no role catalog publish in assembly: the store would be installed but empty, so "+
 			"the roles API and every run path would serve nothing (files scanned: %d)", scanned)
 	}
-	t.Logf("assembly wiring: %d files scanned, 1 live-store install, %d catalog publish call(s)", scanned, published)
+	t.Logf("assembly wiring: %d files scanned, 1 live-store install, 1 table install, "+
+		"%d capability scan call(s), %d catalog publish call(s)", scanned, scannedCalled, published)
 }
 
 func moduleRootForWiringTest(t *testing.T) string {

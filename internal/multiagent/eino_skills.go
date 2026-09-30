@@ -10,6 +10,8 @@ import (
 
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/einomcp"
+	"cyberstrike-ai/internal/einoskill"
+	"cyberstrike-ai/internal/plugin"
 	"cyberstrike-ai/internal/tooloutput"
 
 	localbk "github.com/cloudwego/eino-ext/adk/backend/local"
@@ -76,12 +78,21 @@ func prepareEinoAgenticSkills(
 		return nil, nil, false, "", err
 	}
 
-	skillBE, err := skill.NewBackendFromFilesystem(ctx, &skill.BackendFromFilesystemConfig{
-		Backend: loc,
-		BaseDir: abs,
-	})
+	// Prefer the capability table: it covers the built-in skills/ directory *and* anything a
+	// bundle installed, which a single BaseDir cannot express. The filesystem backend stays as
+	// the path for a process with no table installed (unit tests), and internal/app gates on the
+	// assembly installing one, so production never takes it silently.
+	var skillBE skill.Backend
+	if table := plugin.Global(); table != nil {
+		skillBE, err = einoskill.NewBackend(table)
+	} else {
+		skillBE, err = skill.NewBackendFromFilesystem(ctx, &skill.BackendFromFilesystemConfig{
+			Backend: loc,
+			BaseDir: abs,
+		})
+	}
 	if err != nil {
-		return nil, nil, false, "", fmt.Errorf("eino agentic skill filesystem backend: %w", err)
+		return nil, nil, false, "", fmt.Errorf("eino agentic skill backend: %w", err)
 	}
 
 	sc := &skill.TypedConfig[*schema.AgenticMessage]{Backend: skillBE}

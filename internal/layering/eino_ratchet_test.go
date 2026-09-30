@@ -17,6 +17,12 @@ var einoAdapters = map[string]bool{
 	"internal/llm":         true,
 	"internal/einomcp":     true,
 	"internal/einoobserve": true,
+	// The skill adapter earns its place by removing a capability limit, not just by moving code:
+	// Eino's own backend takes one BaseDir, so skills living inside a plug-in bundle were
+	// unreachable. internal/einoskill implements that backend over the capability table instead,
+	// and multiagent now prefers it. Parity with the vendor implementation is pinned by
+	// TestBackendMatchesEinoBackend.
+	"internal/einoskill": true,
 }
 
 // einoDebt is the water mark of the report's P6 acceptance criterion ("one package speaks

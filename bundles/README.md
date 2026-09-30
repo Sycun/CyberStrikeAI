@@ -54,8 +54,8 @@ units:
 | kind | 单元进表 | 运行路径读表 | 一键安装 API |
 |---|---|---|---|
 | role | ✅ 启动扫描 + 包 | ✅ `currentRoles` → 活配置快照（`internal/handler/live_config.go`） | ⬜ 待接（任务 #22） |
+| skill | ✅ | ✅ `internal/einoskill` 用能力表实现 Eino 的 `skill.Backend` | ⬜ |
 | agent | ✅ | ⬜ 仍按目录重扫（`agents.LoadMarkdownAgentsDir`） | ⬜ |
-| skill | ✅ | ⬜ 仍按目录重扫（Eino skill 中间件） | ⬜ |
 | tool | ✅ | ⬜ 仅 `POST /config/apply` 生效 | ⬜ |
 | mcp | ⬜ 外部 MCP 本来就是热增删，缺的是逐工具授权 | — | ⬜（任务 #20） |
 

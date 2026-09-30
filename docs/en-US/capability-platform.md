@@ -236,8 +236,17 @@ one identity scheme and one live table:
 - Roles are wired through to the run path: a write is "file -> unit -> publish a new snapshot" and
   a read is `currentRoles(h.config)` (`internal/handler/live_config.go`). If assembly forgets to
   install the live store, `make wiring-check` fails - and that omission **compiles cleanly with the
-  enabled-path tests green**, which is why it has to be a gate. Agents, skills and tools still
-  re-scan their directories per run; `bundles/README.md` states the gap per kind.
+  enabled-path tests green**, which is why it has to be a gate.
+- Skills are wired through too, and only after **replacing a vendor implementation**: Eino's own
+  backend accepts one `BaseDir`, so a skill inside a bundle was structurally unreachable.
+  `internal/einoskill` implements that two-method backend over the capability table instead (no
+  symlink farm, no copying of somebody else's files), and `internal/multiagent` prefers it whenever
+  a table is installed. Swapping a vendor component is guarded by comparing against the vendor as
+  the truth source - `TestBackendMatchesEinoBackend` checks front matter, body and base directory
+  for all 23 shipped skills - and `TestTabInBodyIsNotStripped` blocks the tempting copy of the
+  vendor's `stripLineNumbers`, which exists only because *its* local backend prefixes lines with
+  `N\t`; applying it to bytes read straight from disk truncates every real tab. Agents and tools
+  still re-scan their directories per run; `bundles/README.md` states the gap per kind.
 
 ## 13. Not implemented yet
 
@@ -309,7 +318,12 @@ one identity scheme and one live table:
   brand-new importer fails outright, growth inside a debt package fails with the file list,
   shrinkage only asks to tighten the baseline), `make layering-check` runs in CI, and the water
   mark is now 6 importing packages down from 11, with the debt surface at 3 packages / 96 files
-  from 8 / 100 while the total Eino-importing file count stays exactly 104 - the code moved into
+  from 8 / 100 while the total Eino-importing file count went 104 -> 105. Earlier slices were pure
+  moves - code relocated into the boundary packages, nothing deleted, nothing grown - and the +1 is
+  the one genuine addition: `internal/einoskill`, which exists because Eino's own skill backend
+  accepts a single `BaseDir` and therefore cannot reach a skill that lives inside a bundle (see
+  section 12). The debt surface - the side the acceptance criterion actually watches - did not
+  regress. The code moved into
   the boundary packages rather than being deleted or grown. Four slices so far: `internal/vision`'s
   model call behind `llm.DescribeImage`, the Claude connection probe behind `llm.PingAgentic`, all
   of `internal/reasoning`'s rules behind its own `ChatModelTarget` interface with the SDK mapping

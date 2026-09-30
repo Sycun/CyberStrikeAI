@@ -106,6 +106,9 @@ wiring-check:
 	## 热插拔接线：装配必须装好活配置快照并发布角色目录；内置能力身份必须与既有加载器一致
 	$(GO) test -count=1 -run 'TestAssemblyInstalls|TestShipped|TestEveryShipped|TestExampleBundles' ./internal/app/
 	$(GO) test -count=1 -run 'TestBootPublish|TestBundledRole|TestRoleAPI|TestRoleCreateUpdateDelete' ./internal/handler/
+	## skill：以厂商 backend 为真相源比对 + 装包后立刻可见 + 空 skills_dir 行为不变
+	$(GO) test -count=1 ./internal/einoskill/
+	$(GO) test -count=1 -run 'TestPrepareEinoAgenticSkills' ./internal/multiagent/
 
 .PHONY: ci
 ci: fmt-check vet test-race lint arch-lint layering-check wiring-check

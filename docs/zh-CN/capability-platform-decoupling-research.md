@@ -564,15 +564,18 @@ manifest 与已批准版本相同 → 只做自动重扫；任何**新增**能�
   security 的 5 条流式测试与 1 条进程组测试改跑 `streamCollector` 双，断言语义逐条对应：
   stderr 必须在 stdout 阻塞时**先到**（旧实现在此点是坏的）、sudo 快速失败且退出码 1、
   后台启动**不得等待作业结束**、空命令必须报错。`multiagent` 基线 78→79 的**理由写在数字旁边**
-  （它吸收了 security 的那个文件；仓库总数 104 不变），提高基线必须是显式可审的动作。
+  （它吸收了 security 的那个文件；**该轮**仓库总数 104 不变），提高基线必须是显式可审的动作。
 - **`internal/handler` 不再 import Eino**：连接测试原本在传输层手搭
   `[]*schema.AgenticMessage{schema.UserAgenticMessage("Hi")}`，现在走 `llm.PingAgentic`。
 - **`internal/vision` 不再 import Eino**：原本自己 `einoopenai.NewChatModel` 并手搭两条通道的
   消息；现在走 `llm.DescribeImage(ctx, llm.VisionRequest{...})`，**请求结构体不含厂商类型**，
   detail 映射与四条错误文案逐字保留。`CompatibleHTTPClient` 由调用方传入，因为那个 transport
   helper 在 `internal/openai` 而 `openai` 依赖 `llm`——注释写明了这条环怎么绕开，不是随手加的字段。
-- **结果：总引入包 11 → 6；适配包之外的债面 8 包/100 文件 → 3 包/96 文件；
-  而 import Eino 的文件总数始终 104。** 这正是收敛该有的形状：代码被搬走，没被删掉，也没长出来。
+- **结果：总引入包 11 → 6；适配包之外的债面 8 包/100 文件 → 3 包/96 文件；import Eino 的文件
+  总数 104 → 105。** 前四项收敛的形状是"代码被搬走，没被删掉，也没长出来"；最后那 +1 是
+  **唯一一次真的长出来**：`internal/einoskill` 是新增的适配器文件，不是为了搬家省事——
+  Eino 自带的 skill backend 只接受一个 `BaseDir`，所以能力包里的 skill 根本无法被读到。
+  它替换的是一条能力上限，而债面（判据真正盯的那一侧）一步没退。
 - 探针三向验红/验绿后撤销：①债包 `internal/security` 加一个 eino 文件 →
   `Eino imports grew inside existing debt packages: [internal/security: 2 > baseline 1 [shell_execute_stream.go, zz_eino_probe.go]]`；
   ②**适配包** `internal/llm` 加一个 eino 文件 → 不报红（设计意图，必须能验）；
