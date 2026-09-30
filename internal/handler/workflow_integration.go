@@ -15,14 +15,14 @@ import (
 )
 
 func (h *AgentHandler) roleForWorkflow(req *ChatRequest) (config.RoleConfig, bool) {
-	if h == nil || h.config == nil || h.config.Roles == nil || req == nil {
+	if h == nil || req == nil {
 		return config.RoleConfig{}, false
 	}
 	roleName := strings.TrimSpace(req.Role)
 	if roleName == "" {
 		return config.RoleConfig{}, false
 	}
-	role, ok := h.config.Roles[roleName]
+	role, ok := lookupRole(h.config, roleName)
 	if !ok || !role.Enabled {
 		return config.RoleConfig{}, false
 	}

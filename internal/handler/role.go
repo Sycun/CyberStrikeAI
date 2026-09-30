@@ -1,15 +1,18 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"cyberstrike-ai/internal/audit"
 	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/plugin"
 
 	"gopkg.in/yaml.v3"
 
@@ -18,11 +21,15 @@ import (
 )
 
 // RoleHandler 角色处理器
+//
+// plugins is the capability table the catalog is rebuilt from on every change; see
+// role_catalog.go for why the directory scan and the published snapshot are separate steps.
 type RoleHandler struct {
 	config     *config.Config
 	configPath string
 	logger     *zap.Logger
 	audit      *audit.Service
+	plugins    *plugin.Table
 }
 
 // SetAudit wires platform audit logging.
@@ -31,31 +38,33 @@ func (h *RoleHandler) SetAudit(s *audit.Service) {
 }
 
 // NewRoleHandler 创建新的角色处理器
-func NewRoleHandler(cfg *config.Config, configPath string, logger *zap.Logger) *RoleHandler {
+func NewRoleHandler(cfg *config.Config, configPath string, logger *zap.Logger, plugins *plugin.Table) *RoleHandler {
 	return &RoleHandler{
 		config:     cfg,
 		configPath: configPath,
 		logger:     logger,
+		plugins:    plugins,
 	}
 }
 
 // GetRoles 获取所有角色
 func (h *RoleHandler) GetRoles(c *gin.Context) {
-	if h.config.Roles == nil {
-		h.config.Roles = make(map[string]config.RoleConfig)
-	}
+	// Reading must not write. This handler used to initialise h.config.Roles on a GET,
+	// which mutated a map eight other files read without a lock.
+	roles := currentRoles(h.config)
 
-	roles := make([]config.RoleConfig, 0, len(h.config.Roles))
-	for key, role := range h.config.Roles {
+	out := make([]config.RoleConfig, 0, len(roles))
+	for key, role := range roles {
 		// 确保角色的key与name一致
 		if role.Name == "" {
 			role.Name = key
 		}
-		roles = append(roles, role)
+		out = append(out, role)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 
 	c.JSON(http.StatusOK, gin.H{
-		"roles": roles,
+		"roles": out,
 	})
 }
 
@@ -67,12 +76,8 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 		return
 	}
 
-	if h.config.Roles == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
-		return
-	}
-
-	role, exists := h.config.Roles[roleName]
+	roles := currentRoles(h.config)
+	role, exists := roles[roleName]
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
 		return
@@ -107,87 +112,79 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 		req.Name = roleName
 	}
 
-	// 初始化Roles map
-	if h.config.Roles == nil {
-		h.config.Roles = make(map[string]config.RoleConfig)
+	roles := currentRoles(h.config)
+	if _, exists := roles[roleName]; !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
+		return
 	}
-
-	// 删除所有与角色name相同但key不同的旧角色（避免重复）
-	// 使用角色name作为key，确保唯一性
-	finalKey := req.Name
-	keysToDelete := make([]string, 0)
-	for key := range h.config.Roles {
-		// 如果key与最终的key不同，但name相同，则标记为删除
-		if key != finalKey {
-			role := h.config.Roles[key]
-			// 确保角色的name字段正确设置
-			if role.Name == "" {
-				role.Name = key
-			}
-			if role.Name == req.Name {
-				keysToDelete = append(keysToDelete, key)
-			}
-		}
+	if bundle, owned := h.bundleOwnedRole(roleName); owned {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("角色 %q 由能力包 %q 提供，不能在这里修改", roleName, bundle)})
+		return
 	}
-	// 删除旧的角色
-	for _, key := range keysToDelete {
-		delete(h.config.Roles, key)
-		h.logger.Info("删除重复的角色", zap.String("oldKey", key), zap.String("name", req.Name))
-	}
-
-	// 如果当前更新的key与最终key不同，也需要删除旧的
-	if roleName != finalKey {
-		delete(h.config.Roles, roleName)
-	}
-
-	// 如果角色名称改变，需要删除旧文件
-	if roleName != finalKey {
-		configDir := filepath.Dir(h.configPath)
-		rolesDir := h.config.RolesDir
-		if rolesDir == "" {
-			rolesDir = "roles" // 默认目录
+	// Renaming onto an existing identity is refused rather than merged: the old code deleted
+	// every entry whose name matched, which could take a *bundle's* role down with it.
+	if req.Name != roleName {
+		if _, taken := roles[req.Name]; taken {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "角色名称已存在"})
+			return
 		}
-
-		// 如果是相对路径，相对于配置文件所在目录
-		if !filepath.IsAbs(rolesDir) {
-			rolesDir = filepath.Join(configDir, rolesDir)
-		}
-
-		// 删除旧的角色文件
-		oldSafeFileName := sanitizeFileName(roleName)
-		oldRoleFileYaml := filepath.Join(rolesDir, oldSafeFileName+".yaml")
-		oldRoleFileYml := filepath.Join(rolesDir, oldSafeFileName+".yml")
-
-		if _, err := os.Stat(oldRoleFileYaml); err == nil {
-			if err := os.Remove(oldRoleFileYaml); err != nil {
-				h.logger.Warn("删除旧角色配置文件失败", zap.String("file", oldRoleFileYaml), zap.Error(err))
-			}
-		}
-		if _, err := os.Stat(oldRoleFileYml); err == nil {
-			if err := os.Remove(oldRoleFileYml); err != nil {
-				h.logger.Warn("删除旧角色配置文件失败", zap.String("file", oldRoleFileYml), zap.Error(err))
-			}
+		if bundle, owned := h.bundleOwnedRole(req.Name); owned {
+			c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("角色 %q 由能力包 %q 提供，不能被占用", req.Name, bundle)})
+			return
 		}
 	}
 
-	// 使用角色name作为key来保存（确保唯一性）
-	h.config.Roles[finalKey] = req
+	if req.Name != roleName {
+		if err := h.removeRoleUnit(roleName); err != nil {
+			h.roleMutationFailed(c, roleName, err)
+			return
+		}
+		if err := h.deleteRoleFiles(roleName); err != nil {
+			h.logger.Warn("删除旧角色配置文件失败", zap.String("role", roleName), zap.Error(err))
+		}
+	}
 
-	// 保存配置到文件
-	if err := h.saveConfig(); err != nil {
+	if err := h.writeRoleFile(req); err != nil {
 		h.logger.Error("保存配置失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存配置失败: " + err.Error()})
 		return
 	}
+	if err := h.putRoleUnit(req.Name, h.roleFilePath(req.Name)); err != nil {
+		h.roleMutationFailed(c, req.Name, err)
+		return
+	}
+	if _, err := h.publishRoles(); err != nil {
+		h.roleMutationFailed(c, req.Name, err)
+		return
+	}
 
-	h.logger.Info("更新角色", zap.String("oldKey", roleName), zap.String("newKey", finalKey), zap.String("name", req.Name))
+	h.logger.Info("更新角色", zap.String("oldKey", roleName), zap.String("newKey", req.Name), zap.String("name", req.Name))
 	if h.audit != nil {
-		h.audit.RecordOK(c, "role", "update", "更新角色", "role", finalKey, map[string]interface{}{"name": req.Name})
+		h.audit.RecordOK(c, "role", "update", "更新角色", "role", req.Name, map[string]interface{}{"name": req.Name})
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"message": "角色已更新",
 		"role":    req,
 	})
+}
+
+// roleMutationFailed answers one error the way the plug-in layer means it: a refusal naming the
+// owning bundle is the caller's conflict, anything else is a server fault.
+func (h *RoleHandler) roleMutationFailed(c *gin.Context, name string, err error) {
+	if err == nil {
+		return
+	}
+	var conflict *plugin.ErrConflict
+	if errors.As(err, &conflict) {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.Contains(err.Error(), "由能力包") {
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	h.logger.Error("角色变更失败", zap.String("role", name), zap.Error(err))
+	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }
 
 // CreateRole 创建新角色
@@ -198,19 +195,18 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 		return
 	}
 
-	if req.Name == "" {
+	if strings.TrimSpace(req.Name) == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色名称不能为空"})
 		return
 	}
 
-	// 初始化Roles map
-	if h.config.Roles == nil {
-		h.config.Roles = make(map[string]config.RoleConfig)
-	}
-
-	// 检查角色是否已存在
-	if _, exists := h.config.Roles[req.Name]; exists {
+	roles := currentRoles(h.config)
+	if _, exists := roles[req.Name]; exists {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "角色已存在"})
+		return
+	}
+	if bundle, owned := h.bundleOwnedRole(req.Name); owned {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("角色 %q 由能力包 %q 提供，不能重复创建", req.Name, bundle)})
 		return
 	}
 
@@ -219,12 +215,17 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 		req.Enabled = true
 	}
 
-	h.config.Roles[req.Name] = req
-
-	// 保存配置到文件
-	if err := h.saveConfig(); err != nil {
+	if err := h.writeRoleFile(req); err != nil {
 		h.logger.Error("保存配置失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存配置失败: " + err.Error()})
+		return
+	}
+	if err := h.putRoleUnit(req.Name, h.roleFilePath(req.Name)); err != nil {
+		h.roleMutationFailed(c, req.Name, err)
+		return
+	}
+	if _, err := h.publishRoles(); err != nil {
+		h.roleMutationFailed(c, req.Name, err)
 		return
 	}
 
@@ -246,12 +247,7 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 		return
 	}
 
-	if h.config.Roles == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
-		return
-	}
-
-	if _, exists := h.config.Roles[roleName]; !exists {
+	if _, exists := currentRoles(h.config)[roleName]; !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "角色不存在"})
 		return
 	}
@@ -261,42 +257,23 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "不能删除默认角色"})
 		return
 	}
-
-	delete(h.config.Roles, roleName)
-
-	// 删除对应的角色文件
-	configDir := filepath.Dir(h.configPath)
-	rolesDir := h.config.RolesDir
-	if rolesDir == "" {
-		rolesDir = "roles" // 默认目录
+	if bundle, owned := h.bundleOwnedRole(roleName); owned {
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("角色 %q 由能力包 %q 提供，请卸载该包而不是在此删除", roleName, bundle)})
+		return
 	}
 
-	// 如果是相对路径，相对于配置文件所在目录
-	if !filepath.IsAbs(rolesDir) {
-		rolesDir = filepath.Join(configDir, rolesDir)
+	// Unit first, then files: if the unit removal is refused, the role is still on disk and
+	// still consistent; the reverse order would leave a file no catalog entry points at.
+	if err := h.removeRoleUnit(roleName); err != nil {
+		h.roleMutationFailed(c, roleName, err)
+		return
 	}
-
-	// 尝试删除角色文件（.yaml 和 .yml）
-	safeFileName := sanitizeFileName(roleName)
-	roleFileYaml := filepath.Join(rolesDir, safeFileName+".yaml")
-	roleFileYml := filepath.Join(rolesDir, safeFileName+".yml")
-
-	// 删除 .yaml 文件（如果存在）
-	if _, err := os.Stat(roleFileYaml); err == nil {
-		if err := os.Remove(roleFileYaml); err != nil {
-			h.logger.Warn("删除角色配置文件失败", zap.String("file", roleFileYaml), zap.Error(err))
-		} else {
-			h.logger.Info("已删除角色配置文件", zap.String("file", roleFileYaml))
-		}
+	if err := h.deleteRoleFiles(roleName); err != nil {
+		h.logger.Warn("删除角色配置文件失败", zap.String("role", roleName), zap.Error(err))
 	}
-
-	// 删除 .yml 文件（如果存在）
-	if _, err := os.Stat(roleFileYml); err == nil {
-		if err := os.Remove(roleFileYml); err != nil {
-			h.logger.Warn("删除角色配置文件失败", zap.String("file", roleFileYml), zap.Error(err))
-		} else {
-			h.logger.Info("已删除角色配置文件", zap.String("file", roleFileYml))
-		}
+	if _, err := h.publishRoles(); err != nil {
+		h.roleMutationFailed(c, roleName, err)
+		return
 	}
 
 	h.logger.Info("删除角色", zap.String("roleName", roleName))
@@ -308,64 +285,58 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 	})
 }
 
-// saveConfig 保存配置到目录中的文件
-func (h *RoleHandler) saveConfig() error {
-	configDir := filepath.Dir(h.configPath)
-	rolesDir := h.config.RolesDir
-	if rolesDir == "" {
-		rolesDir = "roles" // 默认目录
-	}
+// roleFilePath is where one role lives on disk. Names are sanitized the same way the shipped
+// files are, so a role created through the API is found again by the directory scan.
+func (h *RoleHandler) roleFilePath(name string) string {
+	return filepath.Join(h.rolesDir(), sanitizeFileName(name)+".yaml")
+}
 
-	// 如果是相对路径，相对于配置文件所在目录
-	if !filepath.IsAbs(rolesDir) {
-		rolesDir = filepath.Join(configDir, rolesDir)
-	}
-
-	// 确保目录存在
-	if err := os.MkdirAll(rolesDir, 0755); err != nil {
+// writeRoleFile saves exactly one role. It used to be "marshal the whole map back to disk",
+// which had a consequence nobody intended: once a bundle installed a role, the next unrelated
+// edit would copy that bundle's role into the built-in roles/ directory too.
+func (h *RoleHandler) writeRoleFile(role config.RoleConfig) error {
+	rolesDir := h.rolesDir()
+	if err := os.MkdirAll(rolesDir, 0o755); err != nil {
 		return fmt.Errorf("创建角色目录失败: %w", err)
 	}
-
-	// 保存每个角色到独立的文件
-	if h.config.Roles != nil {
-		for roleName, role := range h.config.Roles {
-			// 确保角色名称正确设置
-			if role.Name == "" {
-				role.Name = roleName
-			}
-
-			// 使用角色名称作为文件名（安全化文件名，避免特殊字符）
-			safeFileName := sanitizeFileName(role.Name)
-			roleFile := filepath.Join(rolesDir, safeFileName+".yaml")
-
-			// 将角色配置序列化为YAML
-			roleData, err := yaml.Marshal(&role)
-			if err != nil {
-				h.logger.Error("序列化角色配置失败", zap.String("role", roleName), zap.Error(err))
-				continue
-			}
-
-			// 处理icon字段：确保包含\U的icon值被引号包围（YAML需要引号才能正确解析Unicode转义）
-			roleDataStr := string(roleData)
-			if role.Icon != "" && strings.HasPrefix(role.Icon, "\\U") {
-				// 匹配 icon: \UXXXXXXXX 格式（没有引号），排除已经有引号的情况
-				// 使用负向前瞻确保后面没有引号，或者直接匹配没有引号的情况
-				re := regexp.MustCompile(`(?m)^(icon:\s+)(\\U[0-9A-F]{8})(\s*)$`)
-				roleDataStr = re.ReplaceAllString(roleDataStr, `${1}"${2}"${3}`)
-				roleData = []byte(roleDataStr)
-			}
-
-			// 写入文件
-			if err := os.WriteFile(roleFile, roleData, 0644); err != nil {
-				h.logger.Error("保存角色配置文件失败", zap.String("role", roleName), zap.String("file", roleFile), zap.Error(err))
-				continue
-			}
-
-			h.logger.Info("角色配置已保存到文件", zap.String("role", roleName), zap.String("file", roleFile))
-		}
+	if strings.TrimSpace(role.Name) == "" {
+		return fmt.Errorf("角色名称不能为空")
 	}
 
+	roleData, err := yaml.Marshal(&role)
+	if err != nil {
+		return fmt.Errorf("序列化角色配置失败: %w", err)
+	}
+	// The icon field needs quoting for a \U escape to survive a re-read, exactly as before.
+	if role.Icon != "" && strings.HasPrefix(role.Icon, "\\U") {
+		re := regexp.MustCompile(`(?m)^(icon:\s+)(\\U[0-9A-F]{8})(\s*)$`)
+		roleData = []byte(re.ReplaceAllString(string(roleData), `${1}"${2}"${3}`))
+	}
+
+	path := h.roleFilePath(role.Name)
+	if err := os.WriteFile(path, roleData, 0o644); err != nil {
+		return fmt.Errorf("保存角色配置文件失败: %w", err)
+	}
+	h.logger.Info("角色配置已保存到文件", zap.String("role", role.Name), zap.String("file", path))
 	return nil
+}
+
+// deleteRoleFiles removes the built-in file(s) for one role, including the legacy .yml form.
+func (h *RoleHandler) deleteRoleFiles(name string) error {
+	stem := sanitizeFileName(name)
+	var firstErr error
+	for _, ext := range []string{".yaml", ".yml"} {
+		path := filepath.Join(h.rolesDir(), stem+ext)
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		if err := os.Remove(path); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("删除角色配置文件 %s: %w", path, err)
+			continue
+		}
+		h.logger.Info("已删除角色配置文件", zap.String("file", path))
+	}
+	return firstErr
 }
 
 // sanitizeFileName 将角色名称转换为安全的文件名

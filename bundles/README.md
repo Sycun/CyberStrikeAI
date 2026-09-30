@@ -49,6 +49,23 @@ units:
 写侧只有一把串行化的锁。并发的读与换不会互相撕开——这条性质不是论证出来的，
 是把快照改成原地写之后 `TestConcurrentReadersNeverTear` 在 `-race` 下当场报出来的。
 
+各 kind 离"装完就被服务"还差多远，逐个说清（不写"已全部插件化"这种话）：
+
+| kind | 单元进表 | 运行路径读表 | 一键安装 API |
+|---|---|---|---|
+| role | ✅ 启动扫描 + 包 | ✅ `currentRoles` → 活配置快照（`internal/handler/live_config.go`） | ⬜ 待接（任务 #22） |
+| agent | ✅ | ⬜ 仍按目录重扫（`agents.LoadMarkdownAgentsDir`） | ⬜ |
+| skill | ✅ | ⬜ 仍按目录重扫（Eino skill 中间件） | ⬜ |
+| tool | ✅ | ⬜ 仅 `POST /config/apply` 生效 | ⬜ |
+| mcp | ⬜ 外部 MCP 本来就是热增删，缺的是逐工具授权 | — | ⬜（任务 #20） |
+
+角色这一行是本轮改掉的：`roles/*.yaml` 以前只在 `config.Load` 里解析一次，之后由角色 API
+**无锁原地改**那张 map（连 GET 里都会 `h.config.Roles = make(...)`），八个文件在没同步的情况下读它。
+现在写的一侧是「写文件 → 进表 → 发布新快照」，读的一侧统一走 `currentRoles(h.config)`；
+装配若忘了装活配置快照，`make wiring-check` 会直接红
+（`TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles`，且这种漏接**编译得过**）。
+
 内置的 `roles/`、`agents/`、`skills/`、`tools/` 四个目录同样被扫成单元进表，
 所以"内置能力"和"后装能力"走的是同一套身份与同一张表；两侧身份一致性由
-`internal/app/plugin_parity_test.go` 钉住（实测 142 个内置单元）。
+`internal/app/plugin_parity_test.go` 钉住（实测 142 个内置单元：roles 13 / agents 16 /
+skills 23 / tools 90）。

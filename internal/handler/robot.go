@@ -890,11 +890,12 @@ func (h *RobotHandler) recordRobotCommandAudit(access *database.RBACAccess, plat
 }
 
 func (h *RobotHandler) cmdRoles() string {
-	if h.config.Roles == nil || len(h.config.Roles) == 0 {
+	roles := currentRoles(h.config)
+	if len(roles) == 0 {
 		return "暂无可用角色。"
 	}
-	names := make([]string, 0, len(h.config.Roles))
-	for name, role := range h.config.Roles {
+	names := make([]string, 0, len(roles))
+	for name, role := range roles {
 		if role.Enabled {
 			names = append(names, name)
 		}
@@ -914,7 +915,7 @@ func (h *RobotHandler) cmdRoles() string {
 	var b strings.Builder
 	b.WriteString("【角色列表】\n")
 	for _, name := range names {
-		role := h.config.Roles[name]
+		role := roles[name]
 		desc := role.Description
 		if desc == "" {
 			desc = "无描述"
@@ -928,10 +929,11 @@ func (h *RobotHandler) cmdSwitchRole(platform, userID, roleName string) string {
 	if roleName == "" {
 		return "请指定角色名称，例如：角色 渗透测试"
 	}
-	if h.config.Roles == nil {
+	roles := currentRoles(h.config)
+	if len(roles) == 0 {
 		return "暂无可用角色。"
 	}
-	role, exists := h.config.Roles[roleName]
+	role, exists := roles[roleName]
 	if !exists {
 		return fmt.Sprintf("角色「%s」不存在。发送「角色」查看可用角色。", roleName)
 	}

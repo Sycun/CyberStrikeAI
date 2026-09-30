@@ -429,11 +429,15 @@ func (h *AgentHandler) configForAIChannel(channelID string) (*config.Config, str
 	if h == nil || h.config == nil {
 		return nil, "", fmt.Errorf("服务器配置未加载")
 	}
-	oa, resolvedID, ok := h.config.ResolveAIChannel(channelID)
+	live := currentConfig(h.config)
+	oa, resolvedID, ok := live.ResolveAIChannel(channelID)
 	if !ok {
 		return nil, resolvedID, fmt.Errorf("AI 通道不存在: %s", resolvedID)
 	}
-	cfgCopy := *h.config
+	// Cloned from the live snapshot, not from the boot config: everything downstream of this
+	// (sub-agent role bindings, tool sets a bundle adds) reads the copy, so this one line is
+	// what makes a plugged-in capability reach a run without a restart.
+	cfgCopy := *live
 	cfgCopy.OpenAI = oa
 	return &cfgCopy, resolvedID, nil
 }
@@ -775,8 +779,9 @@ func (h *AgentHandler) runRobotEinoSingleWithRetry(
 	assistantMessageID string,
 	taskStatus *string,
 ) (string, string, error) {
+	runCfg := currentConfig(h.config)
 	resultMA, errMA := multiagent.RunEinoSingleChatModelAgent(
-		taskCtx, h.config, &h.config.MultiAgent, h.agent, h.db, h.logger,
+		taskCtx, runCfg, &runCfg.MultiAgent, h.agent, h.db, h.logger,
 		conversationID, h.conversationProjectID(conversationID), finalMessage, history, roleTools, progressCallback, nil, h.agentSessionContextBlock(conversationID),
 	)
 	if errMA != nil {
@@ -795,8 +800,9 @@ func (h *AgentHandler) runRobotMultiAgentWithRetry(
 	assistantMessageID string,
 	taskStatus *string,
 ) (string, string, error) {
+	runCfg := currentConfig(h.config)
 	resultMA, errMA := multiagent.RunDeepAgent(
-		taskCtx, h.config, &h.config.MultiAgent, h.agent, h.db, h.logger,
+		taskCtx, runCfg, &runCfg.MultiAgent, h.agent, h.db, h.logger,
 		conversationID, h.conversationProjectID(conversationID), finalMessage, history, roleTools, progressCallback,
 		h.agentsMarkdownDir, orchestration, nil, h.agentSessionContextBlock(conversationID),
 	)
@@ -855,8 +861,8 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform stri
 
 	finalMessage := message
 	var roleTools []string
-	if role != "" && role != "默认" && h.config.Roles != nil {
-		if r, exists := h.config.Roles[role]; exists && r.Enabled {
+	if role != "" && role != "默认" {
+		if r, exists := lookupRole(h.config, role); exists && r.Enabled {
 			if r.UserPrompt != "" {
 				finalMessage = r.UserPrompt + "\n\n" + message
 			}

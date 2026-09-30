@@ -122,8 +122,8 @@ func (h *WorkflowHandler) ResumeRun(c *gin.Context) {
 		return
 	}
 	role := config.RoleConfig{Name: strings.TrimSpace(run.RoleID)}
-	if role.Name != "" && h.cfg.Roles != nil {
-		if r, ok := h.cfg.Roles[role.Name]; ok {
+	if role.Name != "" {
+		if r, ok := lookupRole(h.cfg, role.Name); ok {
 			role = r
 			if role.Name == "" {
 				role.Name = run.RoleID

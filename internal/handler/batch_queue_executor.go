@@ -134,16 +134,14 @@ func (h *AgentHandler) executeOneBatchSubTask(queueID string, queue *BatchTaskQu
 	finalMessage := task.Message
 	var roleTools []string
 	if queue.Role != "" && queue.Role != "默认" {
-		if h.config.Roles != nil {
-			if role, exists := h.config.Roles[queue.Role]; exists && role.Enabled {
-				if role.UserPrompt != "" {
-					finalMessage = role.UserPrompt + "\n\n" + task.Message
-					h.logger.Info("应用角色用户提示词", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.String("role", queue.Role))
-				}
-				if len(role.Tools) > 0 {
-					roleTools = role.Tools
-					h.logger.Info("使用角色配置的工具列表", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.String("role", queue.Role), zap.Int("toolCount", len(roleTools)))
-				}
+		if role, exists := lookupRole(h.config, queue.Role); exists && role.Enabled {
+			if role.UserPrompt != "" {
+				finalMessage = role.UserPrompt + "\n\n" + task.Message
+				h.logger.Info("应用角色用户提示词", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.String("role", queue.Role))
+			}
+			if len(role.Tools) > 0 {
+				roleTools = role.Tools
+				h.logger.Info("使用角色配置的工具列表", zap.String("queueId", queueID), zap.String("taskId", task.ID), zap.String("role", queue.Role), zap.Int("toolCount", len(roleTools)))
 			}
 		}
 	}
@@ -261,14 +259,15 @@ func (h *AgentHandler) executeOneBatchSubTask(queueID string, queue *BatchTaskQu
 
 	var resultMA *multiagent.RunResult
 	var runErr error
+	runCfg := currentConfig(h.config)
 	switch {
 	case useBatchMulti:
-		resultMA, runErr = multiagent.RunDeepAgent(taskCtx, h.config, &h.config.MultiAgent, h.agent, h.db, h.logger, conversationID, h.conversationProjectID(conversationID), finalMessage, []agent.ChatMessage{}, roleTools, progressCallback, h.agentsMarkdownDir, batchOrch, nil, h.agentSessionContextBlock(conversationID))
+		resultMA, runErr = multiagent.RunDeepAgent(taskCtx, runCfg, &runCfg.MultiAgent, h.agent, h.db, h.logger, conversationID, h.conversationProjectID(conversationID), finalMessage, []agent.ChatMessage{}, roleTools, progressCallback, h.agentsMarkdownDir, batchOrch, nil, h.agentSessionContextBlock(conversationID))
 	default:
-		if h.config == nil {
+		if runCfg == nil {
 			runErr = fmt.Errorf("服务器配置未加载")
 		} else {
-			resultMA, runErr = multiagent.RunEinoSingleChatModelAgent(taskCtx, h.config, &h.config.MultiAgent, h.agent, h.db, h.logger, conversationID, h.conversationProjectID(conversationID), finalMessage, []agent.ChatMessage{}, roleTools, progressCallback, nil, h.agentSessionContextBlock(conversationID))
+			resultMA, runErr = multiagent.RunEinoSingleChatModelAgent(taskCtx, runCfg, &runCfg.MultiAgent, h.agent, h.db, h.logger, conversationID, h.conversationProjectID(conversationID), finalMessage, []agent.ChatMessage{}, roleTools, progressCallback, nil, h.agentSessionContextBlock(conversationID))
 		}
 	}
 

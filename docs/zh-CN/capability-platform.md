@@ -175,7 +175,29 @@ capability:
 
 rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方言表（`config.go` 里已注明）。
 
-## 十二、尚未实现（下一阶段）
+## 十二、能力单元表与热插拔
+
+角色 / skill / markdown agent / 工具配方 / MCP 声明这五类可扩展的东西，过去各有各的生命周期，
+而且**没有一类能在不重启的情况下改变**。现在它们共用一套身份与一张活表：
+
+- `internal/plugin`：`Unit`（身份 `<kind>/<name>` + 源路径 + 安装期摘要）与 `Bundle`
+  （一次装、一次摘的一组单元）。读侧是**原子指针换出的不可变快照**（无锁读），写侧一把锁串行化。
+- 冲突一律"拒绝并指名道姓"（`*ErrConflict`），不覆盖：包不能顶掉内置能力，目录扫描也不能顶掉
+  已安装的包；同 id 再装是升级（只回收自己上一版声明的单元）；卸载只摘表、**不删文件**。
+- `bundles/<id>/bundle.yaml` 是**按角色打包**的形状（角色 + 子代理 + 技能 + 工具），路径被
+  `skillpackage.SafeRelPath` 关在包目录内，`version` 强制（没有版本就没有升级与回滚）。
+  格式与冲突规则见 `bundles/README.md`，示例包 `bundles/mobile-app-security`。
+- **内置能力也走同一张表**：`roles/ agents/ skills/ tools/ 由 ScanDir 扫成单元，身份与既有加载器
+  逐项一致（实测 142 个：roles 13 / agents 16 / skills 23 / tools 90），由
+  `internal/app/plugin_parity_test.go` 钉住——真相源是既有加载器本身，不是手写清单。
+- 热插拔的安全性是**证出来的**：把快照换成原地写之后 `TestConcurrentReadersNeverTear` 在 `-race`
+  下当场报出写与迭代的竞争；这正是角色 API 过去做的事（GET 请求里也会原地 `make` 那张 map）。
+- 角色一侧已经接通到运行路径：写 = 「写文件 → 进表 → 发布新快照」，读 = `currentRoles(h.config)`
+  （`internal/handler/live_config.go`），装配漏装活配置快照会让 `make wiring-check` 变红——
+  而这个漏接**编译得过、启用路径测试也全绿**，所以它必须是门禁。agent/skill/tool 的运行路径
+  仍各自按目录重扫，`bundles/README.md` 的表逐行写明差距。
+
+## 十三、尚未实现（下一阶段）
 
 - P6 剩余：数据层按域切 Store（`internal/store` 已有 `NotificationReads`、`HITL`、`Session`
   与共享的会话可见性子句；`Session` 现也拥有 `messages` 的内容写回与两条 CASE 追加，

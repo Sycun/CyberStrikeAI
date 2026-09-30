@@ -103,6 +103,9 @@ layering-check:
 wiring-check:
 	$(GO) test -count=1 -run 'TestEveryAuditableHandlerIsAuditBound|TestBindAuditReachesTheSetter' ./internal/app/
 	$(GO) test -count=1 -run 'TestNarrowedStorage|TestNarrowRejects' ./internal/handler/ ./internal/database/
+	## 热插拔接线：装配必须装好活配置快照并发布角色目录；内置能力身份必须与既有加载器一致
+	$(GO) test -count=1 -run 'TestAssemblyInstalls|TestShipped|TestEveryShipped|TestExampleBundles' ./internal/app/
+	$(GO) test -count=1 -run 'TestBootPublish|TestBundledRole|TestRoleAPI|TestRoleCreateUpdateDelete' ./internal/handler/
 
 .PHONY: ci
 ci: fmt-check vet test-race lint arch-lint layering-check wiring-check

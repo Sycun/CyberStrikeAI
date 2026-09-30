@@ -208,7 +208,38 @@ vendors are rows in a table.
 Rerank provider names are a **separate namespace**; do not fold them into the model dialect
 table (noted in `config.go`).
 
-## 12. Not implemented yet
+## 12. Capability units and hot-plug
+
+Five kinds of extension - roles, skills, markdown agents, tool recipes, MCP declarations - each
+used to have its own lifecycle, and **none of them could change without a restart**. They now share
+one identity scheme and one live table:
+
+- `internal/plugin`: a `Unit` (identity `<kind>/<name>` plus source path plus install-time digest)
+  and a `Bundle` (a set of units installed and removed together). Readers get an **immutable
+  snapshot behind an atomic pointer** (lock-free); one mutex serialises writers only.
+- Conflicts **refuse and name the owner** (`*ErrConflict`) instead of overwriting: a bundle cannot
+  shadow a shipped capability, a directory scan cannot shadow an installed bundle, re-installing the
+  same id is an upgrade that reclaims only its own previous units, and unplugging detaches without
+  deleting any file.
+- `bundles/<id>/bundle.yaml` is the shape of **packaging by role** (role + sub-agent + skills +
+  tools); paths are confined to the bundle directory by `skillpackage.SafeRelPath` and `version` is
+  mandatory, because a pack without one cannot be upgraded or rolled back. Format and ownership
+  rules: `bundles/README.md`; worked example: `bundles/mobile-app-security`.
+- **Shipped capabilities go through the same table**: `roles/ agents/ skills/ tools/` are scanned
+  into units whose identities match the existing loaders entry for entry (measured 142: 13 roles /
+  16 agents / 23 skills / 90 tools), pinned by `internal/app/plugin_parity_test.go` - the truth
+  source is those loaders, not a hand-written list.
+- The safety of hot-swap is **demonstrated, not argued**: replacing the copy-on-write clone with an
+  in-place write makes `TestConcurrentReadersNeverTear` report the write-vs-iterate race under
+  `-race`. That in-place pattern is precisely what the role API used to do, including allocating
+  the map inside a GET.
+- Roles are wired through to the run path: a write is "file -> unit -> publish a new snapshot" and
+  a read is `currentRoles(h.config)` (`internal/handler/live_config.go`). If assembly forgets to
+  install the live store, `make wiring-check` fails - and that omission **compiles cleanly with the
+  enabled-path tests green**, which is why it has to be a gate. Agents, skills and tools still
+  re-scan their directories per run; `bundles/README.md` states the gap per kind.
+
+## 13. Not implemented yet
 
 - P6 remainder: per-domain Store extraction (`internal/store` already owns notification reads, the
   `hitl_interrupts` surface the HTTP layer uses, the shared conversation-visibility clause, and the

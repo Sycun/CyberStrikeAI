@@ -31,6 +31,7 @@ import (
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/monitor"
 	"cyberstrike-ai/internal/multiagent"
+	"cyberstrike-ai/internal/plugin"
 	"cyberstrike-ai/internal/robot"
 	"cyberstrike-ai/internal/security"
 	"cyberstrike-ai/internal/settings"
@@ -454,6 +455,13 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	// written from several handlers under different locks (S4).
 	settingsStore := settings.New(cfg)
 
+	// The capability table is where installed things live: built-in roles, agents, skills,
+	// tool recipes, plus anything a bundle plugs in later. The HTTP layer resolves its
+	// configuration through the store installed here, so publishing a snapshot is what makes
+	// a plug-in take effect - no restart, and no reader ever sees a half-updated map.
+	pluginTable := plugin.NewTable()
+	handler.InstallSettingsStore(settingsStore)
+
 	agentHandler := handler.NewAgentHandler(agent, db, cfg, log.Logger)
 	agentHandler.SetSettings(settingsStore)
 	bindAudit(agentHandler, auditSvc)
@@ -496,8 +504,16 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	agentHandler.SetHitlConfigSaver(configHandler)
 	externalMCPHandler := handler.NewExternalMCPHandler(externalMCPMgr, cfg, configPath, log.Logger)
 	bindAudit(externalMCPHandler, auditSvc)
-	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger)
+	roleHandler := handler.NewRoleHandler(cfg, configPath, log.Logger, pluginTable)
 	bindAudit(roleHandler, auditSvc)
+	// Publish the role catalog before anything can serve: built-in files plus any bundle
+	// already on disk go through the table, so the first request sees the same answer as the
+	// last one after a plug-in.
+	if published, err := roleHandler.Reload(); err != nil {
+		log.Logger.Warn("角色目录加载失败", zap.Error(err))
+	} else {
+		log.Logger.Info("角色目录已发布", zap.Int("roles", published))
+	}
 	skillsHandler := handler.NewSkillsHandler(cfg, configPath, log.Logger)
 	bindAudit(skillsHandler, auditSvc)
 	fofaHandler := handler.NewFofaHandler(cfg, log.Logger)

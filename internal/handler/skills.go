@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"cyberstrike-ai/internal/audit"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 )
 
 // SkillsHandler Skills处理器（磁盘 + Eino 规范；运行时由 Eino ADK skill 中间件加载）
@@ -603,99 +601,6 @@ func (h *SkillsHandler) ClearSkillStatsByName(c *gin.Context) {
 func (h *SkillsHandler) removeSkillFromRoles(skillName string) []string {
 	_ = skillName
 	return nil
-}
-
-// saveRolesConfig 保存角色配置到文件（从SkillsHandler调用）
-func (h *SkillsHandler) saveRolesConfig() error {
-	configDir := filepath.Dir(h.configPath)
-	rolesDir := h.config.RolesDir
-	if rolesDir == "" {
-		rolesDir = "roles" // 默认目录
-	}
-
-	// 如果是相对路径，相对于配置文件所在目录
-	if !filepath.IsAbs(rolesDir) {
-		rolesDir = filepath.Join(configDir, rolesDir)
-	}
-
-	// 确保目录存在
-	if err := os.MkdirAll(rolesDir, 0755); err != nil {
-		return fmt.Errorf("创建角色目录失败: %w", err)
-	}
-
-	// 保存每个角色到独立的文件
-	if h.config.Roles != nil {
-		for roleName, role := range h.config.Roles {
-			// 确保角色名称正确设置
-			if role.Name == "" {
-				role.Name = roleName
-			}
-
-			// 使用角色名称作为文件名（安全化文件名，避免特殊字符）
-			safeFileName := sanitizeRoleFileName(role.Name)
-			roleFile := filepath.Join(rolesDir, safeFileName+".yaml")
-
-			// 将角色配置序列化为YAML
-			roleData, err := yaml.Marshal(&role)
-			if err != nil {
-				h.logger.Error("序列化角色配置失败", zap.String("role", roleName), zap.Error(err))
-				continue
-			}
-
-			// 处理icon字段：确保包含\U的icon值被引号包围（YAML需要引号才能正确解析Unicode转义）
-			roleDataStr := string(roleData)
-			if role.Icon != "" && strings.HasPrefix(role.Icon, "\\U") {
-				// 匹配 icon: \UXXXXXXXX 格式（没有引号），排除已经有引号的情况
-				re := regexp.MustCompile(`(?m)^(icon:\s+)(\\U[0-9A-F]{8})(\s*)$`)
-				roleDataStr = re.ReplaceAllString(roleDataStr, `${1}"${2}"${3}`)
-				roleData = []byte(roleDataStr)
-			}
-
-			// 写入文件
-			if err := os.WriteFile(roleFile, roleData, 0644); err != nil {
-				h.logger.Error("保存角色配置文件失败", zap.String("role", roleName), zap.String("file", roleFile), zap.Error(err))
-				continue
-			}
-
-			h.logger.Info("角色配置已保存到文件", zap.String("role", roleName), zap.String("file", roleFile))
-		}
-	}
-
-	return nil
-}
-
-// sanitizeRoleFileName 将角色名称转换为安全的文件名
-func sanitizeRoleFileName(name string) string {
-	// 替换可能不安全的字符
-	replacer := map[rune]string{
-		'/':  "_",
-		'\\': "_",
-		':':  "_",
-		'*':  "_",
-		'?':  "_",
-		'"':  "_",
-		'<':  "_",
-		'>':  "_",
-		'|':  "_",
-		' ':  "_",
-	}
-
-	var result []rune
-	for _, r := range name {
-		if replacement, ok := replacer[r]; ok {
-			result = append(result, []rune(replacement)...)
-		} else {
-			result = append(result, r)
-		}
-	}
-
-	fileName := string(result)
-	// 如果文件名为空，使用默认名称
-	if fileName == "" {
-		fileName = "role"
-	}
-
-	return fileName
 }
 
 // isValidSkillName 验证 skill 目录名（与 Agent Skills 的 name 字段一致：小写、数字、连字符）

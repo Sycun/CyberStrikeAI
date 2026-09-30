@@ -479,11 +479,13 @@ func (h *ConfigHandler) GetTools(c *gin.Context) {
 	// 快照配置后立即释放锁，避免外部 MCP 网络 IO 阻塞整个配置子系统
 	h.mu.RLock()
 	securityTools := append([]config.ToolConfig(nil), h.config.Security.Tools...)
-	roles := h.config.Roles
 	toolDescriptionMode := h.config.Security.ToolDescriptionMode
 	mcpServer := h.mcpServer
 	externalMCPMgr := h.externalMCPMgr
 	h.mu.RUnlock()
+	// Roles come from the published snapshot, not from the shared config the lock protects:
+	// the role API no longer writes h.config.Roles, and the snapshot is already immutable.
+	roles := currentRoles(h.config)
 
 	pickDesc := func(shortDesc, fullDesc string) string {
 		return pickToolDescriptionWithMode(toolDescriptionMode, shortDesc, fullDesc)
