@@ -255,8 +255,14 @@ one identity scheme and one live table:
   the truth source - `TestBackendMatchesEinoBackend` checks front matter, body and base directory
   for all 23 shipped skills - and `TestTabInBodyIsNotStripped` blocks the tempting copy of the
   vendor's `stripLineNumbers`, which exists only because *its* local backend prefixes lines with
-  `N\t`; applying it to bytes read straight from disk truncates every real tab. Agents and tools
-  still re-scan their directories per run; `bundles/README.md` states the gap per kind.
+  `N\t`; applying it to bytes read straight from disk truncates every real tab. The **admin
+  console** moved onto the table in the same step: `GET /api/skills`, the detail view and the file
+  read/write paths all resolve directories through it, and writing to a bundle-provided skill is a
+  409 naming its owner instead of a same-named shadow copy in the built-in directory. Wiring only
+  the run path leaves "a bundled skill is used by agents but invisible in the list" - that state
+  was measured on the running server (23 → 24 after install → 23 after unplug), not inferred.
+  Agents and tools still re-scan their directories per run; `bundles/README.md` states the gap per
+  kind.
 
 ## 13. Not implemented yet
 

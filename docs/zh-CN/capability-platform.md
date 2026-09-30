@@ -210,6 +210,10 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   对内置 23 个 skill 逐个比对 front matter、正文与 base directory；另有一条
   `TestTabInBodyIsNotStripped` 挡住"照抄厂商的 stripLineNumbers"——那是因为它们的
   local backend 会给每行加 `N\t` 前缀，直接读磁盘再照抄会把正文里真实的制表符前截断。
+  同一轮把**管理台**也接上了表：`GET /api/skills`、详情与文件读写都按表解析目录，
+  写到一个由包提供的 skill 上返回 409 并指名归属，而不是在内置目录里落一份同名副本。
+  只改运行路径会留下"包里的 skill 被 Agent 用着、列表看不见"——这条是在真实跑起来的服务上
+  实测到的（23 → 装包 24 → 卸载 23），不是推演出来的。
   agents/tools 的运行路径仍各自按目录重扫，`bundles/README.md` 的表逐行写明差距。
 
 ## 十三、尚未实现（下一阶段）

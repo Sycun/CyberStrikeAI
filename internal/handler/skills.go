@@ -60,7 +60,7 @@ func (h *SkillsHandler) SetDB(db *database.DB) {
 
 // GetSkills 获取所有skills列表（支持分页和搜索）
 func (h *SkillsHandler) GetSkills(c *gin.Context) {
-	allSummaries, err := skillpackage.ListSkillSummaries(h.skillsRootAbs())
+	allSummaries, err := h.installedSkillSummaries()
 	if err != nil {
 		h.logger.Error("获取skills列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -178,7 +178,8 @@ func (h *SkillsHandler) GetSkill(c *gin.Context) {
 		resPath = strings.TrimSpace(c.Query("skill_script_path"))
 	}
 	if resPath != "" {
-		content, err := skillpackage.ReadScriptText(h.skillsRootAbs(), skillName, resPath, 0)
+		scriptRoot, scriptDir := h.skillLocation(skillName)
+		content, err := skillpackage.ReadScriptText(scriptRoot, scriptDir, resPath, 0)
 		if err != nil {
 			h.logger.Warn("读取skill资源失败", zap.String("skill", skillName), zap.String("path", resPath), zap.Error(err))
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -209,7 +210,8 @@ func (h *SkillsHandler) GetSkill(c *gin.Context) {
 		return
 	}
 
-	skill, err := skillpackage.LoadSkill(h.skillsRootAbs(), skillName, opt)
+	loadRoot, loadDir := h.skillLocation(skillName)
+	skill, err := skillpackage.LoadSkill(loadRoot, loadDir, opt)
 	if err != nil {
 		h.logger.Warn("加载skill失败", zap.String("skill", skillName), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "skill不存在: " + err.Error()})
@@ -250,7 +252,8 @@ func (h *SkillsHandler) GetSkill(c *gin.Context) {
 // ListSkillPackageFiles lists all files in a skill directory (Agent Skills layout).
 func (h *SkillsHandler) ListSkillPackageFiles(c *gin.Context) {
 	skillID := c.Param("name")
-	files, err := skillpackage.ListPackageFiles(h.skillsRootAbs(), skillID)
+	listRoot, listDir := h.skillLocation(skillID)
+	files, err := skillpackage.ListPackageFiles(listRoot, listDir)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -266,7 +269,8 @@ func (h *SkillsHandler) GetSkillPackageFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "query path is required"})
 		return
 	}
-	b, err := skillpackage.ReadPackageFile(h.skillsRootAbs(), skillID, rel, 0)
+	readRoot, readDir := h.skillLocation(skillID)
+	b, err := skillpackage.ReadPackageFile(readRoot, readDir, rel, 0)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -285,13 +289,18 @@ func (h *SkillsHandler) PutSkillPackageFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数: " + err.Error()})
 		return
 	}
+	if msg, refused := h.refuseBundleSkill(skillID); refused {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
 	if req.Path == "SKILL.md" {
 		if err := skillpackage.ValidateSkillMDPackage([]byte(req.Content), skillID); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 	}
-	if err := skillpackage.WritePackageFile(h.skillsRootAbs(), skillID, req.Path, []byte(req.Content)); err != nil {
+	writeRoot, writeDir := h.skillLocation(skillID)
+	if err := skillpackage.WritePackageFile(writeRoot, writeDir, req.Path, []byte(req.Content)); err != nil {
 		h.logger.Error("写入 skill 文件失败", zap.String("skill", skillID), zap.String("path", req.Path), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -353,6 +362,12 @@ func (h *SkillsHandler) CreateSkill(c *gin.Context) {
 		return
 	}
 
+	if msg, refused := h.refuseBundleSkill(req.Name); refused {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
+	// Created skills always land in the built-in directory: a bundle's directory is not a place
+	// this API should be writing new skills into.
 	skillDir := filepath.Join(h.skillsRootAbs(), req.Name)
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		h.logger.Error("创建skill目录失败", zap.String("skill", req.Name), zap.Error(err))
@@ -368,6 +383,13 @@ func (h *SkillsHandler) CreateSkill(c *gin.Context) {
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), skillMD, 0644); err != nil {
 		h.logger.Error("创建 SKILL.md 失败", zap.String("skill", req.Name), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 SKILL.md 失败: " + err.Error()})
+		return
+	}
+	// Register it in the same table the listing and the run path read; a skill that exists only
+	// on disk would disappear from GET /api/skills the moment a table is installed.
+	if err := h.putSkillUnit(req.Name); err != nil {
+		h.logger.Error("创建 skill 后登记到能力表失败", zap.String("skill", req.Name), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -402,7 +424,12 @@ func (h *SkillsHandler) UpdateSkill(c *gin.Context) {
 		return
 	}
 
-	mdPath := filepath.Join(h.skillsRootAbs(), skillName, "SKILL.md")
+	if msg, refused := h.refuseBundleSkill(skillName); refused {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
+	updateRoot, updateDir := h.skillLocation(skillName)
+	mdPath := filepath.Join(updateRoot, updateDir, "SKILL.md")
 	raw, err := os.ReadFile(mdPath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "skill不存在: " + err.Error()})
@@ -426,7 +453,7 @@ func (h *SkillsHandler) UpdateSkill(c *gin.Context) {
 		return
 	}
 
-	skillDir := filepath.Join(h.skillsRootAbs(), skillName)
+	skillDir := filepath.Join(updateRoot, updateDir)
 
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), skillMD, 0644); err != nil {
 		h.logger.Error("更新 SKILL.md 失败", zap.String("skill", skillName), zap.Error(err))
@@ -459,10 +486,20 @@ func (h *SkillsHandler) DeleteSkill(c *gin.Context) {
 			zap.Strings("roles", affectedRoles))
 	}
 
-	skillDir := filepath.Join(h.skillsRootAbs(), skillName)
+	if msg, refused := h.refuseBundleSkill(skillName); refused {
+		c.JSON(http.StatusConflict, gin.H{"error": msg})
+		return
+	}
+	deleteRoot, deleteDir := h.skillLocation(skillName)
+	skillDir := filepath.Join(deleteRoot, deleteDir)
 	if err := os.RemoveAll(skillDir); err != nil {
 		h.logger.Error("删除skill失败", zap.String("skill", skillName), zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除skill失败: " + err.Error()})
+		return
+	}
+	if err := h.removeSkillUnit(skillName); err != nil {
+		h.logger.Error("删除 skill 后能力表未同步", zap.String("skill", skillName), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	responseMsg := "skill已删除"
@@ -485,7 +522,7 @@ func (h *SkillsHandler) DeleteSkill(c *gin.Context) {
 
 // GetSkillStats 获取skills调用统计信息
 func (h *SkillsHandler) GetSkillStats(c *gin.Context) {
-	skillList, err := skillpackage.ListSkillDirNames(h.skillsRootAbs())
+	skillList, err := h.installedSkillDirNames()
 	if err != nil {
 		h.logger.Error("获取skills列表失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

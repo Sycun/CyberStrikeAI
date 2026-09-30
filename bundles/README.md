@@ -84,6 +84,12 @@ units:
 装配若忘了装活配置快照，`make wiring-check` 会直接红
 （`TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles`，且这种漏接**编译得过**）。
 
+skill 一行的"读表"含两层：运行路径（`internal/einoskill` 换掉了厂商那个只认一个 `BaseDir`
+的 backend）**和管理台列表**（`GET /api/skills`、详情、文件读写都按表解析目录）。
+两层必须一起改：只改运行路径会出现"包里的 skill 被 Agent 用着、列表里看不见"，
+这一条是在真实跑起来的服务上实测到的（23 → 装包 24 → 卸载 23），不是推演出来的。
+写路径遇到包拥有的 skill 返回 409 并指名是哪个包，**不会**在内置 skills 目录里悄悄落一份同名副本。
+
 内置的 `roles/`、`agents/`、`skills/`、`tools/` 四个目录同样被扫成单元进表，
 所以"内置能力"和"后装能力"走的是同一套身份与同一张表；两侧身份一致性由
 `internal/app/plugin_parity_test.go` 钉住（实测 142 个内置单元：roles 13 / agents 16 /
