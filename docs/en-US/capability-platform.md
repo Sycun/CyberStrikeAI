@@ -287,9 +287,17 @@ one identity scheme and one live table:
   `Authorization: "Bearer ${CSAI_LLM_API_KEY}"` would ship a credential to a server the pack author
   chose. The live map is rebuilt from the file and then overlaid with the pack set, so 应用配置
   cannot erase a pack declaration; unplug removes only servers the pack declared (`PackOwner` that
-  points elsewhere is skipped and named in the response). Switch state is not persisted yet, so a
-  restart returns a pack server to disabled - a server that must survive restarts belongs in
-  `config.yaml`.
+  points elsewhere is skipped and named in the response).
+  **The unit switch is now durable.** A bundle's files cannot be edited, so the console's switch had
+  nowhere to live: the table was rebuilt from disk every start-up and every unit a pack owned came
+  back enabled, which un-switched whatever the operator had switched off. Saved decisions live in
+  `capability_unit_switches` and are re-applied after the packs are, and only in the narrowing
+  direction - a saved "on" cannot enable a unit whose file disables it, the same
+  `file enabled AND table enabled` rule the tool layer runs. Each row carries the source path it was
+  about, so a row for a gone identity or a moved file is pruned instead of applied, and unplug and
+  detach name what they forget. MCP is the deliberate exception: start-up re-declares those servers
+  disabled regardless of any row, so that one switch answers `switch_persisted:false` and points at
+  `config.yaml`, where a server that must survive restarts belongs.
 - `served:false` only tells the truth. All five kinds now have a run path that reads the table, so
   `servedKinds` is the same size as `plugin.Kinds` and `TestEveryKindReportsItsActualServedState`
   pins both directions (drop a kind and it is red; add a kind to `plugin.Kinds` without wiring it and

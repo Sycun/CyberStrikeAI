@@ -233,8 +233,8 @@ async function runPluginRequest(method, url, body) {
 async function installPluginBundle(bundleId) {
     await withPluginBusy(async () => {
         const data = await runPluginRequest('POST', '/api/plugins/install', { bundle: bundleId });
-        const note = data.tools_rebuilt ? pluginsT('installWithTools') : pluginsT('installPlain');
-        notify(note + ' ' + (data.bundle && data.bundle.id ? data.bundle.id : bundleId), 'success');
+        const base = data.tools_rebuilt ? pluginsT('installWithTools') : pluginsT('installPlain');
+        notify(`${base} ${data.bundle && data.bundle.id ? data.bundle.id : bundleId}${serverNote(data)}`, 'success');
         await fetchPluginConsole();
     }, 'install');
 }
@@ -242,20 +242,31 @@ async function installPluginBundle(bundleId) {
 async function unplugPluginBundle(bundleId) {
     if (!window.confirm(pluginsT('confirmUnplug', { name: bundleId }))) return;
     await withPluginBusy(async () => {
-        await runPluginRequest('DELETE', '/api/plugins/bundles/' + encodeURIComponent(bundleId));
-        notify(pluginsT('unplugDone'), 'success');
+        const data = await runPluginRequest('DELETE', '/api/plugins/bundles/' + encodeURIComponent(bundleId));
+        notify(pluginsT('unplugDone') + serverNote(data), 'success');
         await fetchPluginConsole();
     }, 'unplug');
 }
 
 async function setPluginUnitEnabled(kind, name, enabled) {
     await withPluginBusy(async () => {
-        await runPluginRequest('POST',
+        const data = await runPluginRequest('POST',
             '/api/plugins/units/' + encodeURIComponent(kind) + '/' + encodeURIComponent(name) + '/enabled',
             { enabled: enabled });
-        notify(pluginsT('switchDone'), 'success');
+        notify(pluginsT('switchDone') + serverNote(data), 'success');
         await fetchPluginConsole();
     }, 'switch');
+}
+
+// The response body states in words whenever a mutation did not fully reach the live layer: a tool
+// layer that could not rebuild, a server declaration with no manager wired, a switch that will not
+// survive a restart. Swallowing those would make "done" read as "in effect" - the exact lie the
+// served flag exists to prevent.
+function serverNote(data) {
+    if (!data) return '';
+    const parts = [data.tool_layer_error, data.mcp_message, data.switch_message]
+        .filter(text => typeof text === 'string' && text.trim());
+    return parts.length ? ' · ' + parts.join(' · ') : '';
 }
 
 async function withPluginBusy(fn, label) {

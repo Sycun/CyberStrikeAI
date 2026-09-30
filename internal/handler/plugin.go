@@ -30,9 +30,21 @@ type PluginHandler struct {
 	tools toolLayerRebuilder
 	// mcp is the live external-MCP manager. A pack that declares a server writes it there and
 	// removes it from there, so the declaration has one home; installing never starts it.
-	mcp    MCPProvisioner
-	logger *zap.Logger
-	audit  *audit.Service
+	mcp MCPProvisioner
+	// switches remembers the operator's on/off decision outside this process. A bundle's files
+	// must not be edited after install, so the console's switch had nowhere durable to go, and a
+	// restart rebuilt every bundled unit as enabled.
+	switches switchMemory
+	logger   *zap.Logger
+	audit    *audit.Service
+}
+
+// switchMemory is the part of the capability switch store the console writes to. A nil recorder is
+// legal Go and means the switches are session-only, so the response has to say that rather than
+// leaving "已更新" to read as durable.
+type switchMemory interface {
+	Record(unitID, path string, enabled bool) error
+	Forget(unitIDs ...string) error
 }
 
 // toolLayerRebuilder is the piece of the tool layer that owns the recipe list and the MCP tool
@@ -52,8 +64,11 @@ type catalogPublisher interface {
 // SetAudit method on purpose: every other handler is wired with a setter that the assembly has
 // to remember, which is why an audit-completeness gate exists for them. Here forgetting is a
 // compile error, so the handler is also deliberately outside that gate's scope.
-func NewPluginHandler(table *plugin.Table, bundlesDir string, publisher catalogPublisher, tools toolLayerRebuilder, mcpManager MCPProvisioner, auditSvc *audit.Service, logger *zap.Logger) *PluginHandler {
-	return &PluginHandler{table: table, bundles: bundlesDir, republish: publisher, tools: tools, mcp: mcpManager, audit: auditSvc, logger: logger}
+func NewPluginHandler(table *plugin.Table, bundlesDir string, publisher catalogPublisher, tools toolLayerRebuilder, mcpManager MCPProvisioner, switches switchMemory, auditSvc *audit.Service, logger *zap.Logger) *PluginHandler {
+	return &PluginHandler{
+		table: table, bundles: bundlesDir, republish: publisher, tools: tools,
+		mcp: mcpManager, switches: switches, audit: auditSvc, logger: logger,
+	}
 }
 
 type unitView struct {
@@ -289,6 +304,9 @@ func (h *PluginHandler) Uninstall(c *gin.Context) {
 	body := mergeToolLayerReport(gin.H{
 		"message": "能力包已卸载", "id": id, "roles": report.roles, "refreshed": report.refreshed,
 	}, report)
+	if msg := h.forgetSwitches(existing.Units); msg != "" {
+		body["switch_message"] = msg
+	}
 	if removed > 0 || mcpMessage != "" {
 		body["mcp_removed"] = removed
 		if mcpMessage != "" {
@@ -340,8 +358,10 @@ func (h *PluginHandler) EnableUnit(c *gin.Context) {
 			"enabled": *body.Enabled, "roles": report.roles,
 		})
 	}
+	persisted, switchMessage := h.rememberSwitch(unit)
 	respBody := mergeToolLayerReport(gin.H{
 		"message": "已更新", "unit": h.liveUnitView(unit), "roles": report.roles, "refreshed": report.refreshed,
+		"switch_persisted": persisted,
 	}, report)
 	if unitIDKind(id) == plugin.KindMCP {
 		respBody["mcp_applied"] = mcpStarted
@@ -349,7 +369,47 @@ func (h *PluginHandler) EnableUnit(c *gin.Context) {
 			respBody["mcp_message"] = mcpMessage
 		}
 	}
+	if switchMessage != "" {
+		respBody["switch_message"] = switchMessage
+	}
 	c.JSON(http.StatusOK, respBody)
+}
+
+// rememberSwitch writes the operator's decision outside the process so a restart does not undo it.
+// The unit copy SetEnabled returned carries the source path, which is what lets a row be recognised
+// as stale later instead of hiding a capability somebody shipped under the same identity.
+//
+// A pack-declared MCP server is deliberately not recorded: start-up re-declares those disabled no
+// matter what this row says, so recording an "on" would promise a durability the boot rule refuse
+// to give.
+func (h *PluginHandler) rememberSwitch(u plugin.Unit) (bool, string) {
+	if u.Kind == plugin.KindMCP {
+		return false, "包声明的 MCP 服务器每次启动都回到停用状态，这个开关只在本次进程内有效；要跨重启常驻请把它写进 config.yaml"
+	}
+	if h.switches == nil {
+		return false, "开关未落库：装配没有传入开关存储，重启后本单元回到源文件声明的状态"
+	}
+	if err := h.switches.Record(u.ID, u.Path, u.Enabled); err != nil {
+		return false, fmt.Sprintf("开关写入失败：%v", err)
+	}
+	return true, ""
+}
+
+// forgetSwitches drops the saved decisions for identities that left the table on purpose. A row
+// nobody forgets would come back as an unexplained "disabled" the next time somebody ships a unit
+// under that name.
+func (h *PluginHandler) forgetSwitches(units []plugin.Unit) string {
+	if h.switches == nil || len(units) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(units))
+	for _, u := range units {
+		ids = append(ids, u.ID)
+	}
+	if err := h.switches.Forget(ids...); err != nil {
+		return fmt.Sprintf("开关记录未清理：%v", err)
+	}
+	return ""
 }
 
 // RemoveLocalUnit handles DELETE /api/plugins/units/:kind/:name for a unit that came from a
@@ -376,6 +436,9 @@ func (h *PluginHandler) RemoveLocalUnit(c *gin.Context) {
 	body := mergeToolLayerReport(gin.H{
 		"message": "已从能力表摘除（不删除文件）", "id": id, "roles": report.roles, "refreshed": report.refreshed,
 	}, report)
+	if msg := h.forgetSwitches([]plugin.Unit{victim}); msg != "" {
+		body["switch_message"] = msg
+	}
 	if victim.Kind == plugin.KindMCP {
 		body["mcp_removed"] = dropped
 		if mcpMessage != "" {

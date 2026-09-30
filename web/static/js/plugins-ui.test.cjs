@@ -103,7 +103,11 @@ function harness(state, catalog, options = {}) {
         },
         apiFetch(url, opts = {}) {
             calls.push({ url, method: opts.method || 'GET', body: opts.body });
-            const payload = url === '/api/plugins' ? state : catalog;
+            // A test can pin a body onto one endpoint by substring, which is how the responses
+            // that carry a caveat (switch_message, mcp_message) get exercised: the page has to
+            // repeat what the server said, not just toast "done".
+            const pinned = Object.keys(options.responses || {}).find(k => url.includes(k));
+            const payload = pinned ? options.responses[pinned] : (url === '/api/plugins' ? state : catalog);
             if (options.fail && url === options.fail) {
                 return Promise.resolve({
                     ok: false,
@@ -137,7 +141,7 @@ const sampleState = {
         dir: '/srv/csai/bundles/mobile-app-security',
         units: [
             { id: 'role/移动端安全测试', kind: 'role', name: '移动端安全测试', bundle: 'mobile-app-security', enabled: true, served: true, reason: '' },
-            { id: 'mcp/示例', kind: 'mcp', name: '示例', bundle: 'mobile-app-security', enabled: true, served: false, reason: '外部 MCP 由自己的管理器接入，"认不全就放过"不是策略' },
+            { id: 'mcp/示例', kind: 'mcp', name: '示例', bundle: 'mobile-app-security', enabled: false, served: false, reason: '外部 MCP 管理器已不再持有本包对该名称的声明（"lab-server" 由配置文件提供）' },
         ],
     }],
     standalone: [
@@ -161,7 +165,7 @@ test('the console renders served state honestly and keeps the reason visible', a
 
     assert.match(html, /plugin-chip-served/);
     assert.match(html, /未生效/);
-    assert.match(html, /title="外部 MCP 由自己的管理器接入，&quot;认不全就放过&quot;不是策略"/,
+    assert.match(html, /title="外部 MCP 管理器已不再持有本包对该名称的声明（&quot;lab-server&quot; 由配置文件提供）"/,
         'the reason must travel with the not-live mark, quoted so it cannot close the attribute');
     assert.match(html, /可安装的能力包/);
     assert.match(html, /AI 应用红队角色包/);
@@ -239,4 +243,43 @@ test('a refused mutation is surfaced, not swallowed', async () => {
     assert.match(html, /安装失败/);
     assert.match(html, /已由 mobile-app-security 提供/);
     assert.equal(toasts.length, 0, 'a failed install must not toast success');
+});
+
+// Each of these is a promise the server made in the body. The page swallowing them is the failure
+// mode this console has been rebuilt around: the request succeeded, the toast said 已更新, and the
+// thing the operator clicked is not what is running.
+test('the toast repeats what the server said about a mutation that only half took effect', async () => {
+    const cases = [
+        {
+            name: 'switch that is not durable',
+            key: 'units/mcp',
+            url: '/api/plugins/units/mcp/%E7%A4%BA%E4%BE%8B/enabled',
+            body: { switch_persisted: false, switch_message: '包声明的 MCP 服务器每次启动都回到停用状态，要跨重启常驻请写进 config.yaml' },
+            run: api => api.setPluginUnitEnabled('mcp', '示例', true),
+            expect: /config\.yaml/,
+        },
+        {
+            name: 'install whose tool layer could not rebuild',
+            key: '/api/plugins/install',
+            url: '/api/plugins/install',
+            body: { bundle: { id: 'mobile-app-security' }, tools_rebuilt: false, tool_layer_error: 'tool: 注册失败' },
+            run: api => api.installPluginBundle('mobile-app-security'),
+            expect: /注册失败/,
+        },
+        {
+            name: 'declaration with no manager wired',
+            key: 'bundles/mobile-app-security',
+            url: '/api/plugins/bundles/mobile-app-security',
+            body: { mcp_removed: 0, mcp_message: 'MCP 声明未接入外部 MCP 管理器' },
+            run: api => api.unplugPluginBundle('mobile-app-security'),
+            expect: /未接入/,
+        },
+    ];
+    for (const tc of cases) {
+        const { sandbox, toasts } = harness(sampleState, sampleCatalog, { responses: { [tc.key]: tc.body } });
+        await tc.run(sandbox.api);
+        assert.ok(toasts.length, tc.name + ': nothing was reported to the operator');
+        const last = toasts[toasts.length - 1];
+        assert.match(last.msg, tc.expect, tc.name + ': the caveat was dropped from the toast: ' + last.msg);
+    }
 });

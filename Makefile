@@ -124,6 +124,10 @@ wiring-check:
 	$(GO) test -count=1 -run 'TestBootDeclaresPackServers' ./internal/app/
 	$(GO) test -count=1 -run 'TestPackDeclaration|TestReloadKeepsPackServers|TestOperatorSideWrites' ./internal/mcp/
 	$(GO) test -count=1 -run 'TestPackMCPDeclaration|TestLoadMCPDeclaration|TestExternalMCPPageCannotMutate|TestUninstallDoesNotRemove|TestPluginConsoleReportsAShadowed' ./internal/handler/
+	## 单元开关的持久化：只落"停用"、启动后按源路径复核、过期行清理；包声明的 MCP 开关如实说明重启回到停用
+	$(GO) test -count=1 ./internal/store/ -run 'TestSwitch|TestForget'
+	$(GO) test -count=1 -run 'TestPersistedSwitches|TestPersistedSwitchOn|TestStaleSwitchRows|TestSwitchStoreAccepts|TestAssembly' ./internal/app/
+	$(GO) test -count=1 -run 'TestPluginUnitSwitchIsRemembered|TestPluginMCPSwitchStates|TestPluginRemovalForgets|TestPluginSwitchReports' ./internal/handler/
 	## 启动扫描必须覆盖每个"运行路径读表"的 kind：漏一行，装任何一个包就会把整批内置配方换掉
 	$(GO) test -count=1 -run 'TestBuiltInCapabilityScanCoversEveryServedKind' ./internal/app/
 	## 能力包的两种视图必须同源：包自带的单元副本要与表里的状态一致（真机点验抓到的分叉）

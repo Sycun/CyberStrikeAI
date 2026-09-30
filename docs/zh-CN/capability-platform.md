@@ -227,7 +227,11 @@ rerank 的 provider 名字是**另一个命名空间**，不要塞进模型方�
   的空声明；包声明**不做 `${VAR}` 展开**，否则一条 `Authorization: "Bearer ${CSAI_LLM_API_KEY}"`
   就把凭据送到包作者选的服务器上了。`configs` 由文件重建后再叠加包那一份，所以"应用配置"不会清空
   包声明；卸载只摘自己声明过的服务器（`PackOwner` 不指向本包就跳过并在响应里说明是谁的）。
-  开关状态目前不落库，因此重启后包声明的服务器回到停用；要跨重启常驻就写进 `config.yaml`。
+  单元开关会落库（`capability_unit_switches`，只落"停用"这个收窄方向：保存的 on 绝不能打开文件
+  已禁用的单元，与工具层 `文件 enabled ∧ 表 enabled` 同一条规则；行里的源路径对不上就当过期清掉，
+  卸载与摘除也会指名清理，否则后来同名能力会继承别人关掉的开关），启动时在包重新装入**之后**重新
+  套上，并按需要重发角色目录、重建工具层。MCP 这一类**不接受持久化**：每次启动都回到停用，所以那
+  一次开关的响应写 `switch_persisted:false` 并指路 `config.yaml`。
 - `served:false` 只说真话：五类 kind 的运行路径现在都读表，所以 `servedKinds` 与 `plugin.Kinds`
   同规模，`TestEveryKindReportsItsActualServedState` 双向钉（少一类就红，将来加一类没接线也红）。
   mcp 这一类另有第二个条件：表里声明过还不够，活管理器得**仍然持有**这条声明——`config.yaml`

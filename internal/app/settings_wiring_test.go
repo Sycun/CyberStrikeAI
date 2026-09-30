@@ -37,6 +37,8 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 	pluginCalls := 0
 	pluginWithoutToolLayer := 0
 	pluginWithoutMCPProvisioner := 0
+	switchesApplied := 0
+	pluginWithoutSwitchStore := 0
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -62,6 +64,11 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 						scannedCalled++
 					case "installBundlesFromDisk":
 						bundlesInstalled++
+					case "applyPersistedSwitches":
+						// The console's switch would otherwise live only in this process: the
+						// table is rebuilt from disk at start-up, so a role somebody disabled
+						// would be serving again after a restart.
+						switchesApplied++
 					case "provisionDeclaredServers":
 						// A pack's MCP server is declared into the live manager, which start-up
 						// builds from config.yaml. Without this call the server is in the table and
@@ -100,16 +107,19 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 				// response would still say "installed".
 				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "handler" {
 					pluginCalls++
-					if len(call.Args) < 7 {
-						t.Errorf("handler.NewPluginHandler takes %d arguments, want the tool layer and the MCP provisioner among them", len(call.Args))
+					if len(call.Args) < 8 {
+						t.Errorf("handler.NewPluginHandler takes %d arguments, want the tool layer, the MCP provisioner and the switch store among them", len(call.Args))
 					} else if sel, ok := call.Args[3].(*ast.SelectorExpr); !ok || sel.Sel.Name != "Tools" {
 						pluginWithoutToolLayer++
 					} else if id, ok := sel.X.(*ast.Ident); !ok || id.Name != "configHandler" {
 						pluginWithoutToolLayer++
 					}
-					if len(call.Args) >= 7 {
+					if len(call.Args) >= 8 {
 						if id, ok := call.Args[4].(*ast.Ident); ok && id.Name == "nil" {
 							pluginWithoutMCPProvisioner++
+						}
+						if id, ok := call.Args[5].(*ast.Ident); ok && id.Name == "nil" {
+							pluginWithoutSwitchStore++
 						}
 					}
 				}
@@ -153,6 +163,14 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 		t.Fatalf("provisionDeclaredServers is never called at boot: a pack's MCP server would be in " +
 			"the table and in the console but absent from the live manager until the pack is reinstalled")
 	}
+	if switchesApplied < 1 {
+		t.Fatalf("applyPersistedSwitches is never called at boot: the table is rebuilt from disk, so " +
+			"every switch the operator made in the console would be undone by the next restart")
+	}
+	if pluginWithoutSwitchStore != 0 {
+		t.Fatalf("the plug-in handler was assembled with a nil switch store: the console's switches " +
+			"would only last until the next restart, which is what the switch store exists to prevent")
+	}
 	if published < 1 {
 		t.Fatalf("no role catalog publish in assembly: the store would be installed but empty, so "+
 			"the roles API and every run path would serve nothing (files scanned: %d)", scanned)
@@ -172,9 +190,9 @@ func TestAssemblyInstallsTheLiveConfigStoreAndPublishesRoles(t *testing.T) {
 	}
 	t.Logf("assembly wiring: %d files scanned, 1 live-store install, 1 table install, "+
 		"1 remote inventory observer, %d capability scan call(s), %d bundle re-install call(s), "+
-		"%d MCP declaration call(s), %d catalog publish call(s), "+
-		"1 plug-in handler with its tool layer and MCP provisioner",
-		scanned, scannedCalled, bundlesInstalled, mcpProvisioned, published)
+		"%d MCP declaration call(s), %d switch overlay call(s), %d catalog publish call(s), "+
+		"1 plug-in handler with its tool layer, MCP provisioner and switch store",
+		scanned, scannedCalled, bundlesInstalled, mcpProvisioned, switchesApplied, published)
 }
 
 func moduleRootForWiringTest(t *testing.T) string {

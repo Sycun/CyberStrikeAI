@@ -544,6 +544,27 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 			log.Logger.Info("角色目录已按能力表重新发布", zap.Int("roles", published), zap.Int("bundles", installed))
 		}
 	}
+	// The console's unit switch has to survive the restart as well. A bundle's files cannot be
+	// edited (the installed content must keep matching the digest taken at install time), so the
+	// switch had nowhere durable to go: every unit a pack owns came back enabled and a role
+	// somebody switched off was serving again. Only saved "off" is applied here, so a stale row can
+	// hide a capability but never widen what may execute.
+	unitSwitches := store.NewCapabilitySwitches(db.DB)
+	if err := unitSwitches.EnsureSchema(); err != nil {
+		log.Logger.Warn("初始化能力单元开关表失败，本次启动的开关不会持久化", zap.Error(err))
+	}
+	switchesApplied, switchNotes := applyPersistedSwitches(pluginTable, unitSwitches, log.Logger)
+	if len(switchNotes) > 0 {
+		log.Logger.Warn("部分能力单元开关无法恢复", zap.Strings("notes", switchNotes))
+	} else if switchesApplied > 0 {
+		// The overlay changed table state, so the served catalog has to be rebuilt from it - a
+		// switched-off role would otherwise stay in the snapshot until the next mutation.
+		if published, err := roleHandler.Reload(); err != nil {
+			log.Logger.Warn("按开关恢复后刷新角色目录失败", zap.Error(err))
+		} else {
+			log.Logger.Info("角色目录已按能力表重新发布", zap.Int("roles", published), zap.Int("switched_off", switchesApplied))
+		}
+	}
 	// A pack that declares an MCP server has to re-declare it on every boot: the manager's own
 	// configuration comes from config.yaml, which a pack does not edit. Declared, never started -
 	// the same rule the install endpoint follows.
@@ -561,7 +582,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	if externalMCPMgr != nil {
 		mcpProvisioner = externalMCPMgr
 	}
-	pluginHandler := handler.NewPluginHandler(pluginTable, filepath.Join(configDir, "bundles"), roleHandler, configHandler.Tools, mcpProvisioner, auditSvc, log.Logger)
+	pluginHandler := handler.NewPluginHandler(pluginTable, filepath.Join(configDir, "bundles"), roleHandler, configHandler.Tools, mcpProvisioner, unitSwitches, auditSvc, log.Logger)
 	skillsHandler := handler.NewSkillsHandler(cfg, configPath, log.Logger)
 	bindAudit(skillsHandler, auditSvc)
 	fofaHandler := handler.NewFofaHandler(cfg, log.Logger)
@@ -713,7 +734,11 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	// after somebody presses 应用配置 - which is "installed" reading as "in effect", the exact
 	// thing this layer exists to prevent. It runs here, after every registrar is wired, because
 	// rebuilding clears the MCP tool table and refills it.
-	if bundled := bundleOwnedToolUnits(pluginTable); bundled > 0 {
+	//
+	// A restored unit switch is the other reason to rebuild: the table can hold a saved "off" for a
+	// recipe that came from tools_dir, and the live tool surface was built from that file at config
+	// load, so without a rebuild the tool stays registered behind a unit the console shows disabled.
+	if bundled := bundleOwnedToolUnits(pluginTable); bundled > 0 || switchesApplied > 0 {
 		if err := configHandler.Tools.Rebuild(); err != nil {
 			log.Logger.Error("能力包的配方未能装入工具层，POST /config/apply 可重试",
 				zap.Int("bundled_recipes", bundled), zap.Error(err))

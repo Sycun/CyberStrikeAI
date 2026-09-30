@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,7 @@ type pluginTestEnv struct {
 	roles    *RoleHandler
 	tools    *recordingToolLayer
 	mcp      *recordingMCP
+	switches *recordingSwitches
 	table    *plugin.Table
 	bundles  string
 	recorder *httptest.ResponseRecorder
@@ -87,6 +89,36 @@ func (r *recordingToolLayer) Rebuild() error {
 	return r.err
 }
 
+// recordingSwitches stands in for the capability switch store so a test can see exactly which
+// decisions were written outside the process, and which identities were forgotten.
+type recordingSwitches struct {
+	recorded map[string]bool
+	forgot   []string
+	err      error
+}
+
+func (r *recordingSwitches) Record(unitID, path string, enabled bool) error {
+	if r.err != nil {
+		return r.err
+	}
+	if path == "" {
+		return errors.New("recordingSwitches: a switch needs the source path it was about")
+	}
+	if r.recorded == nil {
+		r.recorded = map[string]bool{}
+	}
+	r.recorded[unitID] = enabled
+	return nil
+}
+
+func (r *recordingSwitches) Forget(unitIDs ...string) error {
+	if r.err != nil {
+		return r.err
+	}
+	r.forgot = append(r.forgot, unitIDs...)
+	return nil
+}
+
 func newPluginTestEnv(t *testing.T, withBuiltInBundle bool) *pluginTestEnv {
 	t.Helper()
 	roles, _, table, dir := newRoleTestEnv(t)
@@ -102,8 +134,9 @@ func newPluginTestEnv(t *testing.T, withBuiltInBundle bool) *pluginTestEnv {
 			configs: map[string]config.ExternalMCPServerConfig{},
 			owners:  map[string]string{},
 		},
+		switches: &recordingSwitches{},
 	}
-	env.plugins = NewPluginHandler(table, bundlesDir, roles, env.tools, env.mcp, nil, zap.NewNop())
+	env.plugins = NewPluginHandler(table, bundlesDir, roles, env.tools, env.mcp, env.switches, nil, zap.NewNop())
 
 	if withBuiltInBundle {
 		// The real example pack, copied next to the test config so the install path is exercised
@@ -415,7 +448,7 @@ func TestPluginUnitDetachRespectsOwnership(t *testing.T) {
 }
 
 func TestPluginHandlerWithoutATableIsUnavailableNotPanic(t *testing.T) {
-	h := NewPluginHandler(nil, "", nil, nil, nil, nil, zap.NewNop())
+	h := NewPluginHandler(nil, "", nil, nil, nil, nil, nil, zap.NewNop())
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.GET("/api/plugins", h.GetState)
@@ -850,5 +883,111 @@ func TestLoadMCPDeclarationNeedsACommandOrURL(t *testing.T) {
 	writeTestFile(t, filepath.Join(dir, "no-transport.yaml"), "type: stdio\ndescription: 什么都没声明\n")
 	if _, err := LoadMCPDeclaration(filepath.Join(dir, "no-transport.yaml")); err == nil {
 		t.Fatal("a declaration with no command and no url was accepted")
+	}
+}
+
+// A bundle's files cannot be edited after install, so the console's switch is the only off button a
+// pack unit has. If that decision lives only in memory, the next start-up rebuilds the table from
+// the pack and the role the operator disabled is serving again - with nothing in the UI to explain
+// why it came back.
+func TestPluginUnitSwitchIsRemembered(t *testing.T) {
+	env := newPluginTestEnv(t, true)
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	rec := env.do(t, http.MethodPost, "/api/plugins/units/role/报告撰写/enabled", `{"enabled":false}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("enable: %d %s", rec.Code, rec.Body.String())
+	}
+	state := decodeState(t, rec)
+	if state["switch_persisted"] != true {
+		t.Fatalf("the switch was not recorded: %v", state)
+	}
+	if got, ok := env.switches.recorded["role/报告撰写"]; !ok || got {
+		t.Fatalf("recorded decisions=%v, want role/报告撰写=false", env.switches.recorded)
+	}
+}
+
+// The MCP one is the exception, and it has to be said out loud: start-up re-declares those servers
+// disabled whatever this row says, so claiming the switch was persisted would be a promise the
+// boot rule does not keep.
+func TestPluginMCPSwitchStatesTheBootRule(t *testing.T) {
+	env := newPluginTestEnv(t, false)
+	writeMCPPack(t, env)
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"mcp-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	rec := env.do(t, http.MethodPost, "/api/plugins/units/mcp/lab-server/enabled", `{"enabled":true}`)
+	state := decodeState(t, rec)
+	if state["switch_persisted"] != false {
+		t.Fatalf("an MCP switch claimed to be durable: %v", state)
+	}
+	msg, _ := state["switch_message"].(string)
+	if !strings.Contains(msg, "config.yaml") {
+		t.Fatalf("the response does not point at the durable route: %q", msg)
+	}
+	if len(env.switches.recorded) != 0 {
+		t.Fatalf("the MCP decision was written anyway: %v", env.switches.recorded)
+	}
+}
+
+// Unplug and detach are the two ways an identity leaves the table on purpose. A saved row nobody
+// forgets comes back as an unexplained "disabled" the next time somebody ships a unit under that
+// name.
+func TestPluginRemovalForgetsSavedSwitches(t *testing.T) {
+	env := newPluginTestEnv(t, true)
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	env.do(t, http.MethodPost, "/api/plugins/units/role/报告撰写/enabled", `{"enabled":false}`)
+	if rec := env.do(t, http.MethodDelete, "/api/plugins/bundles/reporting-pack", ""); rec.Code != http.StatusOK {
+		t.Fatalf("uninstall: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, want := range []string{"role/报告撰写", "skill/finding-writeup", "tool/pandoc", "agent/report-analyst"} {
+		found := false
+		for _, got := range env.switches.forgot {
+			if got == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("unplug forgot %v, want every unit identity of the pack including %q", env.switches.forgot, want)
+		}
+	}
+}
+
+// Both halves of the durability promise are things the response has to state, because "已更新" is
+// true either way and the operator cannot see that nothing will be there after a restart.
+func TestPluginSwitchReportsAMissingOrFailingSwitchStore(t *testing.T) {
+	env := newPluginTestEnv(t, true)
+	if rec := env.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	env.plugins.switches = nil
+	rec := env.do(t, http.MethodPost, "/api/plugins/units/role/报告撰写/enabled", `{"enabled":false}`)
+	state := decodeState(t, rec)
+	if state["switch_persisted"] != false {
+		t.Fatalf("a missing store reported a durable switch: %v", state)
+	}
+	if msg, _ := state["switch_message"].(string); !strings.Contains(msg, "未落库") {
+		t.Fatalf("the response does not say the switch is session-only: %q", msg)
+	}
+	// The unit itself still flipped: the failure is durability, not the request.
+	if unit, _ := env.table.Unit("role/报告撰写"); unit.Enabled {
+		t.Fatal("a failed record left the unit enabled while the response said 已更新")
+	}
+
+	env2 := newPluginTestEnv(t, true)
+	if rec := env2.do(t, http.MethodPost, "/api/plugins/install", `{"bundle":"reporting-pack"}`); rec.Code != http.StatusOK {
+		t.Fatalf("install: %s", rec.Body.String())
+	}
+	env2.switches.err = errors.New("database is locked")
+	rec = env2.do(t, http.MethodPost, "/api/plugins/units/role/报告撰写/enabled", `{"enabled":false}`)
+	state = decodeState(t, rec)
+	if state["switch_persisted"] != false {
+		t.Fatalf("a failed write reported a durable switch: %v", state)
+	}
+	if msg, _ := state["switch_message"].(string); !strings.Contains(msg, "database is locked") {
+		t.Fatalf("the write failure was swallowed: %q", msg)
 	}
 }

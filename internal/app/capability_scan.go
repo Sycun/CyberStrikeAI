@@ -11,6 +11,7 @@ import (
 	"cyberstrike-ai/internal/handler"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/plugin"
+	"cyberstrike-ai/internal/store"
 
 	"go.uber.org/zap"
 )
@@ -217,4 +218,51 @@ func provisionDeclaredServers(mgr *mcp.ExternalMCPManager, table *plugin.Table) 
 		declared++
 	}
 	return declared, note
+}
+
+// applyPersistedSwitches re-applies the operator's own on/off decisions after the packs have been
+// rebuilt from disk, and prunes the rows that no longer describe anything.
+//
+// Only a saved "off" is acted on. A row that said "on" cannot turn a unit whose source file says
+// `enabled: false` back on: the runtime state stays `file enabled AND table enabled`, which is the
+// same rule the tool layer runs, and it is what keeps a stale row from widening what may execute.
+// A row whose unit is gone, or whose source slot no longer matches, is forgotten - otherwise
+// shipping a different capability under an identity somebody switched off would inherit that
+// switch, and the console would show a unit as unavailable with no reason anyone could name.
+// The comparison is on the slot (`roles/x.yaml`), not the whole path, because the same
+// installation reaches different absolute paths depending on how config.yaml was named.
+func applyPersistedSwitches(table *plugin.Table, switches *store.CapabilitySwitches, logger *zap.Logger) (int, []string) {
+	if table == nil || switches == nil {
+		return 0, nil
+	}
+	rows, err := switches.All()
+	if err != nil {
+		if logger != nil {
+			logger.Warn("读取能力单元开关失败，本次启动只按文件状态服务", zap.Error(err))
+		}
+		return 0, nil
+	}
+	var applied int
+	var notes []string
+	for _, sw := range rows {
+		unit, ok := table.Unit(sw.UnitID)
+		if !ok || store.SwitchPathKey(unit.Path) != store.SwitchPathKey(sw.Path) {
+			if err := switches.Forget(sw.UnitID); err != nil {
+				notes = append(notes, fmt.Sprintf("%s: %v", sw.UnitID, err))
+			}
+			continue
+		}
+		if sw.Enabled || !unit.Enabled {
+			continue // already in the state the operator chose
+		}
+		if _, err := table.SetEnabled(sw.UnitID, false); err != nil {
+			notes = append(notes, fmt.Sprintf("%s: %v", sw.UnitID, err))
+			continue
+		}
+		applied++
+	}
+	if logger != nil && applied > 0 {
+		logger.Info("已按保存的开关重新停用能力单元", zap.Int("units", applied))
+	}
+	return applied, notes
 }
