@@ -8,7 +8,7 @@
 
 > **仓库定位：** 本仓库是 Sycun 基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 的个人维护线，承接日常修复与优化。[架构重构线](https://github.com/Sycun/csai-decouple-refactor)独立演进；[Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) 保留为向官方贡献选定改动的 fork。
 >
-> 当前主线包含[深度测评工作台](docs/DEEP_ASSESSMENTS.md)。代理池和本地模型相关工作仍保存在独立分支，整合状态见[仓库与分支说明](docs/REPOSITORY_GUIDE.md)。代码已保存、自动化检查通过与真实模型、真实目标验收分别记录。
+> 当前主线包含[深度测评工作台](docs/DEEP_ASSESSMENTS.md)。代理池设置和本地模型上下文优化已整合进当前主线，使用与整合状态见[仓库与分支说明](docs/REPOSITORY_GUIDE.md)。代码已保存、自动化检查通过与真实模型、真实目标验收分别记录。
 
 **CyberStrikeAI 是 AI 原生网络安全的智能执行中枢——让意图转化为受治理的行动，让证据沉淀为运营记忆，并让每次行动优化下一次行动。**
 

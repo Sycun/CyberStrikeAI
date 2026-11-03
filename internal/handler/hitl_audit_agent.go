@@ -49,12 +49,13 @@ func (h *AgentHandler) auditAgentReview(ctx context.Context, hitlMode, toolName 
 			{"role": "system", "content": prompt},
 			{"role": "user", "content": userContent},
 		},
-		"temperature":           0.1,
-		"max_completion_tokens": 1024,
+		"temperature":             0.1,
+		llmCfg.OutputLimitField(): 1024,
 	}
 	if auditDisableThinking(llmCfg) {
 		requestBody["thinking"] = map[string]interface{}{"type": "disabled"}
 	}
+	config.ApplyExtraRequestFields(requestBody, llmCfg.Reasoning.ExtraRequestFields)
 
 	var apiResponse struct {
 		Choices []struct {

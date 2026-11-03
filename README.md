@@ -9,7 +9,7 @@
 
 > **Repository role:** Sycun's personal maintenance line, based on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI). Daily development is published here. The [architecture refactor](https://github.com/Sycun/csai-decouple-refactor) evolves separately; [Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) is the fork used for selected upstream contributions.
 >
-> The current main line includes the [deep assessment workbench](docs/DEEP_ASSESSMENTS.md). Proxy-pool and local-model work is preserved on separate branches; see the [repository and branch guide](docs/REPOSITORY_GUIDE.md) for integration status. Code availability and automated checks do not establish acceptance with real models and real targets.
+> The current main line includes the [deep assessment workbench](docs/DEEP_ASSESSMENTS.md). Proxy-pool settings and local-model context profiles are integrated into this main line; see the [repository and branch guide](docs/REPOSITORY_GUIDE.md) for integration status. Code availability and automated checks do not establish acceptance with real models and real targets.
 
 **The system of action for AI-native cybersecurity—where intent becomes governed execution, evidence becomes operational memory, and every operation improves the next.**
 

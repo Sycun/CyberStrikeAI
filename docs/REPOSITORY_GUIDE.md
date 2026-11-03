@@ -18,11 +18,15 @@
 | `main` | 个人维护默认分支 | 初始快照来自 `codex/deep-assessment`，后续日常改动以本分支为基线。 |
 | `codex/deep-assessment` | 深度测评功能与官方 PR 来源 | 功能已在个人主线；[上游 PR #383](https://github.com/AIPentest/CyberStrikeAI/pull/383) 待合并，保留来源分支。 |
 | `codex/issue-365-word-reports` | 单条漏洞 Markdown / Word 下载的历史分支 | [上游 PR #378](https://github.com/AIPentest/CyberStrikeAI/pull/378) 已合并，分支尖端已包含在个人主线历史中；保留存档。 |
-| `codex/issue-357-proxy-pool` | 代理池功能开发分支 | 与个人主线分叉，尚未整合；[上游 PR #381](https://github.com/AIPentest/CyberStrikeAI/pull/381) 待合并，整理时存在合并冲突。继续维护时单独解决冲突并验证。 |
-| `feat/local-model-context-profile` | 本地模型上下文优化分支 | 与个人主线分叉，尚未整合；[上游 PR #367](https://github.com/AIPentest/CyberStrikeAI/pull/367) 待合并，整理时存在合并冲突。继续维护时单独解决冲突并验证。 |
+| `codex/issue-357-proxy-pool` | 代理池功能开发分支 | 已整合进个人主线；[上游 PR #381](https://github.com/AIPentest/CyberStrikeAI/pull/381) 待合并，整理时存在合并冲突。个人版已完成兼容整合；官方 PR 的冲突另行处理。 |
+| `feat/local-model-context-profile` | 本地模型上下文优化分支 | 已整合进个人主线；[上游 PR #367](https://github.com/AIPentest/CyberStrikeAI/pull/367) 待合并，整理时存在合并冲突。个人版已完成兼容整合；官方 PR 的冲突另行处理。 |
 | `archive/local-main-20261103` | 调整个人维护流程前的本地 `main` | 历史存档，不作为日常开发或部署来源。 |
 
 上表是带日期的状态快照，PR 后续状态以对应 GitHub 页面为准。保留分支与标签用于追溯，不据此宣称功能已集成或验收通过。
+
+## 本次个人版整合（2026-11-03）
+
+代理池与本地模型上下文分支已合入个人版 `main`，并保留各自提交历史。合并同时保留自定义请求头、深度测评与 Word 下载功能；上下文探测复用渠道鉴权头，禁止跟随重定向。此记录表示代码整合，真实模型与真实目标的运行验收仍单独记录。
 
 ## 验证与安装
 
@@ -35,4 +39,4 @@
 
 `CyberStrikeAI-personal/main` is the personal maintenance baseline. `csai-decouple-refactor` is a separate architecture experiment. `Sycun/CyberStrikeAI` remains the contribution fork for selected upstream PRs.
 
-The dated table above distinguishes integrated work, pending branches, and historical snapshots. Proxy-pool and local-model changes require separate integration and validation. Keep existing PR branches and archival refs. Automated checks and fixtures do not establish real-model or real-target acceptance; installation and deployment sources must be selected explicitly.
+The dated table above distinguishes integrated work, pending branches, and historical snapshots. Proxy-pool and local-model changes are integrated into the personal main line; upstream PR integration is tracked separately. Keep existing PR branches and archival refs. Automated checks and fixtures do not establish real-model or real-target acceptance; installation and deployment sources must be selected explicitly.
