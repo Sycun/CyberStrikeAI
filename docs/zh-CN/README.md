@@ -37,3 +37,5 @@
 
 - [Pi 原生运行时与迁移](pi-runtime.md)
 - [任务委派、阶段汇报与主动请示（设计调研）](task-delegation-design.md)
+
+- [任务委派与主动请示](task-delegation.md)

@@ -51,6 +51,13 @@ func (s *Store) Change(id, stepID, kind, message string, fn func(*Task) error, e
 		return err
 	}
 	t.UpdatedAt = time.Now().UTC()
+	report := progressSnapshot(&t, kind)
+	if report != nil {
+		t.Reports = append(t.Reports, *report)
+		if len(t.Reports) > 50 {
+			t.Reports = t.Reports[len(t.Reports)-50:]
+		}
+	}
 	out, err := json.Marshal(t)
 	if err != nil {
 		return err
@@ -67,6 +74,15 @@ func (s *Store) Change(id, stepID, kind, message string, fn func(*Task) error, e
 			}
 		}
 		if _, err = tx.Exec(`INSERT INTO assessment_events(assessment_id,step_id,kind,message,data) VALUES(?,?,?,?,?)`, id, stepID, kind, message, string(data)); err != nil {
+			return err
+		}
+	}
+	if report != nil {
+		data, err := json.Marshal(report)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO assessment_events(assessment_id,step_id,kind,message,data) VALUES(?,?,?,?,?)`, id, stepID, "progress_report", "Stage progress report", string(data)); err != nil {
 			return err
 		}
 	}
@@ -105,7 +121,7 @@ func (s *Store) Events(id string, after int64) ([]Event, error) {
 	return out, rows.Err()
 }
 func (s *Store) List(user, scope string, limit, offset int) ([]*Task, error) {
-	q := `SELECT json_remove(payload, '$.steps', '$.material') FROM assessments a WHERE 1=1`
+	q := `SELECT json_remove(payload, '$.steps', '$.material', '$.questions', '$.reports', '$.intake', '$.owner_guidance') FROM assessments a WHERE 1=1`
 	args := []any{}
 	if scope != database.RBACScopeAll {
 		if scope == database.RBACScopeOwn {
@@ -165,7 +181,7 @@ func (s *Store) Delete(id string) error {
 
 // Recover never replays an interrupted external action automatically.
 func (s *Store) Recover() error {
-	rows, err := s.DB.Query(`SELECT id,payload FROM assessments WHERE status IN ('running','awaiting_approval','pausing','stopping','completed','partial','blocked','failed','exhausted')`)
+	rows, err := s.DB.Query(`SELECT id,payload FROM assessments WHERE status IN ('running','awaiting_approval','pausing','stopping','completed','partial','blocked','failed','exhausted','awaiting_input')`)
 	if err != nil {
 		return err
 	}
@@ -197,6 +213,8 @@ func (s *Store) Recover() error {
 			t.Reserved = 0
 			if t.Status == "stopping" {
 				t.Status = "stopped"
+			} else if pendingQuestions(t) && !hasLiveWork(t) {
+				t.Status = "awaiting_input"
 			} else {
 				t.Status = "paused"
 			}

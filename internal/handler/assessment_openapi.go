@@ -18,8 +18,9 @@ func addAssessmentSpec(spec map[string]interface{}) {
 	str := func() map[string]interface{} { return map[string]interface{}{"type": "string"} }
 	create := op("Create a durable assessment draft (no conversation)", "assessment:write")
 	create["responses"].(map[string]interface{})["201"] = map[string]interface{}{"description": "Draft created"}
-	body(create, map[string]interface{}{"type": "object", "required": []string{"name", "goal", "scope", "tools"}, "properties": map[string]interface{}{
+	body(create, map[string]interface{}{"type": "object", "required": []string{"tools"}, "anyOf": []map[string]interface{}{{"required": []string{"request"}}, {"required": []string{"name", "goal", "scope"}}}, "properties": map[string]interface{}{
 		"criteria": map[string]interface{}{"type": "array", "items": str(), "maxItems": 12}, "reviewer_model": str(), "skill_ids": map[string]interface{}{"type": "array", "items": str(), "maxItems": 4}, "worker_models": map[string]interface{}{"type": "object", "additionalProperties": str()},
+		"request": map[string]interface{}{"type": "string", "minLength": 1, "maxLength": 12000}, "auto_start": map[string]interface{}{"type": "boolean", "description": "Requires agent:execute; starts intake or execution after creation"},
 		"name": str(), "goal": str(), "scope": str(), "material": str(), "project_id": str(), "model": str(),
 		"approval_mode":     map[string]interface{}{"type": "string", "enum": []string{"policy", "manual"}},
 		"tools":             map[string]interface{}{"type": "array", "items": str(), "minItems": 1, "maxItems": 100},
@@ -36,6 +37,9 @@ func addAssessmentSpec(spec map[string]interface{}) {
 	control := op("Control: start, resume, pause, stop, steer or budget (start also requires agent:execute)", "assessment:write", "id", "action")
 	body(control, map[string]interface{}{"type": "object", "properties": map[string]interface{}{"message": str(), "token_budget": map[string]interface{}{"type": "integer"}, "remaining_seconds": map[string]interface{}{"type": "integer"}, "max_rounds": map[string]interface{}{"type": "integer"}}})
 	paths["/api/assessments/{id}/control/{action}"] = map[string]interface{}{"post": control}
+	answer := op("Answer a durable owner question and resume (also requires agent:execute)", "assessment:write", "id", "questionId")
+	body(answer, map[string]interface{}{"type": "object", "required": []string{"revision", "answer"}, "properties": map[string]interface{}{"revision": map[string]interface{}{"type": "integer", "minimum": 1}, "answer": map[string]interface{}{"type": "string", "minLength": 1, "maxLength": 8000}}})
+	paths["/api/assessments/{id}/questions/{questionId}/answer"] = map[string]interface{}{"post": answer}
 	decision := op("Decide one exact tool call (also requires hitl:write)", "assessment:write", "id", "stepId")
 	body(decision, map[string]interface{}{"type": "object", "required": []string{"approved", "approval_id"}, "properties": map[string]interface{}{"approval_id": str(), "approved": map[string]interface{}{"type": "boolean"}}})
 	paths["/api/assessments/{id}/steps/{stepId}/decision"] = map[string]interface{}{"post": decision}

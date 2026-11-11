@@ -2,6 +2,7 @@ package handler
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -147,6 +148,8 @@ func (h *AssessmentHandler) Create(c *gin.Context) {
 	}
 	// Only creation fields are accepted. Runtime state/owner cannot be supplied.
 	var req struct {
+		Request       string            `json:"request"`
+		AutoStart     bool              `json:"auto_start"`
 		Criteria      []string          `json:"criteria"`
 		ReviewerModel string            `json:"reviewer_model"`
 		WorkerModels  map[string]string `json:"worker_models"`
@@ -174,12 +177,14 @@ func (h *AssessmentHandler) Create(c *gin.Context) {
 		c.JSON(403, gin.H{"error": "无权访问关联项目"})
 		return
 	}
+	var selectedProject *database.Project
 	if req.ProjectID != "" {
 		p, err := h.DB.GetProject(req.ProjectID)
 		if err != nil || p == nil {
 			h.fail(c, fmt.Errorf("project does not exist"))
 			return
 		}
+		selectedProject = p
 	}
 	if req.Model != "" {
 		if _, _, ok := cfg.AI.ResolveChannel(req.Model); !ok {
@@ -192,9 +197,25 @@ func (h *AssessmentHandler) Create(c *gin.Context) {
 		return
 	}
 	t := &assessment.Task{Criteria: req.Criteria, ReviewerModel: req.ReviewerModel, WorkerModels: req.WorkerModels, SkillIDs: req.SkillIDs, ApprovalMode: req.ApprovalMode, Name: req.Name, Goal: req.Goal, Scope: req.Scope, Material: req.Material, ProjectID: req.ProjectID, OwnerID: session.UserID, Model: req.Model, Tools: req.Tools, Concurrency: req.Concurrency, TokenBudget: req.TokenBudget, RemainingSeconds: req.Seconds, MaxRounds: req.Rounds}
-	if err := t.Validate(); err != nil {
+	var validateErr error
+	if req.Request != "" {
+		validateErr = t.PrepareIntake(req.Request)
+	} else {
+		validateErr = t.Validate()
+	}
+	if req.AutoStart && !security.SessionHasPermission(c, "agent:execute") {
+		c.JSON(403, gin.H{"error": "agent:execute is required"})
+		return
+	}
+	if err := validateErr; err != nil {
 		h.fail(c, err)
 		return
+	}
+	if t.Intake != nil && selectedProject != nil {
+		b, _ := json.Marshal(selectedProject)
+		if len(b) <= 16000 {
+			t.Intake.ProjectContext = string(b)
+		}
 	}
 	channels := []string{t.ReviewerModel}
 	for _, channel := range t.WorkerModels {
@@ -252,7 +273,16 @@ func (h *AssessmentHandler) Create(c *gin.Context) {
 		return
 	}
 	h.Audit.RecordOK(c, "assessment", "create", "Created assessment", "assessment", t.ID, nil)
-	c.JSON(201, gin.H{"assessment": t.Public()})
+	response := gin.H{"assessment": t.Public()}
+	if req.AutoStart {
+		if err := h.Engine.StartAs(t.ID, session.UserID); err != nil {
+			response["start_error"] = err.Error()
+		}
+		if latest, err := h.Engine.Store.Get(t.ID); err == nil {
+			response["assessment"] = latest.Public()
+		}
+	}
+	c.JSON(201, response)
 }
 func (h *AssessmentHandler) Control(c *gin.Context) {
 	t, ok := h.task(c)
@@ -293,6 +323,21 @@ func (h *AssessmentHandler) Control(c *gin.Context) {
 						return fmt.Errorf("materials too long")
 					}
 					t.Material += "\n\nHuman guidance:\n" + text
+					t.OwnerGuidance = append(t.OwnerGuidance, text)
+					t.Revision++
+					for i := range t.Questions {
+						q := &t.Questions[i]
+						if q.Status == "pending" {
+							q.Status = "superseded"
+							if step := t.Step(q.StepID); step != nil && step.Status == "awaiting_input" {
+								step.Status = "blocked"
+								step.Result = "Task guidance changed; prior question superseded"
+							}
+						}
+					}
+					if t.Intake != nil && t.Intake.State != "ready" && t.Intake.State != "answered" {
+						t.Intake.State = "pending"
+					}
 					return nil
 				})
 			}

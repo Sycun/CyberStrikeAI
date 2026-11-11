@@ -16,6 +16,12 @@ const MaxTurns = 20
 
 // Task is the durable source of truth. No chat conversation or message is created.
 type Task struct {
+	OwnerGuidance    []string          `json:"owner_guidance,omitempty"`
+	Revision         int               `json:"revision"`
+	Intake           *IntakeDraft      `json:"intake,omitempty"`
+	Questions        []OwnerQuestion   `json:"questions,omitempty"`
+	Reports          []ProgressReport  `json:"reports,omitempty"`
+	ResumeRequested  bool              `json:"resume_requested,omitempty"`
 	PreviousReview   *Review           `json:"previous_review,omitempty"`
 	Criteria         []string          `json:"criteria"`
 	ReviewerModel    string            `json:"reviewer_model,omitempty"`
@@ -183,6 +189,7 @@ func (t *Task) Validate() error {
 	}
 	t.ID = uuid.NewString()
 	t.Status = "draft"
+	t.Revision = 1
 	t.Steps = []*Step{}
 	t.CreatedAt = time.Now().UTC()
 	t.UpdatedAt = t.CreatedAt
@@ -210,7 +217,7 @@ func (t *Task) Public() *Task {
 	return &out
 }
 func (t *Task) Terminal() bool {
-	return t.Status == "completed" || t.Status == "stopped" || t.Status == "exhausted" || t.Status == "failed"
+	return t.Status == "answered" || t.Status == "completed" || t.Status == "stopped" || t.Status == "exhausted" || t.Status == "failed"
 }
 func clip(s string, n int) string {
 	r := []rune(s)

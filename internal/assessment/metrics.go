@@ -3,6 +3,11 @@ package assessment
 import "encoding/json"
 
 type EvaluationMetrics struct {
+	Intent            string            `json:"intent,omitempty"`
+	OwnerQuestions    int               `json:"owner_questions"`
+	OwnerAnswers      int               `json:"owner_answers"`
+	PendingQuestions  int               `json:"pending_questions"`
+	RetainedReports   int               `json:"retained_reports"`
 	Name              string            `json:"name"`
 	ModelChannel      string            `json:"model_channel"`
 	ReviewerChannel   string            `json:"reviewer_channel"`
@@ -32,6 +37,19 @@ type EvaluationMetrics struct {
 
 func Metrics(t *Task) EvaluationMetrics {
 	m := EvaluationMetrics{Name: t.Name, ModelChannel: t.Model, ReviewerChannel: t.ReviewerModel, WorkerChannels: t.WorkerModels, TokenBudget: t.TokenBudget, MaxRounds: t.MaxRounds, TaskID: t.ID, Status: t.Status, CriteriaTotal: len(criteria(t)), Steps: len(t.Steps), ModelCalls: t.ModelCalls, ModelRetries: t.ModelRetries, Tokens: t.Tokens, Usage: t.Usage}
+	if t.Intake != nil {
+		m.Intent = t.Intake.Intent
+	}
+	m.OwnerQuestions = len(t.Questions)
+	m.RetainedReports = len(t.Reports)
+	for _, q := range t.Questions {
+		if q.Status == "answered" {
+			m.OwnerAnswers++
+		}
+		if q.Status == "pending" {
+			m.PendingQuestions++
+		}
+	}
 	actions := map[string]bool{}
 	for _, s := range t.Steps {
 		switch s.Status {

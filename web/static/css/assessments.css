@@ -583,3 +583,7 @@ html[data-theme="dark"] .assessment-create-dialog .btn-secondary {
     color: var(--text-primary);
 }
 html[data-theme="dark"] .assessment-create-dialog .btn-secondary:hover { background: var(--bg-tertiary); }
+
+.assessment-owner-question { border-left: 4px solid #d97706; }
+.assessment-delegation { margin-block: 1rem; }
+.assessment-delegation li { margin-block: .4rem; overflow-wrap: anywhere; }
