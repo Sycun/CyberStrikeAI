@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RecordReader } from "../dist/protocol.js";
@@ -171,4 +171,108 @@ test("native tool search loads a deferred host tool without exposing the full ca
   assert.equal(result.status, "completed", result.error);
   assert.equal(result.response, "discovery verified");
   assert.equal(hostCalls, 1);
+});
+
+test("provider custom credentials never cross a redirect origin", { timeout: 30000 }, async t => {
+  let targetCalls = 0;
+  const target = createServer((_, res) => { targetCalls++; res.end("unexpected"); });
+  target.listen(0, "127.0.0.1"); await once(target, "listening");
+  t.after(() => { target.closeAllConnections(); target.close(); });
+  const fixture = await startFixture(t, (_, res) => {
+    res.writeHead(307, { location: "http://127.0.0.1:" + target.address().port + "/capture" }); res.end();
+  });
+  const req = request(fixture.url);
+  req.model.headers = { "X-Private-Key": "fixture-private-value" };
+  const { result } = await invoke(t, req);
+  assert.equal(result.status, "failed");
+  assert.match(result.error, /cross-origin redirect blocked/);
+  assert.equal(targetCalls, 0);
+});
+
+test("same-origin model redirects retain method, payload and configured headers", { timeout: 30000 }, async t => {
+  let finalCalls = 0;
+  const server = createServer(async (req, res) => {
+    if (req.url !== "/final") { res.writeHead(307, { location: "/final" }); res.end(); return; }
+    finalCalls++;
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    assert.equal(req.method, "POST");
+    assert.equal(req.headers["x-private-key"], "fixture-private-value");
+    assert.equal(JSON.parse(Buffer.concat(chunks)).model, "fixture");
+    sse(res, { role: "assistant", content: "redirect verified" }, "stop");
+  });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const req = request("http://127.0.0.1:" + server.address().port + "/v1");
+  req.model.headers = { "X-Private-Key": "fixture-private-value" };
+  const { result } = await invoke(t, req);
+  assert.equal(result.status, "completed", result.error);
+  assert.equal(result.response, "redirect verified");
+  assert.equal(finalCalls, 1);
+});
+
+test("native compaction retains provenance and exposes a real session entry for project memory", { timeout: 30000 }, async t => {
+  const fixture = await startFixture(t, (_, res, count) => sse(res, { role: "assistant", content: count === 1 ? "condensed working summary" : "final reply" }, "stop"));
+  const dir = await mkdtemp(join(tmpdir(), "csai-pi-compaction-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const req = request(fixture.url, dir);
+  req.model.contextWindow = 6000; req.model.inputBudget = 4000;
+  req.history = Array.from({ length: 16 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: ("Recorded context " + i + ": ").repeat(150) }));
+  const { result, records } = await invoke(t, req);
+  assert.equal(result.status, "completed", result.error);
+  const event = records.find(r => r.event?.type === "compaction_end" && r.event.data.result)?.event.data;
+  assert.ok(event, "compaction did not run");
+  assert.ok(event.sessionFile.startsWith(dir));
+  assert.ok(event.sessionEntryId);
+  const entries = (await readFile(event.sessionFile, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+  assert.ok(entries.some(entry => entry.id === event.sessionEntryId && entry.type === "compaction"));
+  assert.ok(result.history.some(m => m.role === "assistant" && m.content.includes("Host-generated working summary")));
+  assert.ok(!result.history.some(m => m.role === "user" && m.content === "condensed working summary"));
+});
+
+test("interleaved OpenAI tool argument chunks retain their call identities", { timeout: 30000 }, async t => {
+  const fixture = await startFixture(t, (_, res, count) => {
+    if (count > 1) { sse(res, { role: "assistant", content: "paired" }, "stop"); return; }
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    const deltas = [
+      { role: "assistant", tool_calls: [{ index: 0, id: "call-a", type: "function", function: { name: "echo", arguments: '{"text":"' } }, { index: 1, id: "call-b", type: "function", function: { name: "echo", arguments: '{"text":"' } }] },
+      { tool_calls: [{ index: 1, function: { arguments: 'B"}' } }] },
+      { tool_calls: [{ index: 0, function: { arguments: 'A"}' } }] },
+    ];
+    for (const delta of deltas) res.write("data: " + JSON.stringify({ id: "fixture", object: "chat.completion.chunk", model: "fixture", choices: [{ index: 0, delta, finish_reason: null }] }) + "\n\n");
+    res.end("data: " + JSON.stringify({ id: "fixture", object: "chat.completion.chunk", model: "fixture", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] }) + "\n\ndata: [DONE]\n\n");
+  });
+  const calls = [];
+  const { result } = await invoke(t, request(fixture.url), (r, send) => {
+    if (r.type === "tool_call") { calls.push([r.call.providerId, r.call.arguments.text]); send({ type: "tool_result", id: r.call.id, result: { content: r.call.arguments.text } }); }
+  });
+  assert.equal(result.status, "completed", result.error);
+  assert.deepEqual(calls, [["call-a", "A"], ["call-b", "B"]]);
+});
+
+test("OpenAI Responses returns native tool calls and consumes their results", { timeout: 30000 }, async t => {
+  const fixture = await startFixture(t, (body, res, count) => {
+    assert.ok(body.tools.some(tool => tool.type === "function" && tool.name === "echo"));
+    if (count === 2) assert.ok(body.input.some(item => item.type === "function_call_output" && item.call_id === "responses-call"));
+    const output = count === 1
+      ? [{ type: "function_call", id: "fc-1", call_id: "responses-call", name: "echo", arguments: '{"text":"responses"}', status: "completed" }]
+      : [{ type: "message", id: "msg-1", role: "assistant", status: "completed", content: [{ type: "output_text", text: "responses verified", annotations: [] }] }];
+    const response = { id: "resp-" + count, object: "response", model: "fixture", status: "completed", output,
+      usage: { input_tokens: 20, output_tokens: 10, total_tokens: 30, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } };
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write("event: response.created\ndata: " + JSON.stringify({ type: "response.created", response: { ...response, status: "in_progress", output: [] } }) + "\n\n");
+    const event = data => res.write("event: " + data.type + "\ndata: " + JSON.stringify(data) + "\n\n");
+    event({ type: "response.output_item.added", output_index: 0, item: count === 1 ? { ...output[0], arguments: "" } : { ...output[0], content: [] } });
+    if (count === 1) event({ type: "response.function_call_arguments.delta", output_index: 0, item_id: "fc-1", delta: output[0].arguments });
+    else event({ type: "response.output_text.delta", output_index: 0, item_id: "msg-1", content_index: 0, delta: "responses verified" });
+    event({ type: "response.output_item.done", output_index: 0, item: output[0] });
+    res.end("event: response.completed\ndata: " + JSON.stringify({ type: "response.completed", response }) + "\n\n");
+  });
+  const req = request(fixture.url); req.model.api = "openai-responses";
+  let calls = 0;
+  const { result } = await invoke(t, req, (r, send) => {
+    if (r.type === "tool_call") { calls++; send({ type: "tool_result", id: r.call.id, result: { content: "responses" } }); }
+  });
+  assert.equal(result.status, "completed", result.error);
+  assert.equal(result.response, "responses verified");
+  assert.equal(calls, 1);
 });

@@ -317,7 +317,7 @@ func TestLoadNormalizesDefaultChannelForOfficialDeepSeekEndpoint(t *testing.T) {
 }
 
 func TestSummarizationUserIntentLedgerRunesEffective(t *testing.T) {
-	var zero MultiAgentEinoMiddlewareConfig
+	var zero AgentTuningConfig
 	if got := zero.SummarizationUserIntentLedgerMaxRunesEffective(); got != DefaultSummarizationUserIntentLedgerMaxRunes {
 		t.Fatalf("default ledger max runes = %d, want %d", got, DefaultSummarizationUserIntentLedgerMaxRunes)
 	}
@@ -325,7 +325,7 @@ func TestSummarizationUserIntentLedgerRunesEffective(t *testing.T) {
 		t.Fatalf("default ledger entry max runes = %d, want %d", got, DefaultSummarizationUserIntentLedgerEntryMaxRunes)
 	}
 
-	custom := MultiAgentEinoMiddlewareConfig{
+	custom := AgentTuningConfig{
 		SummarizationUserIntentLedgerMaxRunes:      12345,
 		SummarizationUserIntentLedgerEntryMaxRunes: 2345,
 	}
@@ -338,11 +338,11 @@ func TestSummarizationUserIntentLedgerRunesEffective(t *testing.T) {
 }
 
 func TestSummarizationOutputReserveTokensEffective(t *testing.T) {
-	var zero MultiAgentEinoMiddlewareConfig
+	var zero AgentTuningConfig
 	if got := zero.SummarizationOutputReserveTokensEffective(); got != DefaultSummarizationOutputReserveTokens {
 		t.Fatalf("default output reserve = %d, want %d", got, DefaultSummarizationOutputReserveTokens)
 	}
-	custom := MultiAgentEinoMiddlewareConfig{SummarizationOutputReserveTokens: 4096}
+	custom := AgentTuningConfig{SummarizationOutputReserveTokens: 4096}
 	if got := custom.SummarizationOutputReserveTokensEffective(); got != 4096 {
 		t.Fatalf("custom output reserve = %d", got)
 	}
@@ -358,7 +358,7 @@ func TestOpenAIOutputLimitValidation(t *testing.T) {
 }
 
 func TestLatestUserMessageRunesEffective(t *testing.T) {
-	var zero MultiAgentEinoMiddlewareConfig
+	var zero AgentTuningConfig
 	if got := zero.LatestUserMessageMaxRunesEffective(); got != DefaultLatestUserMessageMaxRunes {
 		t.Fatalf("default latest user max runes = %d, want %d", got, DefaultLatestUserMessageMaxRunes)
 	}
@@ -369,7 +369,7 @@ func TestLatestUserMessageRunesEffective(t *testing.T) {
 		t.Fatalf("default latest user tail runes = %d, want %d", got, DefaultLatestUserMessageTailRunes)
 	}
 
-	custom := MultiAgentEinoMiddlewareConfig{
+	custom := AgentTuningConfig{
 		LatestUserMessageMaxRunes:  100,
 		LatestUserMessageHeadRunes: 40,
 		LatestUserMessageTailRunes: 60,

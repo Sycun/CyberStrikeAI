@@ -34,7 +34,7 @@ func piTestConfig(t *testing.T) *config.Config {
 	}
 	cfg := &config.Config{AgentRuntime: config.AgentRuntimeConfig{Engine: "pi", WorkerPath: worker, SessionDir: t.TempDir()}, OpenAI: config.OpenAIConfig{Provider: "openai", APIKey: "fixture-key", Model: "fixture", MaxTotalTokens: 32000, MaxCompletionTokens: 1024}}
 	cfg.Agent.MaxIterations = 8
-	cfg.MultiAgent.EinoSkills.Disable = true
+	cfg.MultiAgent.Skills.Disable = true
 	return cfg
 }
 
@@ -149,7 +149,7 @@ func TestPiSinglePreservesHITLAndExecutionEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Response != "verified" || executed.Load() != 1 || len(res.MCPExecutionIDs) != 1 {
+	if res.Response != "verified" || res.RuntimeStatus != "completed" || executed.Load() != 1 || len(res.MCPExecutionIDs) != 1 {
 		t.Fatalf("result=%+v executions=%d", res, executed.Load())
 	}
 }
@@ -208,5 +208,36 @@ func TestPiMultiUsesNativeChildAndRestrictsItsTools(t *testing.T) {
 	}
 	if res.Response != "verified multi" || calls.Load() != 4 || executions.Load() != 1 || len(res.MCPExecutionIDs) != 1 {
 		t.Fatalf("result=%+v calls=%d executions=%d", res, calls.Load(), executions.Load())
+	}
+}
+
+func TestPiRepeatedProviderIDDoesNotSuppressNewToolInvocation(t *testing.T) {
+	cfg := piTestConfig(t)
+	var requests atomic.Int32
+	var executions atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requests.Add(1) {
+		case 1:
+			piReply(w, "echo", "reused", map[string]any{"text": "first"}, "")
+		case 2:
+			piReply(w, "echo", "reused", map[string]any{"text": "second"}, "")
+		default:
+			piReply(w, "", "", nil, "both completed")
+		}
+	}))
+	defer server.Close()
+	cfg.OpenAI.BaseURL = server.URL + "/v1"
+	ag := piTestAgent(cfg, func(_ context.Context, args map[string]interface{}) (*mcp.ToolResult, error) {
+		executions.Add(1)
+		return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: fmt.Sprint(args["text"])}}}, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	res, err := RunSingleAgent(ctx, cfg, &cfg.MultiAgent, ag, nil, zap.NewNop(), "reused-id", "", "perform both", nil, []string{"echo"}, nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executions.Load() != 2 || len(res.MCPExecutionIDs) != 2 {
+		t.Fatalf("invocations incorrectly deduplicated: %+v count=%d", res, executions.Load())
 	}
 }

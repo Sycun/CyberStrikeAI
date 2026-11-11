@@ -68,7 +68,7 @@ ai:
 | `ai.default_channel` | Default channel ID for new conversations and requests without an explicit channel. |
 | `ai.channels.<id>` | Channel config. IDs are normalized to lowercase letters, digits, and hyphens. |
 | `name` | Display name in the Web UI; falls back to the ID. |
-| `provider` | `openai_compatible` or `claude`. OpenAI-compatible channels map to runtime `openai`; Claude channels use Eino's native Anthropic Messages API component. |
+| `provider` | `openai_compatible` or `claude`. OpenAI-compatible channels map to runtime `openai`; Claude channels use Pi's native Anthropic Messages API component. |
 | `base_url/api_key/model` | Required. Base URL usually includes a version path such as `/v1`. |
 | `max_total_tokens` | Shared context budget for compression, attack-chain generation, multi-agent summaries, and similar paths. When `context_window` is known, it is clamped to the window minus the output reserve. |
 | `max_completion_tokens` | Per-response output cap; default is used when empty, and it is clamped to half of the known/assumed window. |
@@ -91,7 +91,7 @@ A local model's effective context is usually much smaller than its advertised wi
    - LM Studio: set Context Length explicitly in the model settings and enable KV-cache quantization when available.
 6. **Thinking models**: Qwen3.5-class models enable thinking by default, which burns context inside tool loops. Disable it per channel with `reasoning.extra_request_fields.chat_template_kwargs.enable_thinking: false` (supported by vLLM and llama.cpp with `--jinja`). `reasoning.mode: off` only clears OpenAI/DeepSeek reasoning fields and may not disable the local chat template's thinking.
 7. **Minimum viable window**: an agent with 90+ tools is unreliable below 16K. 32K depends on `tool_search` and `context_profile: local`; 64K and above is closer to a cloud-model experience.
-8. **Failover channels are not re-budgeted**: `multi_agent.eino_middleware.model_failover_channels` only switches the model endpoint; the budget still follows the primary channel. Keep each failover channel's available window at least as large as the primary, or expect overflow compaction/retry.
+8. **Failover channels are not re-budgeted**: `multi_agent.runtime.model_failover_channels` only switches the model endpoint; the budget still follows the primary channel. Keep each failover channel's available window at least as large as the primary, or expect overflow compaction/retry.
 
 The chat page reads saved channels into the “AI Channel” selector. A non-empty request `aiChannelId` selects a channel for that run/session without sending API credentials through the prompt path. Empty `aiChannelId` follows `ai.default_channel`.
 
@@ -181,7 +181,7 @@ Reclaims disk space used by runtime artifacts. Manage it from **System settings 
 | `workspace` | 30 days | agent workspaces, `tmp/workspace` |
 | `reduction` | 7 days | oversized tool-output spill, `tmp/reduction` |
 | `conversation_artifacts` | 30 days | summaries and user-input ledger, `data/conversation_artifacts` |
-| `plantask` | 30 days | multi-agent plan boards, `skills/.eino/plantask` |
+| `plantask` | 30 days | multi-agent plan boards, `skills/.pi/plantask` |
 | `c2_artifacts` | 30 days | C2 results/uploads/downstream/payloads, `tmp/c2` (cleaning a payload invalidates its download link) |
 | `chat_uploads` | 90 days | conversation attachments, `chat_uploads` |
 | `workflow_checkpoints` | 7 days | workflow run checkpoints, `data/workflow-checkpoints` |

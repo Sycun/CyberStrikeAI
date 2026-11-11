@@ -24,9 +24,7 @@ func CompleteBackgroundStepWithRuntime(ctx context.Context, runtime config.Agent
 	if err := runtime.Validate(); err != nil {
 		return nil, 0, err
 	}
-	if !runtime.UsesPi() {
-		return completeBackgroundStepLegacy(ctx, oa, msgs, tools, maxTokens, logger)
-	}
+
 	if maxTokens <= 0 {
 		return nil, 0, fmt.Errorf("background generation budget is exhausted")
 	}
@@ -42,7 +40,7 @@ func CompleteBackgroundStepWithRuntime(ctx context.Context, runtime config.Agent
 			history = append(history, m)
 		}
 	}
-	raw, err := json.Marshal(history)
+	raw, err := piHistoryJSON(history)
 	if err != nil {
 		return nil, 0, err
 	}

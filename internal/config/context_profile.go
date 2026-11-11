@@ -144,13 +144,13 @@ func (c *Config) WithEffectiveContextBudget() *Config {
 	}
 	out := *c
 	out.OpenAI.MaxTotalTokens = c.OpenAI.EffectiveMaxTotalTokens()
-	out.MultiAgent.EinoMiddleware = EffectiveEinoMiddlewareForChannel(c.MultiAgent.EinoMiddleware, c.OpenAI)
+	out.MultiAgent.Runtime = EffectiveRuntimeForChannel(c.MultiAgent.Runtime, c.OpenAI)
 	return &out
 }
 
-// EffectiveEinoMiddlewareForChannel 在 local 档位下只收紧参数，不放大用户已经设得更小的值。
+// EffectiveRuntimeForChannel 在 local 档位下只收紧参数，不放大用户已经设得更小的值。
 // 档位是显式 opt-in；希望完全自定义时使用 auto。
-func EffectiveEinoMiddlewareForChannel(mw MultiAgentEinoMiddlewareConfig, oa OpenAIConfig) MultiAgentEinoMiddlewareConfig {
+func EffectiveRuntimeForChannel(mw AgentTuningConfig, oa OpenAIConfig) AgentTuningConfig {
 	if !oa.IsLocalContextProfile() {
 		return mw
 	}
