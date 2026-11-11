@@ -49,6 +49,27 @@ const call={id:'same-id',name:'echo',arguments:{text:'hello'}};send({type:'tool_
 	}
 }
 
+func TestPiHostDisablesProfileForLegacyWorkers(t *testing.T) {
+	p := fixtureWorker(t, `input.on('line', line => {
+  const record = JSON.parse(line);
+  if (record.type !== 'run') return;
+  if (record.request.profile.enabled !== false || record.request.profile.instruction !== undefined) {
+    process.exit(1);
+  }
+  send({type:'result',result:{status:'completed',response:record.request.systemPrompt,history:[]}});
+});`)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	const prompt = "Return the fixture result."
+	res, err := p.Run(ctx, Request{SystemPrompt: prompt}, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Response != prompt {
+		t.Fatalf("expected the original system prompt, got %q", res.Response)
+	}
+}
+
 func TestPiCancelReachesHostToolWithoutCancelingParent(t *testing.T) {
 	p := fixtureWorker(t, `input.on('line',line=>{const r=JSON.parse(line);if(r.type==='run')send({type:'tool_call',call:{id:'wait',name:'wait',arguments:{}}});
 if(r.type==='cancel')send({type:'result',result:{status:'canceled',response:'partial',history:[]}});});`)

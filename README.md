@@ -138,8 +138,6 @@ Specialized operations also include [WebShell](docs/en-US/webshell.md) and [C2](
 
 **Pi 1.5.2 is the only agent runtime.** The Eino execution engine and dependencies have been removed. Durable assessments use the Go task engine to control execution and Pi for individual model proposals. They share the runtime with chat agents while managing their own task lifecycle.
 
-An optional **DSH-Purge-inspired prompt profile** adds capability selection, main/child task anchors, and model-specific instructions. It can be disabled; Go retains tool permissions and approvals. Implementation and attribution are documented in the [Pi runtime guide](docs/en-US/pi-runtime.md) and [third-party notices](runtime/pi/THIRD_PARTY_NOTICES.md).
-
 <a id="integrations"></a>
 
 ## Plugins and interface

@@ -6,7 +6,7 @@
 
 ### Added
 
-- 默认 Agent 运行时迁移为 Pi 1.5.2：Go 工具网关继续处理角色、审批、监控与证据；聊天、子代理及深度评估的模型提案接入 Pi。新增按源码指纹发布的 Node Worker、流式协议、会话恢复、原生工具检索和可配置的 DSH-Purge 能力增强。部署需 Node.js >=22.19；已删除 Eino 内核、模型适配、桥接和全部依赖，运行时仅支持 Pi。
+- 默认 Agent 运行时迁移为 Pi 1.5.2：Go 工具网关继续处理角色、审批、监控与证据；聊天、子代理及深度评估的模型提案接入 Pi。新增按源码指纹发布的 Node Worker、流式协议、会话恢复和原生工具检索。部署需 Node.js >=22.19；已删除 Eino 内核、模型适配、桥接和全部依赖，运行时仅支持 Pi。
 - Workflow 改用原生 DAG 与版本化检查点，知识库改用自身文档、切分、Embedding 和检索组件。旧 Eino Workflow 检查点无法由新版直接恢复，升级前需完成或导出旧任务，详见 [Pi 迁移说明](docs/zh-CN/pi-runtime.md)。
 - 个人仓库正式命名为 `Sycun/CyberStrikeAI`，原上游贡献 fork 改为 `Sycun/CyberStrikeAI-upstream-fork`。新增任务接单、阶段汇报与主动请示的设计调研文档（尚未作为产品功能上线）。
 

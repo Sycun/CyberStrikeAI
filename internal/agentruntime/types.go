@@ -29,12 +29,6 @@ type Tool struct {
 	Parameters  map[string]any `json:"parameters"`
 }
 
-type PromptProfile struct {
-	Enabled     bool   `json:"enabled"`
-	Instruction string `json:"instruction,omitempty"`
-	Child       bool   `json:"child,omitempty"`
-}
-
 type Request struct {
 	GenerateOnly       bool            `json:"generateOnly,omitempty"`
 	RunID              string          `json:"runId"`
@@ -53,7 +47,6 @@ type Request struct {
 	AlwaysVisibleTools []string        `json:"alwaysVisibleTools,omitempty"`
 	SessionDir         string          `json:"sessionDir,omitempty"`
 	MaxTurns           int             `json:"maxTurns"`
-	Profile            PromptProfile   `json:"profile"`
 }
 
 type Event struct {

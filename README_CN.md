@@ -138,8 +138,6 @@ flowchart LR
 
 当前仅使用 **Pi 1.5.2**，Eino 执行内核与依赖已移除。深度测评由 Go 持久任务引擎控制执行，Pi 提供单步模型提案；它与聊天智能体的自动工具循环共用运行时，但各自管理任务生命周期。
 
-可选的 **DSH-Purge 启发式提示增强**提供能力选择、主/子代理任务锚点和模型定制指令，支持关闭；工具权限和人工审批仍由 Go 服务处理。实现、来源和许可证见 [Pi 运行时说明](docs/zh-CN/pi-runtime.md)与[第三方声明](runtime/pi/THIRD_PARTY_NOTICES.md)。
-
 <a id="integrations"></a>
 
 ## 插件与界面

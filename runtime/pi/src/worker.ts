@@ -7,7 +7,6 @@ import {
   type AgentSession, type ResourceLoader, type ToolDefinition,
   DefaultResourceLoader, createToolSearchExtension,
 } from "@earendil-works/pi-coding-agent";
-import { composePrompt, type PromptProfile } from "./profile.js";
 import { PROTOCOL_VERSION, RecordReader, send } from "./protocol.js";
 import { installModelFetchPolicy } from "./network.js";
 
@@ -25,7 +24,7 @@ interface RunRequest {
   runId: string; conversationId: string; systemPrompt: string; message: string;
   workingDir?: string;
   model: ModelConfig; tools: { name: string; description: string; parameters: Record<string, unknown> }[];
-  sessionDir?: string; history?: Record<string, any>[]; maxTurns: number; profile: PromptProfile;
+  sessionDir?: string; history?: Record<string, any>[]; maxTurns: number;
   fallbackModels?: ModelConfig[]; retryMax?: number;
   retryMaxDelayMs?: number;
   toolSearch?: boolean; alwaysVisibleTools?: string[];
@@ -210,7 +209,7 @@ async function run(req: RunRequest): Promise<void> {
       const input = SessionManager.inMemory(scratch);
       importHistory(input, req.history ?? [], req.model);
       const answer = await runtime.completeSimple(physical[0], {
-        systemPrompt: composePrompt(req.systemPrompt, req.profile, names),
+        systemPrompt: req.systemPrompt,
         messages: input.buildSessionContext().messages as Message[],
         tools: req.tools,
       }, { maxTokens: req.model.maxTokens, reasoning: (req.model.thinking && req.model.thinking !== "off" ? req.model.thinking : undefined) as any, signal: generationAbort.signal });
@@ -238,8 +237,7 @@ async function run(req: RunRequest): Promise<void> {
     repairInterruptedCalls(manager);
     const searchEnabled = req.toolSearch === true && names.length >= (req.toolSearchMinTools || 20) && !names.includes("tool_search");
     const always = new Set(["task", "exit", "transfer_to_agent", "write_todos", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "skill", "read_file", "execute", "wait_tool_execution", "get_tool_execution", ...(req.alwaysVisibleTools ?? [])]);
-    const visibleNames = searchEnabled ? ["tool_search", ...names.filter(n => always.has(n))] : names;
-    const loader = resources(composePrompt(req.systemPrompt, req.profile, visibleNames) + (searchEnabled ? "\nDiscover additional task tools with tool_search. Search results enable matching tools for subsequent calls." : ""));
+    const loader = resources(req.systemPrompt + (searchEnabled ? "\nDiscover additional task tools with tool_search. Search results enable matching tools for subsequent calls." : ""));
     if (searchEnabled) {
       const extensions = new DefaultResourceLoader({ cwd: scratch, agentDir: scratch, settingsManager: SettingsManager.inMemory(),
         noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,

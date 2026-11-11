@@ -7,7 +7,6 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RecordReader } from "../dist/protocol.js";
-import { composePrompt } from "../dist/profile.js";
 
 test("JSONL preserves Unicode separators and fragmented UTF-8", () => {
   const body = Buffer.from(JSON.stringify({ text: "中文\u2028\u2029" }) + "\n");
@@ -16,15 +15,6 @@ test("JSONL preserves Unicode separators and fragmented UTF-8", () => {
   for (const byte of body) values.push(...reader.push(Buffer.from([byte])));
   reader.finish();
   assert.deepEqual(values, [{ text: "中文\u2028\u2029" }]);
-});
-
-test("profile is additive, optional and preserves execution decisions", () => {
-  assert.equal(composePrompt("Role instructions", { enabled: false }, ["echo"]), "Role instructions");
-  const value = composePrompt("Role instructions", { enabled: true, child: true, instruction: "Custom model guidance" }, ["echo"]);
-  assert.ok(value.startsWith("Role instructions"));
-  assert.match(value, /Delegated task anchor/);
-  assert.match(value, /denied permission/);
-  assert.match(value, /Custom model guidance/);
 });
 
 async function startFixture(t, reply) {
@@ -77,7 +67,7 @@ function request(url, sessionDir) {
   return { runId: "run-1", conversationId: "conversation-1", systemPrompt: "Use the provided echo tool then answer.", message: "echo hello", history: [],
     model: { provider: "openai", id: "fixture", baseUrl: url, apiKey: "test-key", contextWindow: 32000, maxTokens: 1024, thinking: "off" },
     tools: [{ name: "echo", description: "Return text", parameters: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } }],
-    maxTurns: 8, sessionDir, profile: { enabled: true } };
+    maxTurns: 8, sessionDir };
 }
 
 test("real Pi SDK streams, invokes only host tools and restores persisted sessions", { timeout: 30000 }, async t => {
@@ -88,13 +78,17 @@ test("real Pi SDK streams, invokes only host tools and restores persisted sessio
   const dir = await mkdtemp(join(tmpdir(), "csai-pi-test-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   let calls = 0;
-  const first = await invoke(t, request(fixture.url, dir), (r, send) => {
+  const req = request(fixture.url, dir);
+  const first = await invoke(t, { ...req, profile: { enabled: true, instruction: "Retired guidance" } }, (r, send) => {
     if (r.type === "tool_call") { calls++; send({ type: "tool_result", id: r.call.id, result: { content: "hello", executionId: "exec-1" } }); }
   });
   assert.equal(first.result.status, "completed", first.result.error);
   assert.equal(first.result.response, "verified hello");
   assert.equal(calls, 1);
   assert.equal(fixture.requests.length, 2);
+  const systemPrompt = fixture.requests[0].messages.filter(m => m.role === "system").map(m => m.content).join("\n");
+  assert.ok(systemPrompt.startsWith(req.systemPrompt));
+  assert.doesNotMatch(systemPrompt, /CyberStrikeAI execution protocol|Retired guidance/);
   assert.deepEqual(fixture.requests[0].tools.map(t => t.function.name), ["echo"]);
   assert.ok(fixture.requests[1].messages.some(m => m.role === "tool" && m.content === "hello"));
   assert.ok(first.records.some(r => r.event?.type === "message_update"));

@@ -48,7 +48,7 @@ func CompleteBackgroundStepWithRuntime(ctx context.Context, runtime config.Agent
 	for _, t := range tools {
 		defs = append(defs, agentruntime.Tool{Name: t.Function.Name, Description: t.Function.Description, Parameters: t.Function.Parameters})
 	}
-	req := agentruntime.Request{RunID: uuid.NewString(), GenerateOnly: true, SystemPrompt: strings.Join(system, "\n\n"), History: raw, Model: piModelConfig(oa, nil, openai.SessionIDFromContext(ctx)), Tools: defs, MaxTurns: 1, Profile: agentruntime.PromptProfile{Enabled: runtime.Purge.EnabledEffective(), Instruction: runtime.Purge.InstructionFor(oa.Provider, oa.Model), Child: true}}
+	req := agentruntime.Request{RunID: uuid.NewString(), GenerateOnly: true, SystemPrompt: strings.Join(system, "\n\n"), History: raw, Model: piModelConfig(oa, nil, openai.SessionIDFromContext(ctx)), Tools: defs, MaxTurns: 1}
 	result, err := (agentruntime.Pi{NodePath: runtime.NodePath, WorkerPath: runtime.WorkerPath}).Run(ctx, req, nil, nil, nil)
 	if err != nil {
 		return nil, 0, err

@@ -199,10 +199,6 @@ agent_runtime:
   node_path: node
   worker_path: "" # empty: use the source-addressed runtime bundle
   session_dir: data/pi-sessions
-  purge:
-    enabled: true
-    instruction: "" # additional model guidance; role and host tool policies still apply
-    model_instructions: {} # optional exact provider/model or model ID -> guidance
 
 agent:
   # 修改后重启服务，对新任务生效；例如 1440 = 24 小时，单次工具超时独立生效。

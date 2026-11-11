@@ -6,16 +6,10 @@ import (
 )
 
 type AgentRuntimeUpdate struct {
-	Engine     *string          `json:"engine,omitempty"`
-	NodePath   *string          `json:"node_path,omitempty"`
-	WorkerPath *string          `json:"worker_path,omitempty"`
-	SessionDir *string          `json:"session_dir,omitempty"`
-	Purge      *PiProfileUpdate `json:"purge,omitempty"`
-}
-type PiProfileUpdate struct {
-	Enabled           *bool              `json:"enabled,omitempty"`
-	Instruction       *string            `json:"instruction,omitempty"`
-	ModelInstructions *map[string]string `json:"model_instructions,omitempty"`
+	Engine     *string `json:"engine,omitempty"`
+	NodePath   *string `json:"node_path,omitempty"`
+	WorkerPath *string `json:"worker_path,omitempty"`
+	SessionDir *string `json:"session_dir,omitempty"`
 }
 
 func applyAgentRuntimeUpdate(dst *config.AgentRuntimeConfig, src *AgentRuntimeUpdate) {
@@ -34,29 +28,15 @@ func applyAgentRuntimeUpdate(dst *config.AgentRuntimeConfig, src *AgentRuntimeUp
 	if src.SessionDir != nil {
 		dst.SessionDir = *src.SessionDir
 	}
-	if src.Purge != nil {
-		p := src.Purge
-		if p.Enabled != nil {
-			dst.Purge.Enabled = p.Enabled
-		}
-		if p.Instruction != nil {
-			dst.Purge.Instruction = *p.Instruction
-		}
-		if p.ModelInstructions != nil {
-			dst.Purge.ModelInstructions = *p.ModelInstructions
-		}
-	}
 }
+
 func updateAgentRuntimeConfig(doc *yaml.Node, cfg config.AgentRuntimeConfig) {
 	node := ensureMap(doc.Content[0], "agent_runtime")
 	setStringInMap(node, "engine", "pi")
 	setStringInMap(node, "node_path", cfg.NodePath)
 	setStringInMap(node, "worker_path", cfg.WorkerPath)
 	setStringInMap(node, "session_dir", cfg.SessionDir)
-	purge := ensureMap(node, "purge")
-	setBoolInMap(purge, "enabled", cfg.Purge.EnabledEffective())
-	setStringInMap(purge, "instruction", cfg.Purge.Instruction)
-	setStringMapInMap(purge, "model_instructions", cfg.Purge.ModelInstructions)
+	removeKeyFromMap(node, "purge")
 }
 func migrateConfigMapKey(node *yaml.Node, oldKey, newKey string) {
 	hasNew := false

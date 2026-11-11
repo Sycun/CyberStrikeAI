@@ -1,37 +1,60 @@
 package handler
 
 import (
+	"testing"
+
 	"cyberstrike-ai/internal/config"
 	"gopkg.in/yaml.v3"
-	"testing"
 )
 
 func TestPiRuntimeSettingsSurviveSaveAndPartialUpdate(t *testing.T) {
 	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte("multi_agent:\n  eino_middleware:\n    tool_search_enable: true\n  eino_skills:\n    disable: false\n  eino_callbacks:\n    enabled: true\n"), &doc); err != nil {
+	if err := yaml.Unmarshal([]byte(`
+agent_runtime:
+  node_path: /custom/node
+  worker_path: /custom/worker.js
+  session_dir: /private/sessions
+  purge:
+    enabled: true
+    instruction: retired guidance
+    model_instructions:
+      provider/model: retired model guidance
+multi_agent:
+  eino_middleware:
+    tool_search_enable: true
+  eino_skills:
+    disable: false
+  eino_callbacks:
+    enabled: true
+`), &doc); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.AgentRuntimeConfig{NodePath: "/custom/node", SessionDir: "/private/sessions", Purge: config.PiPromptProfileConfig{Instruction: "original", ModelInstructions: map[string]string{"provider/model": "model guidance"}}}
-	empty := ""
-	off := false
-	applyAgentRuntimeUpdate(&cfg, &AgentRuntimeUpdate{Purge: &PiProfileUpdate{Enabled: &off, Instruction: &empty}})
-	if cfg.NodePath != "/custom/node" || cfg.SessionDir != "/private/sessions" {
-		t.Fatal("partial update erased deployment paths")
+	var original config.Config
+	if err := doc.Decode(&original); err != nil {
+		t.Fatal(err)
 	}
+	cfg := original.AgentRuntime
+	nodePath := "/updated/node"
+	applyAgentRuntimeUpdate(&cfg, &AgentRuntimeUpdate{NodePath: &nodePath})
 	updateAgentRuntimeConfig(&doc, cfg)
 	updateMultiAgentConfig(&doc, config.MultiAgentConfig{})
 	var restored config.Config
 	if err := doc.Decode(&restored); err != nil {
 		t.Fatal(err)
 	}
-	if restored.AgentRuntime.Engine != "pi" || restored.AgentRuntime.Purge.EnabledEffective() || restored.AgentRuntime.Purge.Instruction != "" || restored.AgentRuntime.Purge.ModelInstructions["provider/model"] != "model guidance" {
+	if restored.AgentRuntime.Engine != "pi" || restored.AgentRuntime.NodePath != nodePath || restored.AgentRuntime.WorkerPath != "/custom/worker.js" || restored.AgentRuntime.SessionDir != "/private/sessions" {
 		t.Fatalf("lost runtime settings: %+v", restored.AgentRuntime)
 	}
 	if !restored.MultiAgent.Runtime.ToolSearchEnable {
 		t.Fatal("legacy runtime settings were discarded")
 	}
 	var raw map[string]any
-	doc.Decode(&raw)
+	if err := doc.Decode(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := raw["agent_runtime"].(map[string]any)["purge"]; ok {
+		t.Fatal("retired prompt profile was written back to disk")
+	}
 	ma := raw["multi_agent"].(map[string]any)
 	for _, key := range []string{"eino_middleware", "eino_skills", "eino_callbacks"} {
 		if _, ok := ma[key]; ok {

@@ -274,7 +274,7 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 	runID := uuid.NewString()
 	req := agentruntime.Request{RunID: runID, ConversationID: r.conversationID, SystemPrompt: r.systemPrompt, Message: message, History: history,
 		Model: piModelConfig(oa, r.reasoning, r.conversationID),
-		Tools: tools, SessionDir: filepath.Join(root, agentruntime.ConversationStorageKey(r.conversationID), key), MaxTurns: max, Profile: agentruntime.PromptProfile{Enabled: r.cfg.AgentRuntime.Purge.EnabledEffective(), Instruction: r.cfg.AgentRuntime.Purge.InstructionFor(oa.Provider, oa.Model), Child: r.child}}
+		Tools: tools, SessionDir: filepath.Join(root, agentruntime.ConversationStorageKey(r.conversationID), key), MaxTurns: max}
 	if strings.TrimSpace(r.conversationID) == "" {
 		req.SessionDir = ""
 	}

@@ -21,15 +21,20 @@ type Pi struct {
 	WorkerPath string
 }
 
+type runRequest struct {
+	Request
+	LegacyProfile json.RawMessage `json:"profile"`
+}
+
 type record struct {
-	Type       string    `json:"type"`
-	Version    int       `json:"version,omitempty"`
-	Request    *Request  `json:"request,omitempty"`
-	Event      *Event    `json:"event,omitempty"`
-	Call       *ToolCall `json:"call,omitempty"`
-	Result     *Result   `json:"result,omitempty"`
-	Error      string    `json:"error,omitempty"`
-	SDKVersion string    `json:"sdkVersion,omitempty"`
+	Type       string      `json:"type"`
+	Version    int         `json:"version,omitempty"`
+	Request    *runRequest `json:"request,omitempty"`
+	Event      *Event      `json:"event,omitempty"`
+	Call       *ToolCall   `json:"call,omitempty"`
+	Result     *Result     `json:"result,omitempty"`
+	Error      string      `json:"error,omitempty"`
+	SDKVersion string      `json:"sdkVersion,omitempty"`
 }
 
 // ResolveWorker supports source installs and release bundles without relying on PATH for scripts.
@@ -184,7 +189,9 @@ func (p Pi) Run(ctx context.Context, req Request, execute ToolExecutor, emit fun
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	if err = write(record{Type: "run", Version: ProtocolVersion, Request: &req}); err != nil {
+	// Older protocol v1 workers require a profile object. Keep it disabled.
+	run := runRequest{Request: req, LegacyProfile: json.RawMessage(`{"enabled":false}`)}
+	if err = write(record{Type: "run", Version: ProtocolVersion, Request: &run}); err != nil {
 		return nil, err
 	}
 	if bind != nil {

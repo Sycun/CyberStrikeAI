@@ -181,8 +181,8 @@ func TestPiMultiUsesNativeChildAndRestrictsItsTools(t *testing.T) {
 			piReply(w, "task", "task-1", map[string]any{"subagent_type": "specialist", "description": "echo evidence"}, "")
 		case 2:
 			raw, _ := json.Marshal(body.Messages)
-			if !strings.Contains(string(raw), "Delegated task anchor") {
-				t.Error("child did not inherit profile")
+			if !strings.Contains(string(raw), "Return observed evidence") {
+				t.Error("child did not receive its specialist instructions")
 			}
 			piReply(w, "echo", "echo-2", map[string]any{"text": "evidence"}, "")
 		case 3:

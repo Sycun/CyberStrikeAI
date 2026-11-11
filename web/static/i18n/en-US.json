@@ -3282,11 +3282,7 @@
     "testErrorUnauthorized": "Authentication failed. Check the API Key.",
     "testErrorForbidden": "Request denied. Check account permissions or model access.",
     "testErrorModelUnavailable": "Model is unavailable or the model name is incorrect.",
-    "testErrorBaseUrl": "Base URL is unavailable. Check that the endpoint is correct.",
-    "purgeEnabled": "Use built-in work guidance",
-    "purgeHint": "Give main agents and subagents guidance on choosing tools, following up on tasks and recording evidence. Tool permissions stay the same.",
-    "purgeInstruction": "Additional work instructions (optional)",
-    "purgeInstructionHint": "These instructions apply to all models when built-in work guidance is enabled. Leave blank to keep using the built-in guidance."
+    "testErrorBaseUrl": "Base URL is unavailable. Check that the endpoint is correct."
   },
   "settingsTerminal": {
     "title": "Terminal",

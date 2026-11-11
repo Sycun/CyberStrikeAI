@@ -15,9 +15,7 @@ The launcher and self-update build prepare the worker. Dependency installation u
 
 ## Configuration
 
-`agent_runtime.engine` accepts only `pi` (also the default). The former engine and dependencies have been removed. Optional `node_path`, `worker_path`, and `session_dir` control deployment. Under Agent config → Advanced settings, you can turn the built-in work guidance on or off and add optional instructions. When enabled, a blank field still uses the built-in guidance; turning it off omits both the built-in guidance and additional instructions. `purge.model_instructions` provides additive guidance by exact `provider/model` or model ID.
-
-The guidance combines capability selection, main/child task anchors and evidence requirements. It does not ship DSH host patches or encrypted identity prompts. Attribution is in `runtime/pi/THIRD_PARTY_NOTICES.md`.
+`agent_runtime.engine` accepts only `pi` (also the default). The former engine and dependencies have been removed. Optional `node_path`, `worker_path`, and `session_dir` control deployment. The retired `agent_runtime.purge` key is ignored on load and removed when system settings are saved.
 
 Chat agents, specialists and workflow Agent nodes use Pi. Durable assessments use a single Pi model proposal per step; their existing engine retains tool execution, approvals and budgets. Large catalogs can use native tool search. Conversation task boards remain compatible with the existing UI.
 
