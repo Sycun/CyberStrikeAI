@@ -44,6 +44,7 @@ import (
 
 // App 应用
 type App struct {
+	shutdownOnce       sync.Once
 	assessmentEngine   *assessment.Engine
 	config             *config.Config
 	logger             *logger.Logger
@@ -618,14 +619,8 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 		return nil
 	})
 
-	// The one-click update acts on this installation's own tree, rooted where the live config
-	// file is. Its restart hook exits after a graceful shutdown, which is only "a restart" when
-	// something supervises the process - so the endpoint reports whether it is standing down or
-	// whether somebody has to start it again, instead of promising a boot that may not happen.
-	updateHandler := handler.NewUpdateHandler(configDir, log.Logger, auditSvc, func() {
-		app.Shutdown()
-		os.Exit(0)
-	}, configHandler.UpdateSource, configHandler.SetUpdateSource)
+	updateHandler := handler.NewUpdateHandler(configDir, log.Logger, auditSvc,
+		app.updateRestart(configDir), configHandler.UpdateSource, configHandler.SetUpdateSource)
 
 	assessmentStore := &assessment.Store{DB: db}
 	if err := assessmentStore.Recover(); err != nil {
@@ -818,6 +813,10 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 // Shutdown 关闭应用
 func (a *App) Shutdown() {
+	a.shutdownOnce.Do(a.shutdown)
+}
+
+func (a *App) shutdown() {
 	if a.assessmentEngine != nil {
 		a.assessmentEngine.Close()
 	}
@@ -986,7 +985,7 @@ func setupRoutes(
 		authRoutes.POST("/login", security.RateLimitMiddleware(loginRL), authHandler.Login)
 		authRoutes.POST("/logout", security.AuthMiddleware(authManager), authHandler.Logout)
 		authRoutes.POST("/change-password", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), authHandler.ChangePassword)
-		authRoutes.GET("/validate", security.AuthMiddleware(authManager), authHandler.Validate)
+		authRoutes.GET("/validate", updateHandler.SetBootHeader, security.AuthMiddleware(authManager), authHandler.Validate)
 		authRoutes.POST("/robot-binding-code", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.CreateRobotBindingCode)
 		authRoutes.GET("/robot-bindings", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.ListMyRobotBindings)
 		authRoutes.DELETE("/robot-bindings/:id", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.DeleteMyRobotBinding)
