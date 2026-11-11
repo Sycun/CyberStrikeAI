@@ -1,0 +1,28 @@
+dsh-purge
+Copyright 2026 HunYiSage
+
+Source: https://github.com/HunYiSage/dsh-purge
+Maintained by the dsh-purge maintainers team.
+
+This product is licensed under the Apache License, Version 2.0.
+Derivative works must retain this NOTICE and attribution.
+
+--------------------------------------------------------------------
+dsh-purge-optimized - derivative branch
+https://github.com/lzzzz666888/dsh-purge-optimized
+
+This repository is a derivative of dsh-purge 1.1.90 by HunYiSage.
+The upstream copyright notice above is retained unchanged.
+
+Changes in this branch, relative to upstream 1.1.90:
+  - restores the skill library: 23 skills under skills/redteam/
+  - re-enables the POC/EXP knowledge base (store dispatch + tools)
+  - restores the local-lab allowlist write path and its settings panel
+  - adds category filtering and pagination to the nuclei template index
+
+Upstream network-scope rules (local-lab gate, DNS resolution check,
+game-cheat detection, evidence-chain tools) are kept as-is.
+
+Licensed under the Apache License, Version 2.0. Redistribution must
+retain this NOTICE, the upstream attribution above, and name both
+repositories.

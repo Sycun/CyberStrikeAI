@@ -3248,7 +3248,11 @@
     "testErrorUnauthorized": "认证失败，请检查 API Key",
     "testErrorForbidden": "请求被拒绝，请检查账号权限或模型访问权限",
     "testErrorModelUnavailable": "模型不可用或模型名不正确，请检查模型名称",
-    "testErrorBaseUrl": "Base URL 不可用，请检查地址是否正确"
+    "testErrorBaseUrl": "Base URL 不可用，请检查地址是否正确",
+    "agentRuntime": "智能体运行时",
+    "purgeEnabled": "启用 DSH-Purge 能力增强",
+    "purgeHint": "为主代理和子代理补充能力选择、任务锚点与证据要求。",
+    "purgeInstruction": "模型增强指令"
   },
   "settingsTerminal": {
     "title": "终端",

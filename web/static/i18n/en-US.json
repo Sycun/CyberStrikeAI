@@ -3260,7 +3260,11 @@
     "testErrorUnauthorized": "Authentication failed. Check the API Key.",
     "testErrorForbidden": "Request denied. Check account permissions or model access.",
     "testErrorModelUnavailable": "Model is unavailable or the model name is incorrect.",
-    "testErrorBaseUrl": "Base URL is unavailable. Check that the endpoint is correct."
+    "testErrorBaseUrl": "Base URL is unavailable. Check that the endpoint is correct.",
+    "agentRuntime": "Agent runtime",
+    "purgeEnabled": "Enable DSH-Purge capability guidance",
+    "purgeHint": "Add capability selection, task anchors and evidence requirements to main and child agents.",
+    "purgeInstruction": "Model guidance"
   },
   "settingsTerminal": {
     "title": "Terminal",

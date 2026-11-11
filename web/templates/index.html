@@ -3924,6 +3924,18 @@
                                     <h4 data-i18n="settingsBasic.agentConfig">Agent 配置</h4>
                                     <div class="settings-form">
                                         <div class="form-group">
+                                            <label for="agent-runtime-engine" data-i18n="settingsBasic.agentRuntime">智能体运行时</label>
+                                            <select id="agent-runtime-engine"><option value="pi">Pi Agent</option><option value="eino">Eino（迁移兼容）</option></select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label><input type="checkbox" id="agent-purge-enabled" /> <span data-i18n="settingsBasic.purgeEnabled">启用 DSH-Purge 能力增强</span></label>
+                                            <small class="form-hint" data-i18n="settingsBasic.purgeHint">为主代理和子代理补充能力选择、任务锚点与证据要求。</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="agent-purge-instruction" data-i18n="settingsBasic.purgeInstruction">模型增强指令</label>
+                                            <textarea id="agent-purge-instruction" rows="4"></textarea>
+                                        </div>
+                                        <div class="form-group">
                                             <label for="agent-max-iterations" data-i18n="settingsBasic.maxIterations">最大迭代次数</label>
                                             <input type="number" id="agent-max-iterations" min="1" data-i18n="settingsBasic.iterationsPlaceholder" data-i18n-attr="placeholder" placeholder="30" />
                                         </div>
