@@ -113,7 +113,7 @@ func (r *CSAIRuntime) Complete(ctx context.Context, t *Task, msgs []agent.ChatMe
 	if !ok {
 		return nil, fmt.Errorf("unknown model channel %q", t.Model)
 	}
-	message, tokens, err := multiagent.CompleteBackgroundStep(ctx, cfg, msgs, tools, max, r.Logger)
+	message, tokens, err := multiagent.CompleteBackgroundStepWithRuntime(ctx, snapshot.AgentRuntime, cfg, msgs, tools, max, r.Logger)
 	if err != nil {
 		return nil, err
 	}

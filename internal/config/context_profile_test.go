@@ -196,9 +196,9 @@ func TestContextBudgetWarnings(t *testing.T) {
 	}
 }
 
-func TestEffectiveEinoMiddlewareForChannelLocalTightens(t *testing.T) {
+func TestEffectiveAgentMiddlewareForChannelLocalTightens(t *testing.T) {
 	t.Parallel()
-	mw := MultiAgentEinoMiddlewareConfig{
+	mw := AgentTuningConfig{
 		SummarizationTriggerRatio:                  0.8,
 		SummarizationOutputReserveTokens:           40960,
 		ReductionMaxLengthForTrunc:                 100000,
@@ -217,7 +217,7 @@ func TestEffectiveEinoMiddlewareForChannelLocalTightens(t *testing.T) {
 		},
 	}
 	oa := OpenAIConfig{ContextWindow: 131072, ContextProfile: "local", MaxTotalTokens: 120000}
-	out := EffectiveEinoMiddlewareForChannel(mw, oa)
+	out := EffectiveRuntimeForChannel(mw, oa)
 
 	if out.SummarizationTriggerRatio != 0.8 {
 		t.Fatalf("trigger ratio = %v, want 0.8", out.SummarizationTriggerRatio)
@@ -262,9 +262,9 @@ func TestEffectiveEinoMiddlewareForChannelLocalTightens(t *testing.T) {
 	}
 }
 
-func TestEffectiveEinoMiddlewareForChannelLocalNeverLoosens(t *testing.T) {
+func TestEffectiveAgentMiddlewareForChannelLocalNeverLoosens(t *testing.T) {
 	t.Parallel()
-	mw := MultiAgentEinoMiddlewareConfig{
+	mw := AgentTuningConfig{
 		SummarizationTriggerRatio:                  0.6,
 		SummarizationOutputReserveTokens:           1024,
 		ReductionMaxLengthForTrunc:                 4096,
@@ -279,7 +279,7 @@ func TestEffectiveEinoMiddlewareForChannelLocalNeverLoosens(t *testing.T) {
 		PlanExecuteMaxStepResultRunes:              1000,
 	}
 	oa := OpenAIConfig{ContextWindow: 131072, ContextProfile: "local"}
-	out := EffectiveEinoMiddlewareForChannel(mw, oa)
+	out := EffectiveRuntimeForChannel(mw, oa)
 
 	if out.SummarizationTriggerRatio != 0.6 ||
 		out.SummarizationOutputReserveTokens != 1024 ||
@@ -295,13 +295,13 @@ func TestEffectiveEinoMiddlewareForChannelLocalNeverLoosens(t *testing.T) {
 	}
 }
 
-func TestEffectiveEinoMiddlewareForChannelAutoUnchanged(t *testing.T) {
+func TestEffectiveAgentMiddlewareForChannelAutoUnchanged(t *testing.T) {
 	t.Parallel()
-	mw := MultiAgentEinoMiddlewareConfig{
+	mw := AgentTuningConfig{
 		SummarizationTriggerRatio:    0.8,
 		ToolSearchAlwaysVisibleTools: []string{"read_file", "webshell_exec"},
 	}
-	if got := EffectiveEinoMiddlewareForChannel(mw, OpenAIConfig{}); !reflect.DeepEqual(got, mw) {
+	if got := EffectiveRuntimeForChannel(mw, OpenAIConfig{}); !reflect.DeepEqual(got, mw) {
 		t.Fatalf("auto profile changed middleware: %+v", got)
 	}
 }
@@ -311,7 +311,7 @@ func TestWithEffectiveContextBudgetIsIdempotent(t *testing.T) {
 	cfg := &Config{
 		OpenAI: OpenAIConfig{ContextWindow: 131072, ContextProfile: "local", MaxTotalTokens: 120000},
 		MultiAgent: MultiAgentConfig{
-			EinoMiddleware: MultiAgentEinoMiddlewareConfig{
+			Runtime: AgentTuningConfig{
 				SummarizationTriggerRatio:        0.9,
 				SummarizationOutputReserveTokens: 40960,
 				ToolSearchAlwaysVisibleTools:     []string{"read_file", "webshell_exec"},
@@ -323,8 +323,8 @@ func TestWithEffectiveContextBudgetIsIdempotent(t *testing.T) {
 	if !reflect.DeepEqual(once.OpenAI, twice.OpenAI) {
 		t.Fatalf("OpenAI not idempotent: %#v vs %#v", once.OpenAI, twice.OpenAI)
 	}
-	if !reflect.DeepEqual(once.MultiAgent.EinoMiddleware, twice.MultiAgent.EinoMiddleware) {
-		t.Fatalf("middleware not idempotent: %#v vs %#v", once.MultiAgent.EinoMiddleware, twice.MultiAgent.EinoMiddleware)
+	if !reflect.DeepEqual(once.MultiAgent.Runtime, twice.MultiAgent.Runtime) {
+		t.Fatalf("middleware not idempotent: %#v vs %#v", once.MultiAgent.Runtime, twice.MultiAgent.Runtime)
 	}
 }
 
@@ -333,17 +333,17 @@ func TestWithEffectiveContextBudgetDoesNotMutateSource(t *testing.T) {
 	cfg := &Config{
 		OpenAI: OpenAIConfig{ContextWindow: 131072, ContextProfile: "local", MaxTotalTokens: 120000},
 		MultiAgent: MultiAgentConfig{
-			EinoMiddleware: MultiAgentEinoMiddlewareConfig{SummarizationTriggerRatio: 0.8},
+			Runtime: AgentTuningConfig{SummarizationTriggerRatio: 0.8},
 		},
 	}
 	out := cfg.WithEffectiveContextBudget()
-	if cfg.OpenAI.MaxTotalTokens != 120000 || cfg.MultiAgent.EinoMiddleware.SummarizationTriggerRatio != 0.8 {
+	if cfg.OpenAI.MaxTotalTokens != 120000 || cfg.MultiAgent.Runtime.SummarizationTriggerRatio != 0.8 {
 		t.Fatalf("source config mutated: %+v", cfg)
 	}
 	if out.OpenAI.MaxTotalTokens != 78643 {
 		t.Fatalf("effective budget = %d, want 78643", out.OpenAI.MaxTotalTokens)
 	}
-	if out.MultiAgent.EinoMiddleware.SummarizationTriggerRatio != 0.8 {
-		t.Fatalf("effective trigger ratio = %v, want 0.8", out.MultiAgent.EinoMiddleware.SummarizationTriggerRatio)
+	if out.MultiAgent.Runtime.SummarizationTriggerRatio != 0.8 {
+		t.Fatalf("effective trigger ratio = %v, want 0.8", out.MultiAgent.Runtime.SummarizationTriggerRatio)
 	}
 }

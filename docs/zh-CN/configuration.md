@@ -69,7 +69,7 @@ ai:
 | `ai.default_channel` | 默认通道 ID。新对话、机器人、批量任务和未显式选择通道的请求使用它。 |
 | `ai.channels.<id>` | 通道配置。ID 会归一化为小写、数字和短横线，例如 `Qwen_Max` 会变成 `qwen-max`。 |
 | `name` | Web UI 展示名。留空时使用通道 ID。 |
-| `provider` | `openai_compatible` 或 `claude`。`openai_compatible` 会在运行时映射为 `openai`；`claude` 使用 Eino 原生 Anthropic Messages API。 |
+| `provider` | `openai_compatible` 或 `claude`。`openai_compatible` 会在运行时映射为 `openai`；`claude` 使用 Pi 原生 Anthropic Messages API。 |
 | `base_url/api_key/model` | 必填。Base URL 通常需要包含版本路径，如 OpenAI/兼容网关的 `/v1`。 |
 | `max_total_tokens` | 上下文压缩、攻击链构建、多代理摘要等共用的总预算。已知 `context_window` 时会收紧到“窗口 − 输出预留”。 |
 | `max_completion_tokens` | 单次模型输出上限；未填时使用默认值，并会被压到已知/假定窗口的一半以内。 |
@@ -103,7 +103,7 @@ GPT-5.6 和 GPT-6 Sol/Luna 在 Chat Completions 中使用函数工具时，应�
    - LM Studio：在模型设置中显式设置 Context Length，并开启可用的 KV cache 量化。
 6. **思考模型**：Qwen3.5 等默认开启 thinking，会在工具循环中消耗大量上下文。可通过通道的 `reasoning.extra_request_fields.chat_template_kwargs.enable_thinking: false` 关闭（vLLM、llama.cpp `--jinja` 支持）；`reasoning.mode: off` 只清理 OpenAI/DeepSeek 推理字段，不一定能关闭本地 chat template 的 thinking。
 7. **建议窗口下限**：带 90+ 工具的 agent 在 16K 以下很难稳定运行；32K 需要依赖 `tool_search` 和 `context_profile: local`；64K 以上更接近云端模型的使用体验。
-8. **故障转移通道不会重新预算**：`multi_agent.eino_middleware.model_failover_channels` 只切换模型端点，预算仍按主通道计算；请让 failover 通道的可用窗口不小于主通道，否则可能依赖超窗压缩/重试。
+8. **故障转移通道不会重新预算**：`multi_agent.runtime.model_failover_channels` 只切换模型端点，预算仍按主通道计算；请让 failover 通道的可用窗口不小于主通道，否则可能依赖超窗压缩/重试。
 
 对话页的“AI 通道”下拉框会读取已保存通道。请求体中的 `aiChannelId` 非空时仅对本次/本会话运行配置生效，不会把 API Key 发送给模型；为空时跟随 `ai.default_channel`。
 
@@ -160,9 +160,9 @@ hitl:
 ```yaml
 multi_agent:
   enabled: true
-  robot_default_agent_mode: eino_single
+  robot_default_agent_mode: single
   batch_use_multi_agent: false
-  eino_skills:
+  skills:
     disable: false
     filesystem_tools: true
     skill_tool_name: skill
@@ -170,7 +170,7 @@ multi_agent:
 
 支持模式：
 
-- `eino_single`：Eino 单代理。
+- `single`：Pi 单代理。
 - `deep`：DeepAgent 风格多代理。
 - `plan_execute`：规划、执行、重规划。
 - `supervisor`：主管代理转交子代理。
@@ -273,7 +273,7 @@ storage:
 | `workspace` | 30 天 | Agent 工作区 `tmp/workspace` |
 | `reduction` | 7 天 | 超长工具输出落盘 `tmp/reduction` |
 | `conversation_artifacts` | 30 天 | 摘要与超长输入台账 `data/conversation_artifacts` |
-| `plantask` | 30 天 | 多代理计划看板 `skills/.eino/plantask` |
+| `plantask` | 30 天 | 多代理计划看板 `skills/.pi/plantask` |
 | `c2_artifacts` | 30 天 | C2 回传/上传/下发/payload `tmp/c2`（清理 payload 后下载链接失效） |
 | `chat_uploads` | 90 天 | 对话上传附件 `chat_uploads` |
 | `workflow_checkpoints` | 7 天 | 工作流断点 `data/workflow-checkpoints` |

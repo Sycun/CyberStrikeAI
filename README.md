@@ -2,18 +2,18 @@
   <img src="images/logo.png" alt="CyberStrikeAI Logo" width="200" >
 </div>
 
-# CyberStrikeAI — Personal Maintenance
+# CyberStrikeAI
 
 
 [中文](README_CN.md) | [English](README.md)
 
-> **Repository role:** Sycun's personal maintenance line, based on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI). Daily development is published here. The [architecture refactor](https://github.com/Sycun/csai-decouple-refactor) evolves separately; [Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) is the fork used for selected upstream contributions.
+> **Repository role:** Sycun's personal maintenance line, based on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI). Daily development is published here. The [architecture refactor](https://github.com/Sycun/csai-decouple-refactor) evolves separately; [Sycun/CyberStrikeAI-upstream-fork](https://github.com/Sycun/CyberStrikeAI-upstream-fork) is the fork used for selected upstream contributions.
 >
 > The current main line includes the [deep assessment workbench](docs/DEEP_ASSESSMENTS.md). Proxy-pool settings and local-model context profiles are integrated into this main line; see the [repository and branch guide](docs/REPOSITORY_GUIDE.md) for integration status. Code availability and automated checks do not establish acceptance with real models and real targets.
 
 **The system of action for AI-native cybersecurity—where intent becomes governed execution, evidence becomes operational memory, and every operation improves the next.**
 
-CyberStrikeAI connects planning, execution, human oversight, evidence, and replay in one auditable workspace. Built in Go, it combines Eino-powered agents, MCP-native tools, RAG knowledge, visual workflows, and attack-chain modeling and analysis for authorized security operations.
+CyberStrikeAI connects planning, execution, human oversight, evidence, and replay in one auditable workspace. Built in Go, it combines Pi-powered agents, MCP-native tools, RAG knowledge, visual workflows, and attack-chain modeling and analysis for authorized security operations.
 
 **Start here:** [Quick start](#quick-start-one-command-deployment) · [Documentation](docs/en-US/README.md) · [Security hardening](docs/en-US/security-hardening.md)
 
@@ -114,7 +114,7 @@ CyberStrikeAI connects planning, execution, human oversight, evidence, and repla
 ### Agents and orchestration
 
 - 🤖 **Agentic execution** translates natural-language intent into governed, auditable security actions.
-- 🧩 **Eino orchestration** supports single-agent execution plus Deep, Plan-Execute, and Supervisor multi-agent modes.
+- 🧩 **Pi orchestration** supports single-agent execution plus Deep, Plan-Execute, and Supervisor multi-agent modes.
 - 🔀 **Graph workflows** combine Agents, tools, conditions, approvals, and outputs into reusable flows.
 - 🎭 **Role-based testing** provides focused prompts and tool policies for common security scenarios.
 
@@ -198,11 +198,12 @@ See [tools/README_EN.md](tools/README_EN.md) for tool definitions, customization
 **Prerequisites:**
 - Go 1.25+ ([Install](https://go.dev/dl/); required by `go.mod`)
 - Python 3.10+ ([Install](https://www.python.org/downloads/))
+- Node.js 22.19+ (Pi runtime)
 
 **One-Command Deployment:**
 ```bash
-git clone https://github.com/Sycun/CyberStrikeAI-personal.git
-cd CyberStrikeAI-personal
+git clone https://github.com/Sycun/CyberStrikeAI.git
+cd CyberStrikeAI
 chmod +x run.sh && ./run.sh
 ```
 
@@ -349,7 +350,7 @@ CyberStrikeAI/
 ├── web/                 # Static SPA + templates
 ├── tools/               # YAML tool recipes (100+ examples provided)
 ├── roles/               # Role configurations (12+ predefined security testing roles)
-├── skills/              # Agent Skills dirs (SKILL.md + optional files; demo: cyberstrike-eino-demo)
+├── skills/              # Agent Skills dirs (SKILL.md + optional files; demo: cyberstrike-pi-demo)
 ├── agents/              # Multi-agent Markdown (orchestrator.md + sub-agent *.md)
 ├── docs/                # Topic docs (deployment, config, security, API, knowledge base, C2, WebShell, etc.)
 ├── images/              # Docs screenshots & diagrams

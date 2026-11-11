@@ -75,7 +75,7 @@ HTTP CONNECT 隧道中的 HTTPS 响应需要由发起请求的客户端解密才
 
 403 也可能是业务权限错误，429 也可能按账号或其他维度限流；默认状态码只是可配置的失败策略，不宣称已确认 IP 被封。不匹配状态码的验证码页、HTTP 200 拦截页目前保持原样。重放和等待规则参考 [RFC 9110 §9.2.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2) 和 [RFC 6585 §4](https://www.rfc-editor.org/rfc/rfc6585.html#section-4)。
 
-池状态只在单次工具调用内保留，不跨会话共享。其他扫描工具、`exec`、Eino `execute`、外部 MCP、LLM API 连接暂不接入本池；系统设置中的代理页面只管理上述 HTTP 工具。供应商拉取使用独立客户端，开启 TLS 校验，不继承目标请求的 Cookie、Authorization、环境代理或 `allow_insecure`；生产供应商接口建议使用 HTTPS。
+池状态只在单次工具调用内保留，不跨会话共享。其他扫描工具、`exec`、Pi `execute`、外部 MCP、LLM API 连接暂不接入本池；系统设置中的代理页面只管理上述 HTTP 工具。供应商拉取使用独立客户端，开启 TLS 校验，不继承目标请求的 Cookie、Authorization、环境代理或 `allow_insecure`；生产供应商接口建议使用 HTTPS。
 
 ## 排错与源码
 

@@ -65,7 +65,7 @@ Entries may also be objects such as `{"host":"127.0.0.1","port":8081,"scheme":"h
 
 A 403 can be an application authorization failure; a 429 can apply to an account or other scope. Status matching is a configurable policy, not proof of an IP ban. CAPTCHA or HTTP 200 block pages remain unchanged. Replay and waiting rules are informed by [RFC 9110 §9.2.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2) and [RFC 6585 §4](https://www.rfc-editor.org/rfc/rfc6585.html#section-4).
 
-Pool state lasts for one tool invocation. Other scanners, `exec`, Eino `execute`, external MCP servers and LLM API connections are outside this pool; the settings submenu manages only this HTTP tool. Provider fetching uses a separate client with TLS verification and no target cookies, target Authorization, environment proxies or inherited `allow_insecure`. Use HTTPS for production provider endpoints.
+Pool state lasts for one tool invocation. Other scanners, `exec`, Pi `execute`, external MCP servers and LLM API connections are outside this pool; the settings submenu manages only this HTTP tool. Provider fetching uses a separate client with TLS verification and no target cookies, target Authorization, environment proxies or inherited `allow_insecure`. Use HTTPS for production provider endpoints.
 
 ## Troubleshooting and source
 

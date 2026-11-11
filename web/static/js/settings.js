@@ -632,7 +632,7 @@ let toolsLoadSequence = 0;
 
 let c2NavSyncedOnce = false;
 
-/** 根据是否启用多代理，禁用/启用机器人模式中的 Eino 编排选项 */
+/** 根据是否启用多代理，禁用/启用机器人模式中的 Pi 编排选项 */
 function syncRobotAgentModeSelectOptions(multiEnabled) {
     const sel = document.getElementById('multi-agent-robot-mode');
     if (!sel) return;
@@ -641,7 +641,7 @@ function syncRobotAgentModeSelectOptions(multiEnabled) {
         if (opt) opt.disabled = !multiEnabled;
     });
     if (!multiEnabled && ['deep', 'plan_execute', 'supervisor'].indexOf(sel.value) >= 0) {
-        sel.value = 'eino_single';
+        sel.value = 'single';
     }
     syncSettingsCustomSelect(sel);
 }
@@ -883,6 +883,13 @@ async function loadConfig(loadTools = true, options = {}) {
         }
         
         // 填充Agent配置
+        const runtimeConfig = currentConfig.agent_runtime || {};
+        const runtimeEngineEl = document.getElementById('agent-runtime-engine');
+        if (runtimeEngineEl) runtimeEngineEl.value = runtimeConfig.engine || 'pi';
+        const purgeEnabledEl = document.getElementById('agent-purge-enabled');
+        if (purgeEnabledEl) purgeEnabledEl.checked = runtimeConfig.purge?.enabled !== false;
+        const purgeInstructionEl = document.getElementById('agent-purge-instruction');
+        if (purgeInstructionEl) purgeInstructionEl.value = runtimeConfig.purge?.instruction || '';
         document.getElementById('agent-max-iterations').value = currentConfig.agent.max_iterations || 30;
         const toolWaitTimeoutEl = document.getElementById('agent-tool-wait-timeout-seconds');
         if (toolWaitTimeoutEl) {
@@ -919,55 +926,31 @@ async function loadConfig(loadTools = true, options = {}) {
         }
         const maRobotMode = document.getElementById('multi-agent-robot-mode');
         if (maRobotMode) {
-            let mode = (ma.robot_default_agent_mode || 'eino_single').trim().toLowerCase();
+            let mode = (ma.robot_default_agent_mode || 'single').trim().toLowerCase();
             maRobotMode.value = mode;
             syncRobotAgentModeSelectOptions(ma.enabled === true);
         }
-        const modelRetryMaxEl = document.getElementById('eino-model-retry-max-retries');
+        const modelRetryMaxEl = document.getElementById('pi-model-retry-max-retries');
         if (modelRetryMaxEl) {
             const v = ma.model_retry_max_retries;
             modelRetryMaxEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '0';
         }
-        const modelRetryBackoffEl = document.getElementById('eino-model-retry-max-backoff-sec');
+        const modelRetryBackoffEl = document.getElementById('pi-model-retry-max-backoff-sec');
         if (modelRetryBackoffEl) {
             const v = ma.model_retry_max_backoff_sec;
             modelRetryBackoffEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '0';
         }
-        const modelFailoverChannelsEl = document.getElementById('eino-model-failover-channels');
+        const modelFailoverChannelsEl = document.getElementById('pi-model-failover-channels');
         if (modelFailoverChannelsEl) {
             const channels = ma.model_failover_channels;
             modelFailoverChannelsEl.value = Array.isArray(channels) ? channels.join('\n') : '';
         }
-        const modelFailoverMaxEl = document.getElementById('eino-model-failover-max-retries');
+        const modelFailoverMaxEl = document.getElementById('pi-model-failover-max-retries');
         if (modelFailoverMaxEl) {
             const v = ma.model_failover_max_retries;
             modelFailoverMaxEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '0';
         }
-        const userLedgerMaxEl = document.getElementById('summarization-user-ledger-max-runes');
-        if (userLedgerMaxEl) {
-            const v = ma.summarization_user_intent_ledger_max_runes;
-            userLedgerMaxEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '96000';
-        }
-        const userLedgerEntryMaxEl = document.getElementById('summarization-user-ledger-entry-max-runes');
-        if (userLedgerEntryMaxEl) {
-            const v = ma.summarization_user_intent_ledger_entry_max_runes;
-            userLedgerEntryMaxEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '16000';
-        }
-        const latestUserMaxEl = document.getElementById('latest-user-message-max-runes');
-        if (latestUserMaxEl) {
-            const v = ma.latest_user_message_max_runes;
-            latestUserMaxEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '48000';
-        }
-        const latestUserHeadEl = document.getElementById('latest-user-message-head-runes');
-        if (latestUserHeadEl) {
-            const v = ma.latest_user_message_head_runes;
-            latestUserHeadEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '24000';
-        }
-        const latestUserTailEl = document.getElementById('latest-user-message-tail-runes');
-        if (latestUserTailEl) {
-            const v = ma.latest_user_message_tail_runes;
-            latestUserTailEl.value = (v !== undefined && v !== null && !Number.isNaN(Number(v))) ? String(Number(v)) : '24000';
-        }
+
         
         // 填充知识库配置
         const knowledgeEnabledCheckbox = document.getElementById('knowledge-enabled');
@@ -2100,6 +2083,15 @@ async function applySettings() {
                 audit_agent_prompt: document.getElementById('hitl-audit-agent-prompt-settings')?.value.trim() || '',
                 audit_agent_prompt_review_edit: document.getElementById('hitl-audit-agent-prompt-review-edit-settings')?.value.trim() || ''
             },
+            agent_runtime: {
+                ...(currentConfig.agent_runtime || {}),
+                engine: document.getElementById('agent-runtime-engine')?.value || currentConfig.agent_runtime?.engine || 'pi',
+                purge: {
+                    ...(currentConfig.agent_runtime?.purge || {}),
+                    enabled: document.getElementById('agent-purge-enabled')?.checked ?? currentConfig.agent_runtime?.purge?.enabled ?? true,
+                    instruction: document.getElementById('agent-purge-instruction')?.value ?? currentConfig.agent_runtime?.purge?.instruction ?? ''
+                }
+            },
             agent: {
                 max_iterations: parseInt(document.getElementById('agent-max-iterations').value) || 30,
                 tool_wait_timeout_seconds: Math.max(0, parseInt(document.getElementById('agent-tool-wait-timeout-seconds')?.value || '60', 10) || 0),
@@ -2112,32 +2104,15 @@ async function applySettings() {
                 const peRaw = document.getElementById('multi-agent-pe-loop')?.value;
                 const peParsed = parseInt(peRaw, 10);
                 const peLoop = Number.isNaN(peParsed) ? 0 : Math.max(0, peParsed);
-                const ledgerRaw = document.getElementById('summarization-user-ledger-max-runes')?.value;
-                const ledgerParsed = parseInt(ledgerRaw, 10);
-                const ledgerMax = Number.isNaN(ledgerParsed) ? 0 : Math.max(0, ledgerParsed);
-                const ledgerEntryRaw = document.getElementById('summarization-user-ledger-entry-max-runes')?.value;
-                const ledgerEntryParsed = parseInt(ledgerEntryRaw, 10);
-                const ledgerEntryMax = Number.isNaN(ledgerEntryParsed) ? 0 : Math.max(0, ledgerEntryParsed);
-                const latestRaw = document.getElementById('latest-user-message-max-runes')?.value;
-                const latestParsed = parseInt(latestRaw, 10);
-                const latestMax = Number.isNaN(latestParsed) ? 0 : Math.max(0, latestParsed);
-                const latestHeadRaw = document.getElementById('latest-user-message-head-runes')?.value;
-                const latestHeadParsed = parseInt(latestHeadRaw, 10);
-                const latestHead = Number.isNaN(latestHeadParsed) ? 0 : Math.max(0, latestHeadParsed);
-                const latestTailRaw = document.getElementById('latest-user-message-tail-runes')?.value;
-                const latestTailParsed = parseInt(latestTailRaw, 10);
-                const latestTail = Number.isNaN(latestTailParsed) ? 0 : Math.max(0, latestTailParsed);
                 const maEnabled = document.getElementById('multi-agent-enabled')?.checked === true;
-                let robotMode = document.getElementById('multi-agent-robot-mode')?.value || 'eino_single';
-                if (!maEnabled && ['deep', 'plan_execute', 'supervisor'].indexOf(robotMode) >= 0) {
-                    robotMode = 'eino_single';
-                }
+                let robotMode = document.getElementById('multi-agent-robot-mode')?.value || 'single';
+                if (!maEnabled && ['deep', 'plan_execute', 'supervisor'].indexOf(robotMode) >= 0) robotMode = 'single';
                 const parseNonNegativeInt = function (id) {
                     const raw = document.getElementById(id)?.value;
                     const parsed = parseInt(raw, 10);
                     return Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
                 };
-                const failoverChannelsRaw = document.getElementById('eino-model-failover-channels')?.value || '';
+                const failoverChannelsRaw = document.getElementById('pi-model-failover-channels')?.value || '';
                 const failoverChannels = Array.from(new Set(
                     failoverChannelsRaw.split(/[\n,，]/).map(s => s.trim()).filter(Boolean)
                 ));
@@ -2146,15 +2121,10 @@ async function applySettings() {
                     robot_default_agent_mode: robotMode,
                     batch_use_multi_agent: currentConfig?.multi_agent?.batch_use_multi_agent === true,
                     plan_execute_loop_max_iterations: peLoop,
-                    model_retry_max_retries: parseNonNegativeInt('eino-model-retry-max-retries'),
-                    model_retry_max_backoff_sec: parseNonNegativeInt('eino-model-retry-max-backoff-sec'),
+                    model_retry_max_retries: parseNonNegativeInt('pi-model-retry-max-retries'),
+                    model_retry_max_backoff_sec: parseNonNegativeInt('pi-model-retry-max-backoff-sec'),
                     model_failover_channels: failoverChannels,
-                    model_failover_max_retries: parseNonNegativeInt('eino-model-failover-max-retries'),
-                    summarization_user_intent_ledger_max_runes: ledgerMax,
-                    summarization_user_intent_ledger_entry_max_runes: ledgerEntryMax,
-                    latest_user_message_max_runes: latestMax,
-                    latest_user_message_head_runes: latestHead,
-                    latest_user_message_tail_runes: latestTail
+                    model_failover_max_retries: parseNonNegativeInt('pi-model-failover-max-retries'),
                 };
             })(),
             knowledge: knowledgeConfig,
@@ -4181,7 +4151,7 @@ async function saveToolsConfig() {
             agent: currentConfig.agent || {},
             multi_agent: {
                 enabled: currentConfig?.multi_agent?.enabled === true,
-                robot_default_agent_mode: currentConfig?.multi_agent?.robot_default_agent_mode || 'eino_single',
+                robot_default_agent_mode: currentConfig?.multi_agent?.robot_default_agent_mode || 'single',
                 batch_use_multi_agent: currentConfig?.multi_agent?.batch_use_multi_agent === true,
                 plan_execute_loop_max_iterations: Number(currentConfig?.multi_agent?.plan_execute_loop_max_iterations || 0),
                 tool_search_always_visible_tools: getAlwaysVisibleForSave()
