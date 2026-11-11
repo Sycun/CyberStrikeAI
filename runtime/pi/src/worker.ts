@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { InMemoryCredentialStore, type Model, type Api } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, type Model, type Api, type Message } from "@earendil-works/pi-ai";
 import {
   createAgentSession, createExtensionRuntime, ModelRuntime, SessionManager, SettingsManager,
   type AgentSession, type ResourceLoader, type ToolDefinition,
+  DefaultResourceLoader, createToolSearchExtension,
 } from "@earendil-works/pi-coding-agent";
 import { composePrompt, type PromptProfile } from "./profile.js";
 import { PROTOCOL_VERSION, RecordReader, send } from "./protocol.js";
@@ -14,18 +15,24 @@ interface ModelConfig {
   id: string; baseUrl: string; apiKey: string; headers?: Record<string, string>;
   contextWindow: number; maxTokens: number; thinking?: string;
   extraFields?: Record<string, unknown>;
+  compat?: Record<string, unknown>; inputBudget?: number;
 }
 interface RunRequest {
+  generateOnly?: boolean;
   runId: string; conversationId: string; systemPrompt: string; message: string;
+  workingDir?: string;
   model: ModelConfig; tools: { name: string; description: string; parameters: Record<string, unknown> }[];
   sessionDir?: string; history?: Record<string, any>[]; maxTurns: number; profile: PromptProfile;
   fallbackModels?: ModelConfig[]; retryMax?: number;
+  toolSearch?: boolean; alwaysVisibleTools?: string[];
+  toolSearchMinTools?: number;
 }
 interface ToolReply { content: string; isError?: boolean; executionId?: string; terminate?: boolean }
 
 let session: AgentSession | undefined;
 let started = false;
 let canceled = false;
+const generationAbort = new AbortController();
 const queuedSteering: string[] = [];
 const pending = new Map<string, { resolve: (r: ToolReply) => void; reject: (e: Error) => void }>();
 const scratch = mkdtempSync(join(process.env.CYBERSTRIKE_PI_TMP_PARENT || tmpdir(), "cyberstrike-pi-"));
@@ -73,6 +80,7 @@ function importHistory(manager: SessionManager, history: Record<string, any>[], 
     if (message.role === "user") manager.appendMessage({ role: "user", content: message.content ?? "", timestamp });
     else if (message.role === "assistant") {
       const content: any[] = [];
+      if (message.reasoning_content && model.api !== "anthropic-messages") content.push({ type: "thinking", thinking: message.reasoning_content });
       if (typeof message.content === "string" && message.content) content.push({ type: "text", text: message.content });
       for (const call of message.tool_calls ?? []) {
         if (!replies.has(call.id)) continue; // An incomplete legacy call is never replayed.
@@ -130,8 +138,10 @@ async function run(req: RunRequest): Promise<void> {
   let status = "completed";
   let failure = "";
   let manager: SessionManager | undefined;
+  let directResult: Record<string, unknown> | undefined;
   try {
     if (!req.runId || !req.model?.id || !Array.isArray(req.tools)) throw new Error("Invalid run request");
+    const workingDir = req.workingDir ? resolve(req.workingDir) : scratch;
     const names = req.tools.map(t => t.name);
     if (new Set(names).size !== names.length || names.some(n => !/^[a-zA-Z0-9_.-]+$/.test(n))) throw new Error("Invalid tool catalog");
     const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null,
@@ -145,7 +155,7 @@ async function run(req: RunRequest): Promise<void> {
       runtime.registerProvider(provider, {
       api, baseUrl: config.baseUrl, headers: config.headers,
       models: [{ id: config.id, name: config.id, api, reasoning: config.thinking !== "off" && !!config.thinking,
-        input: ["text", "image"], contextWindow: config.contextWindow || 128000, maxTokens: config.maxTokens || 16384,
+        input: ["text", "image"], contextWindow: config.contextWindow || 128000, maxTokens: config.maxTokens || 16384, compat: config.compat,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
       });
       await runtime.setRuntimeApiKey(provider, config.apiKey || "local-no-key");
@@ -184,6 +194,18 @@ async function run(req: RunRequest): Promise<void> {
       model = runtime.getModel("cyberstrike-router", "auto")!;
     }
     if (!model) throw new Error("Model registration failed");
+    if (req.generateOnly) {
+      const input = SessionManager.inMemory(scratch);
+      importHistory(input, req.history ?? [], req.model);
+      const answer = await runtime.completeSimple(physical[0], {
+        systemPrompt: composePrompt(req.systemPrompt, req.profile, names),
+        messages: input.buildSessionContext().messages as Message[],
+        tools: req.tools,
+      }, { maxTokens: req.model.maxTokens, reasoning: (req.model.thinking && req.model.thinking !== "off" ? req.model.thinking : undefined) as any, signal: generationAbort.signal });
+      if (answer.stopReason === "error" || answer.stopReason === "aborted") throw new Error(answer.errorMessage || answer.stopReason);
+      directResult = { response: answer.content.filter(b => b.type === "text").map(b => b.text).join(""), history: exportHistory([answer]), totalTokens: answer.usage.totalTokens };
+      return;
+    }
     if (req.sessionDir) {
       const dir = resolve(req.sessionDir);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -191,23 +213,38 @@ async function run(req: RunRequest): Promise<void> {
       if (existsSync(pointer)) {
         const file = readFileSync(pointer, "utf8").trim();
         if (!/^\d{4}.*\.jsonl$/.test(file) || file.includes("/") || file.includes("\\")) throw new Error("Invalid session pointer");
-        manager = SessionManager.open(join(dir, file), dir, scratch);
+        manager = SessionManager.open(join(dir, file), dir, workingDir);
       } else {
-        manager = SessionManager.create(scratch, dir);
+        manager = SessionManager.create(workingDir, dir);
         importHistory(manager, req.history ?? [], req.model);
       }
       // Session files materialize when Pi appends its first entry; the pointer is published after prompting.
     } else {
-      manager = SessionManager.inMemory(scratch);
+      manager = SessionManager.inMemory(workingDir);
       importHistory(manager, req.history ?? [], req.model);
     }
     repairInterruptedCalls(manager);
-    ({ session } = await createAgentSession({ cwd: scratch, agentDir: scratch, modelRuntime: runtime, model,
+    const searchEnabled = req.toolSearch === true && names.length >= (req.toolSearchMinTools || 20) && !names.includes("tool_search");
+    const always = new Set(["task", "exit", "transfer_to_agent", "write_todos", "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "skill", "read_file", "execute", "wait_tool_execution", "get_tool_execution", ...(req.alwaysVisibleTools ?? [])]);
+    const visibleNames = searchEnabled ? ["tool_search", ...names.filter(n => always.has(n))] : names;
+    const loader = resources(composePrompt(req.systemPrompt, req.profile, visibleNames) + (searchEnabled ? "\nDiscover additional task tools with tool_search. Search results enable matching tools for subsequent calls." : ""));
+    if (searchEnabled) {
+      const extensions = new DefaultResourceLoader({ cwd: scratch, agentDir: scratch, settingsManager: SettingsManager.inMemory(),
+        noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+        extensionFactories: [createToolSearchExtension()], disabledBuiltinExtensions: ["mcp", "codemode"],
+      });
+      await extensions.reload();
+      loader.getExtensions = () => extensions.getExtensions();
+      if (loader.getExtensions().errors.length) throw new Error("Pi tool search extension failed to initialize");
+    }
+    const inputBudget = Math.max(1024, Math.min(req.model.inputBudget || model.contextWindow - model.maxTokens, model.contextWindow - model.maxTokens));
+    ({ session } = await createAgentSession({ cwd: workingDir, agentDir: scratch, modelRuntime: runtime, model,
       thinkingLevel: (req.model.thinking || "off") as any, sessionManager: manager,
-      settingsManager: SettingsManager.inMemory({ retry: { enabled: true, maxRetries: req.retryMax ?? Math.max(2, configs.length - 1) }, compaction: { enabled: true } }),
-      noTools: "builtin", tools: names, customTools: req.tools.map(hostTool),
-      resourceLoader: resources(composePrompt(req.systemPrompt, req.profile, names)),
+      settingsManager: SettingsManager.inMemory({ retry: { enabled: true, maxRetries: req.retryMax ?? Math.max(2, configs.length - 1) }, compaction: { enabled: true, reserveTokens: model.contextWindow - inputBudget, keepRecentTokens: Math.min(20000, Math.floor(inputBudget / 2)) } }),
+      noTools: "builtin", tools: searchEnabled ? ["+tool_search"] : names, customTools: req.tools.map(def => ({ ...hostTool(def), exposure: searchEnabled && !always.has(def.name) ? "deferred" : "direct" })),
+      resourceLoader: loader,
     }));
+    if (searchEnabled) await session.bindExtensions({});
     session.agent.toolExecution = "sequential";
     publishSession(manager, req.sessionDir);
     let turns = 0;
@@ -222,7 +259,10 @@ async function run(req: RunRequest): Promise<void> {
       if (e.type === "agent_start") for (const note of queuedSteering.splice(0)) void session?.steer(note).catch(fatal);
       if (e.type === "message_end") publishSession(manager!, req.sessionDir);
       let data: unknown = e;
-      if (e.type === "message_update") data = { assistantMessageEvent: e.assistantMessageEvent };
+      if (e.type === "message_update") {
+        const { partial: _partial, ...delta } = e.assistantMessageEvent;
+        data = { assistantMessageEvent: delta };
+      }
       if (e.type === "agent_end") data = {};
       void send({ type: "event", event: { type: e.type, data } }).catch(() => session?.abort());
     });
@@ -237,7 +277,7 @@ async function run(req: RunRequest): Promise<void> {
     failure = error instanceof Error ? error.message : String(error);
   } finally {
     const result = { response: session?.getLastAssistantText() ?? "",
-      history: exportHistory(session?.messages ?? []), status, error: failure, sessionFile: manager?.getSessionFile() };
+      history: exportHistory(session?.messages ?? []), ...directResult, status, error: failure, sessionFile: manager?.getSessionFile() };
     session?.dispose();
     rmSync(scratch, { recursive: true, force: true });
     await send({ type: "result", result });
@@ -255,6 +295,7 @@ async function command(record: any): Promise<void> {
     if (call) { pending.delete(record.id); call.resolve(record.result); }
   } else if (record.type === "cancel") {
     canceled = true;
+    generationAbort.abort();
     for (const p of pending.values()) p.reject(new Error("Run canceled"));
     pending.clear();
     await session?.abort();

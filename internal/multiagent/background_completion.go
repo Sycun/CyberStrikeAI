@@ -16,7 +16,7 @@ import (
 // CompleteBackgroundStep performs one model turn without entering chat/ADK run
 // persistence. Durable callers own their budget, transcript and task lifecycle.
 // Provider routing, headers and reasoning stay identical to the existing models.
-func CompleteBackgroundStep(ctx context.Context, oa config.OpenAIConfig, msgs []agent.ChatMessage, tools []agent.Tool, maxTokens int, logger *zap.Logger) (*agent.ChatMessage, int, error) {
+func completeBackgroundStepLegacy(ctx context.Context, oa config.OpenAIConfig, msgs []agent.ChatMessage, tools []agent.Tool, maxTokens int, logger *zap.Logger) (*agent.ChatMessage, int, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}

@@ -1,12 +1,14 @@
 # 仓库与分支说明 / Repository and branch guide
 
+2026-11-11：个人仓库已由 `CyberStrikeAI-personal` 改名为 `CyberStrikeAI`；原同名上游 fork 已改名为 `CyberStrikeAI-upstream-fork`。日常发布继续进入个人独立仓库，官方贡献仍走 fork。
+
 ## 仓库职责
 
 | 仓库 | 职责 |
 | --- | --- |
-| [Sycun/CyberStrikeAI-personal](https://github.com/Sycun/CyberStrikeAI-personal) | 个人维护主线。日常修复、优化和文档先在这里保存、使用与验证。 |
+| [Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) | 个人维护主线。日常修复、优化和文档先在这里保存、使用与验证。 |
 | [Sycun/csai-decouple-refactor](https://github.com/Sycun/csai-decouple-refactor) | 独立架构实验线，探索分层解耦与插件化；完成度以该仓库代码和验证记录为准。 |
-| [Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) | 官方贡献 fork。仅将选定改动送往上游，保留已有 PR 的来源分支。 |
+| [Sycun/CyberStrikeAI-upstream-fork](https://github.com/Sycun/CyberStrikeAI-upstream-fork) | 官方贡献 fork。仅将选定改动送往上游，保留已有 PR 的来源分支。 |
 | [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) | 官方上游。个人维护线与重构线均保留原始历史、许可证与版权说明。 |
 
 个人主线与架构实验线分别演进，不把全部分支自动合入一个版本。向官方贡献时，应从官方基线组织可独立审查的改动。
@@ -37,6 +39,6 @@
 
 ## Development workflow (English)
 
-`CyberStrikeAI-personal/main` is the personal maintenance baseline. `csai-decouple-refactor` is a separate architecture experiment. `Sycun/CyberStrikeAI` remains the contribution fork for selected upstream PRs.
+`CyberStrikeAI/main` is the personal maintenance baseline. `csai-decouple-refactor` is a separate architecture experiment. `Sycun/CyberStrikeAI-upstream-fork` remains the contribution fork for selected upstream PRs.
 
 The dated table above distinguishes integrated work, pending branches, and historical snapshots. Proxy-pool and local-model changes are integrated into the personal main line; upstream PR integration is tracked separately. Keep existing PR branches and archival refs. Automated checks and fixtures do not establish real-model or real-target acceptance; installation and deployment sources must be selected explicitly.

@@ -2,18 +2,18 @@
   <img src="images/logo.png" alt="CyberStrikeAI Logo" width="200" >
 </div>
 
-# CyberStrikeAI — Personal Maintenance
+# CyberStrikeAI
 
 
 [中文](README_CN.md) | [English](README.md)
 
-> **Repository role:** Sycun's personal maintenance line, based on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI). Daily development is published here. The [architecture refactor](https://github.com/Sycun/csai-decouple-refactor) evolves separately; [Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) is the fork used for selected upstream contributions.
+> **Repository role:** Sycun's personal maintenance line, based on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI). Daily development is published here. The [architecture refactor](https://github.com/Sycun/csai-decouple-refactor) evolves separately; [Sycun/CyberStrikeAI-upstream-fork](https://github.com/Sycun/CyberStrikeAI-upstream-fork) is the fork used for selected upstream contributions.
 >
 > The current main line includes the [deep assessment workbench](docs/DEEP_ASSESSMENTS.md). Proxy-pool settings and local-model context profiles are integrated into this main line; see the [repository and branch guide](docs/REPOSITORY_GUIDE.md) for integration status. Code availability and automated checks do not establish acceptance with real models and real targets.
 
 **The system of action for AI-native cybersecurity—where intent becomes governed execution, evidence becomes operational memory, and every operation improves the next.**
 
-CyberStrikeAI connects planning, execution, human oversight, evidence, and replay in one auditable workspace. Built in Go, it combines Eino-powered agents, MCP-native tools, RAG knowledge, visual workflows, and attack-chain modeling and analysis for authorized security operations.
+CyberStrikeAI connects planning, execution, human oversight, evidence, and replay in one auditable workspace. Built in Go, it combines Pi-powered agents (with an explicit Eino migration fallback), MCP-native tools, RAG knowledge, visual workflows, and attack-chain modeling and analysis for authorized security operations.
 
 **Start here:** [Quick start](#quick-start-one-command-deployment) · [Documentation](docs/en-US/README.md) · [Security hardening](docs/en-US/security-hardening.md)
 
@@ -198,11 +198,12 @@ See [tools/README_EN.md](tools/README_EN.md) for tool definitions, customization
 **Prerequisites:**
 - Go 1.25+ ([Install](https://go.dev/dl/); required by `go.mod`)
 - Python 3.10+ ([Install](https://www.python.org/downloads/))
+- Node.js 22.19+ (Pi runtime)
 
 **One-Command Deployment:**
 ```bash
-git clone https://github.com/Sycun/CyberStrikeAI-personal.git
-cd CyberStrikeAI-personal
+git clone https://github.com/Sycun/CyberStrikeAI.git
+cd CyberStrikeAI
 chmod +x run.sh && ./run.sh
 ```
 

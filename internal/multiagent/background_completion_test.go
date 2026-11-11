@@ -42,7 +42,7 @@ func TestBackgroundCompletionPreservesToolsReasoningAndUsage(t *testing.T) {
 				cfg.Model = "claude-test"
 			}
 			tools := []agent.Tool{{Type: "function", Function: agent.FunctionDefinition{Name: "inspect", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{"target": map[string]interface{}{"type": "string"}}}}}}
-			message, tokens, err := CompleteBackgroundStep(context.Background(), cfg, []agent.ChatMessage{{Role: "user", Content: "inspect fixture"}}, tools, 512, nil)
+			message, tokens, err := completeBackgroundStepLegacy(context.Background(), cfg, []agent.ChatMessage{{Role: "user", Content: "inspect fixture"}}, tools, 512, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

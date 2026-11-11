@@ -17,6 +17,7 @@ import (
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/project"
 	"cyberstrike-ai/internal/reasoning"
+	"cyberstrike-ai/internal/tooloutput"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -29,6 +30,7 @@ type piRun struct {
 	history                                           []agent.ChatMessage
 	roleTools                                         []string
 	catalogAllow                                      map[string]bool
+	availableCatalog                                  map[string]bool
 	progress                                          func(string, string, interface{})
 	reasoning                                         *reasoning.ClientIntent
 	child                                             bool
@@ -129,6 +131,9 @@ func runPiMulti(ctx context.Context, cfg *config.Config, ma *config.MultiAgentCo
 			return agentruntime.ToolResult{Content: text, Terminate: true}, nil
 		}
 		if call.Name == "write_todos" {
+			if cfg.MultiAgent.EinoMiddleware.PlantaskEnable && cfg.SkillsDir != "" {
+				return main.executePiPlan(callCtx, call)
+			}
 			b, _ := json.Marshal(call.Arguments)
 			if progress != nil {
 				progress("plan_update", string(b), call.Arguments)
@@ -155,10 +160,7 @@ func runPiMulti(ctx context.Context, cfg *config.Config, ma *config.MultiAgentCo
 			}
 		}
 		// A child may narrow its parent's catalog, never expand it.
-		parentNames := map[string]bool{}
-		for _, t := range ag.ToolsForRole(roleTools) {
-			parentNames[t.Function.Name] = true
-		}
+		parentNames := main.availableCatalog
 		childPrompt := project.AppendSystemPromptBlock(sub.Instruction, extra) + "\n\nOriginal user task:\n" + message
 		child := &piRun{cfg: cfg, ag: ag, conversationID: conversationID, agentID: id, systemPrompt: childPrompt, roleTools: tools, catalogAllow: parentNames, progress: progress, reasoning: intent, child: true, sessionKey: call.ID, maxTurns: sub.MaxIterations}
 		res, err := child.run(callCtx, task)
@@ -200,6 +202,10 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 		tools = append(tools, agentruntime.Tool{Name: d.Function.Name, Description: d.Function.Description, Parameters: d.Function.Parameters})
 	}
 	for _, t := range localDefs {
+		if r.catalogAllow != nil && !r.catalogAllow[t.Name] {
+			delete(localNames, t.Name)
+			continue
+		}
 		if !allowed[t.Name] {
 			tools = append(tools, t)
 			allowed[t.Name] = true
@@ -208,6 +214,7 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 		}
 	}
 	extraNames := map[string]bool{}
+	r.availableCatalog = allowed
 	for _, t := range r.extraTools {
 		if allowed[t.Name] {
 			return nil, fmt.Errorf("Pi tool name collision: %s", t.Name)
@@ -216,40 +223,6 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 		tools = append(tools, t)
 	}
 	oa := r.cfg.OpenAI
-	headers := make(map[string]string, len(oa.Headers))
-	for name, value := range oa.Headers {
-		if strings.Contains(value, "%session_id%") && r.conversationID == "" {
-			continue
-		}
-		headers[name] = strings.ReplaceAll(value, "%session_id%", r.conversationID)
-	}
-	mode, effort := oa.Reasoning.ModeEffective(), oa.Reasoning.Effort
-	if r.reasoning != nil && oa.Reasoning.AllowClientReasoningEffective() {
-		if r.reasoning.Mode != "" {
-			mode = r.reasoning.Mode
-		}
-		if r.reasoning.Effort != "" {
-			effort = r.reasoning.Effort
-		}
-	}
-	thinking := "off"
-	if mode == "on" {
-		thinking = effort
-		if thinking == "" {
-			thinking = "medium"
-		}
-	}
-	api := "openai-completions"
-	if oa.Provider == "claude" || oa.Provider == "anthropic" {
-		api = "anthropic-messages"
-	}
-	base := oa.BaseURL
-	if base == "" {
-		base = "https://api.openai.com/v1"
-		if api == "anthropic-messages" {
-			base = "https://api.anthropic.com"
-		}
-	}
 	root := r.cfg.AgentRuntime.SessionDir
 	if root == "" {
 		root = filepath.Join(filepath.Dir(r.cfg.Database.Path), "pi-sessions")
@@ -268,10 +241,26 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 	}
 	runID := uuid.NewString()
 	req := agentruntime.Request{RunID: runID, ConversationID: r.conversationID, SystemPrompt: r.systemPrompt, Message: message, History: history,
-		Model: agentruntime.Model{Provider: oa.Provider, API: api, ID: oa.Model, BaseURL: base, APIKey: oa.APIKey, Headers: headers, ContextWindow: oa.MaxTotalTokens, MaxTokens: oa.MaxCompletionTokensEffective(), Thinking: thinking, ExtraFields: reasoning.AgenticOpenAIExtraFields(&oa, r.reasoning)},
+		Model: piModelConfig(oa, r.reasoning, r.conversationID),
 		Tools: tools, SessionDir: filepath.Join(root, key), MaxTurns: max, Profile: agentruntime.PromptProfile{Enabled: r.cfg.AgentRuntime.Purge.EnabledEffective(), Instruction: r.cfg.AgentRuntime.Purge.InstructionFor(oa.Provider, oa.Model), Child: r.child}}
 	if strings.TrimSpace(r.conversationID) == "" {
 		req.SessionDir = ""
+	}
+	req.ToolSearch = r.cfg.MultiAgent.EinoMiddleware.ToolSearchEnable
+	req.ToolSearchMinTools = r.cfg.MultiAgent.EinoMiddleware.ToolSearchMinTools
+	req.AlwaysVisibleTools = append([]string(nil), r.cfg.MultiAgent.EinoMiddleware.ToolSearchAlwaysVisibleTools...)
+	visibleCount := r.cfg.MultiAgent.EinoMiddleware.ToolSearchAlwaysVisible
+	if visibleCount <= 0 {
+		visibleCount = 12
+	}
+	if oa.IsLocalContextProfile() && visibleCount > 6 {
+		visibleCount = 6
+	}
+	for i, t := range tools {
+		if i >= visibleCount {
+			break
+		}
+		req.AlwaysVisibleTools = append(req.AlwaysVisibleTools, t.Name)
 	}
 	req.RetryMax = r.cfg.MultiAgent.EinoMiddleware.ModelRetryMaxRetries
 	for _, id := range r.cfg.MultiAgent.EinoMiddleware.ModelFailoverChannels {
@@ -282,28 +271,7 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 		if ch.Model == oa.Model && ch.BaseURL == oa.BaseURL && ch.Provider == oa.Provider {
 			continue
 		}
-		fallback := req.Model
-		fallback.Provider = ch.Provider
-		fallback.ID = ch.Model
-		fallback.APIKey = ch.APIKey
-		fallback.BaseURL = ch.BaseURL
-		fallback.Headers = map[string]string{}
-		for key, value := range ch.Headers {
-			fallback.Headers[key] = strings.ReplaceAll(value, "%session_id%", r.conversationID)
-		}
-		fallback.API = "openai-completions"
-		if ch.Provider == "claude" || ch.Provider == "anthropic" {
-			fallback.API = "anthropic-messages"
-		}
-		if fallback.BaseURL == "" {
-			fallback.BaseURL = "https://api.openai.com/v1"
-			if fallback.API == "anthropic-messages" {
-				fallback.BaseURL = "https://api.anthropic.com"
-			}
-		}
-		fallback.MaxTokens = ch.MaxCompletionTokensEffective()
-		fallback.ContextWindow = ch.MaxTotalTokens
-		fallback.ExtraFields = reasoning.AgenticOpenAIExtraFields(&ch, r.reasoning)
+		fallback := piModelConfig(ch, r.reasoning, r.conversationID)
 		req.FallbackModels = append(req.FallbackModels, fallback)
 		if cap := r.cfg.MultiAgent.EinoMiddleware.ModelFailoverMaxRetries; cap > 0 && len(req.FallbackModels) >= cap {
 			break
@@ -381,6 +349,9 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 		if err != nil {
 			result.Content = err.Error()
 			result.IsError = true
+		}
+		if r.cfg.MultiAgent.EinoMiddleware.ReductionEnable {
+			result.Content = tooloutput.BoundWithSpill(result.Content, r.cfg.MultiAgent.EinoMiddleware.ReductionMaxLengthForTruncEffective(), tooloutput.SpillOpts{RootDir: r.cfg.MultiAgent.EinoMiddleware.ReductionRootDir, ConversationID: r.conversationID, ExecutionID: result.ExecutionID})
 		}
 		progress("tool_result", result.Content, map[string]any{"toolName": call.Name, "toolCallId": call.ID, "executionId": result.ExecutionID, "result": result.Content, "success": !result.IsError, "isError": result.IsError, "agentFacing": true})
 		return result, err

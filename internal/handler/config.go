@@ -18,6 +18,7 @@ import (
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/knowledge"
+	"cyberstrike-ai/internal/llm"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/modelmeta"
@@ -827,10 +828,12 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	previousProxy := h.config.Proxy
+	previousRuntime := h.config.AgentRuntime
 	proxySaved := false
 	defer func() {
 		if !proxySaved {
 			h.config.Proxy = previousProxy
+			h.config.AgentRuntime = previousRuntime
 		}
 	}()
 	if req.Proxy != nil {

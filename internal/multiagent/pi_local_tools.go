@@ -29,6 +29,12 @@ func (r *piRun) piLocalCatalog(ctx context.Context) ([]agentruntime.Tool, map[st
 		return tools, names, "", nil
 	}
 	str := map[string]any{"type": "string"}
+	if r.cfg.MultiAgent.EinoMiddleware.PlantaskEnable && r.cfg.SkillsDir != "" {
+		for _, t := range piPlanTools() {
+			tools = append(tools, t)
+			names[t.Name] = true
+		}
+	}
 	if root := strings.TrimSpace(r.cfg.SkillsDir); root != "" {
 		skills, err := skillpackage.ListSkillSummaries(root)
 		if err != nil && !os.IsNotExist(err) {
@@ -109,6 +115,9 @@ func (b *piBoundedOutput) String() string {
 }
 
 func (r *piRun) executePiLocal(ctx context.Context, call agentruntime.ToolCall) (agentruntime.ToolResult, error) {
+	if call.Name == "TaskCreate" || call.Name == "TaskUpdate" || call.Name == "TaskGet" || call.Name == "TaskList" {
+		return r.executePiPlan(ctx, call)
+	}
 	arg := func(key string) string { v, _ := call.Arguments[key].(string); return v }
 	skillName := r.cfg.MultiAgent.EinoSkills.SkillToolName
 	if skillName == "" {

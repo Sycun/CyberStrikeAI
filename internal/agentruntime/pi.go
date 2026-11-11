@@ -81,6 +81,13 @@ func (p Pi) Run(ctx context.Context, req Request, execute ToolExecutor, emit fun
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if req.WorkingDir == "" {
+		var err error
+		req.WorkingDir, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
 	release, err := acquireSession(ctx, req.SessionDir)
 	if err != nil {
 		return nil, err
@@ -265,7 +272,7 @@ func (p Pi) Run(ctx context.Context, req Request, execute ToolExecutor, emit fun
 					return r.Result, ctx.Err()
 				}
 				if r.Result.Error != "" {
-					return r.Result, errors.New(r.Result.Error)
+					return r.Result, fmt.Errorf("Pi runtime error: %s", r.Result.Error)
 				}
 				if r.Result.Status == "canceled" {
 					return r.Result, context.Canceled

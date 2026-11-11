@@ -19,6 +19,8 @@ type Model struct {
 	MaxTokens     int               `json:"maxTokens"`
 	Thinking      string            `json:"thinking,omitempty"`
 	ExtraFields   map[string]any    `json:"extraFields,omitempty"`
+	Compat        map[string]any    `json:"compat,omitempty"`
+	InputBudget   int               `json:"inputBudget,omitempty"`
 }
 
 type Tool struct {
@@ -34,18 +36,23 @@ type PromptProfile struct {
 }
 
 type Request struct {
-	RunID          string          `json:"runId"`
-	ConversationID string          `json:"conversationId"`
-	SystemPrompt   string          `json:"systemPrompt"`
-	Message        string          `json:"message"`
-	History        json.RawMessage `json:"history,omitempty"`
-	Model          Model           `json:"model"`
-	FallbackModels []Model         `json:"fallbackModels,omitempty"`
-	RetryMax       int             `json:"retryMax,omitempty"`
-	Tools          []Tool          `json:"tools"`
-	SessionDir     string          `json:"sessionDir,omitempty"`
-	MaxTurns       int             `json:"maxTurns"`
-	Profile        PromptProfile   `json:"profile"`
+	GenerateOnly       bool            `json:"generateOnly,omitempty"`
+	RunID              string          `json:"runId"`
+	ConversationID     string          `json:"conversationId"`
+	WorkingDir         string          `json:"workingDir,omitempty"`
+	SystemPrompt       string          `json:"systemPrompt"`
+	Message            string          `json:"message"`
+	History            json.RawMessage `json:"history,omitempty"`
+	Model              Model           `json:"model"`
+	FallbackModels     []Model         `json:"fallbackModels,omitempty"`
+	RetryMax           int             `json:"retryMax,omitempty"`
+	Tools              []Tool          `json:"tools"`
+	ToolSearch         bool            `json:"toolSearch"`
+	ToolSearchMinTools int             `json:"toolSearchMinTools,omitempty"`
+	AlwaysVisibleTools []string        `json:"alwaysVisibleTools,omitempty"`
+	SessionDir         string          `json:"sessionDir,omitempty"`
+	MaxTurns           int             `json:"maxTurns"`
+	Profile            PromptProfile   `json:"profile"`
 }
 
 type Event struct {
@@ -67,6 +74,7 @@ type ToolResult struct {
 }
 
 type Result struct {
+	TotalTokens int             `json:"totalTokens,omitempty"`
 	Response    string          `json:"response"`
 	History     json.RawMessage `json:"history"`
 	Status      string          `json:"status"`

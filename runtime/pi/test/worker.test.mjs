@@ -98,6 +98,7 @@ test("real Pi SDK streams, invokes only host tools and restores persisted sessio
   assert.deepEqual(fixture.requests[0].tools.map(t => t.function.name), ["echo"]);
   assert.ok(fixture.requests[1].messages.some(m => m.role === "tool" && m.content === "hello"));
   assert.ok(first.records.some(r => r.event?.type === "message_update"));
+  assert.ok(first.records.filter(r => r.event?.type === "message_update").every(r => !Object.hasOwn(r.event.data.assistantMessageEvent, "partial")));
   const second = await invoke(t, { ...request(fixture.url, dir), runId: "run-2", message: "summarize prior result" });
   assert.equal(second.result.status, "completed", second.result.error);
   assert.ok(fixture.requests[2].messages.some(m => m.role === "tool" && m.content === "hello"));
@@ -148,4 +149,26 @@ test("process loss preserves the session and marks uncertain tools without repla
   assert.equal(result.status, "completed", result.error);
   assert.equal(fixture.requests.length, 2);
   assert.ok(fixture.requests[1].messages.some(m => m.role === "tool" && /effects are unknown/.test(m.content)));
+});
+
+test("native tool search loads a deferred host tool without exposing the full catalog", { timeout: 30000 }, async t => {
+  const fixture = await startFixture(t, (body, res, count) => {
+    const names = body.tools.map(t => t.function.name);
+    if (count === 1) {
+      assert.deepEqual(names, ["tool_search"]);
+      sse(res, { role: "assistant", tool_calls: [{ index: 0, id: "search-1", type: "function", function: { name: "tool_search", arguments: '{"query":"echo","limit":1}' } }] }, "tool_calls");
+    } else if (count === 2) {
+      assert.ok(names.includes("echo"), JSON.stringify(body.messages));
+      sse(res, { role: "assistant", tool_calls: [{ index: 0, id: "echo-1", type: "function", function: { name: "echo", arguments: '{"text":"found"}' } }] }, "tool_calls");
+    } else sse(res, { role: "assistant", content: "discovery verified" }, "stop");
+  });
+  const req = request(fixture.url);
+  req.tools.push(...Array.from({ length: 45 }, (_, i) => ({ name: "unrelated_" + i, description: "Unrelated operation", parameters: { type: "object", properties: {} } })));
+  let hostCalls = 0;
+  const { result } = await invoke(t, { ...req, toolSearch: true }, (r, send) => {
+    if (r.type === "tool_call") { hostCalls++; assert.equal(r.call.name, "echo"); send({ type: "tool_result", id: r.call.id, result: { content: "found" } }); }
+  });
+  assert.equal(result.status, "completed", result.error);
+  assert.equal(result.response, "discovery verified");
+  assert.equal(hostCalls, 1);
 });

@@ -1,9 +1,9 @@
 name: Pi runtime
 on:
   push:
-    paths: ['runtime/pi/**', 'internal/agentruntime/**', 'internal/multiagent/pi_*.go', '.github/workflows/pi-runtime.yml']
+    paths: ['runtime/pi/**', 'internal/agentruntime/**', 'internal/multiagent/**', 'internal/assessment/**', 'internal/knowledge/**', 'internal/workflow/**', 'internal/config/**', 'cmd/build-runtime/**', 'scripts/build-pi-runtime.sh', '.github/workflows/pi-runtime.yml']
   pull_request:
-    paths: ['runtime/pi/**', 'internal/agentruntime/**', 'internal/multiagent/pi_*.go', '.github/workflows/pi-runtime.yml']
+    paths: ['runtime/pi/**', 'internal/agentruntime/**', 'internal/multiagent/**', 'internal/assessment/**', 'internal/knowledge/**', 'internal/workflow/**', 'internal/config/**', 'cmd/build-runtime/**', 'scripts/build-pi-runtime.sh', '.github/workflows/pi-runtime.yml']
 permissions:
   contents: read
 jobs:
@@ -23,4 +23,5 @@ jobs:
         working-directory: runtime/pi
       - run: npm run build && npm test
         working-directory: runtime/pi
-      - run: go test -race ./internal/agentruntime ./internal/multiagent
+      - run: go run ./cmd/build-runtime
+      - run: go test -race ./internal/agentruntime ./internal/multiagent ./internal/assessment ./internal/knowledge ./internal/workflow

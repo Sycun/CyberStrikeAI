@@ -50,10 +50,58 @@ func piReply(w http.ResponseWriter, tool, id string, args map[string]any, text s
 		delta["content"] = text
 	}
 	for _, choice := range []map[string]any{{"index": 0, "delta": delta, "finish_reason": nil}, {"index": 0, "delta": map[string]any{}, "finish_reason": reason}} {
-		b, _ := json.Marshal(map[string]any{"id": "fixture", "object": "chat.completion.chunk", "model": "fixture", "choices": []any{choice}})
+		b, _ := json.Marshal(map[string]any{"id": "fixture", "object": "chat.completion.chunk", "model": "fixture", "choices": []any{choice}, "usage": map[string]any{"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}})
 		fmt.Fprintf(w, "data: %s\n\n", b)
 	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+func TestPiBackgroundGenerationReturnsProposalWithoutExecutingTools(t *testing.T) {
+	for _, provider := range []string{"openai", "claude"} {
+		t.Run(provider, func(t *testing.T) {
+			cfg := piTestConfig(t)
+			cfg.OpenAI.Provider = provider
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if body["stream"] != true {
+					t.Error("Pi transport must request streaming")
+				}
+				if provider == "openai" {
+					piReply(w, "inspect", "call-1", map[string]any{"target": "fixture"}, "")
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				events := []string{
+					`{"type":"message_start","message":{"id":"msg-1","type":"message","role":"assistant","model":"fixture","content":[],"stop_reason":null,"usage":{"input_tokens":20,"output_tokens":0}}}`,
+					`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call-1","name":"inspect","input":{}}}`,
+					`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"target\":\"fixture\"}"}}`,
+					`{"type":"content_block_stop","index":0}`,
+					`{"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":10}}`,
+					`{"type":"message_stop"}`,
+				}
+				for _, data := range events {
+					var event map[string]any
+					json.Unmarshal([]byte(data), &event)
+					fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event["type"], data)
+				}
+			}))
+			defer server.Close()
+			cfg.OpenAI.BaseURL = server.URL
+			tools := []agent.Tool{{Type: "function", Function: agent.FunctionDefinition{Name: "inspect", Description: "Inspect fixture", Parameters: map[string]any{"type": "object", "properties": map[string]any{"target": map[string]any{"type": "string"}}}}}}
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			message, tokens, err := CompleteBackgroundStepWithRuntime(ctx, cfg.AgentRuntime, cfg.OpenAI, []agent.ChatMessage{{Role: "system", Content: "Propose one action"}, {Role: "user", Content: "inspect"}}, tools, 512, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tokens != 30 || len(message.ToolCalls) != 1 || message.ToolCalls[0].Function.Arguments["target"] != "fixture" {
+				t.Fatalf("message=%+v tokens=%d", message, tokens)
+			}
+		})
+	}
 }
 
 func piTestAgent(cfg *config.Config, handler mcp.ToolHandler) *agent.Agent {

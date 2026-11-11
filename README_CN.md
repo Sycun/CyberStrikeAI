@@ -2,17 +2,17 @@
   <img src="images/logo.png" alt="CyberStrikeAI Logo" width="200">
 </div>
 
-# CyberStrikeAI — 个人维护版
+# CyberStrikeAI
 
 [中文](README_CN.md) | [English](README.md)
 
-> **仓库定位：** 本仓库是 Sycun 基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 的个人维护线，承接日常修复与优化。[架构重构线](https://github.com/Sycun/csai-decouple-refactor)独立演进；[Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) 保留为向官方贡献选定改动的 fork。
+> **仓库定位：** 本仓库是 Sycun 基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 的个人维护线，承接日常修复与优化。[架构重构线](https://github.com/Sycun/csai-decouple-refactor)独立演进；[Sycun/CyberStrikeAI-upstream-fork](https://github.com/Sycun/CyberStrikeAI-upstream-fork) 保留为向官方贡献选定改动的 fork。
 >
 > 当前主线包含[深度测评工作台](docs/DEEP_ASSESSMENTS.md)。代理池设置和本地模型上下文优化已整合进当前主线，使用与整合状态见[仓库与分支说明](docs/REPOSITORY_GUIDE.md)。代码已保存、自动化检查通过与真实模型、真实目标验收分别记录。
 
 **CyberStrikeAI 是 AI 原生网络安全的智能执行中枢——让意图转化为受治理的行动，让证据沉淀为运营记忆，并让每次行动优化下一次行动。**
 
-CyberStrikeAI 将规划、执行、人工监督、证据与复盘连接在同一个可审计工作空间中。项目基于 Go 构建，融合 Eino 智能体、MCP 原生工具、RAG 知识、可视化工作流以及攻击链建模与分析能力，面向已获得明确授权的安全任务。
+CyberStrikeAI 将规划、执行、人工监督、证据与复盘连接在同一个可审计工作空间中。项目基于 Go 构建，默认使用 Pi 智能体（保留显式 Eino 迁移回退）并融合、MCP 原生工具、RAG 知识、可视化工作流以及攻击链建模与分析能力，面向已获得明确授权的安全任务。
 
 **从这里开始：** [快速上手](#快速上手一条命令部署) · [中文文档](docs/zh-CN/README.md) · [安全加固](docs/zh-CN/security-hardening.md)
 
@@ -197,11 +197,12 @@ CyberStrikeAI 将规划、执行、人工监督、证据与复盘连接在同一
 **环境要求：**
 - Go 1.25+（[下载安装](https://go.dev/dl/)，以 `go.mod` 为准）
 - Python 3.10+ ([下载安装](https://www.python.org/downloads/))
+- Node.js 22.19+ (Pi runtime)
 
 **一条命令部署：**
 ```bash
-git clone https://github.com/Sycun/CyberStrikeAI-personal.git
-cd CyberStrikeAI-personal
+git clone https://github.com/Sycun/CyberStrikeAI.git
+cd CyberStrikeAI
 chmod +x run.sh && ./run.sh
 ```
 

@@ -1,0 +1,67 @@
+package multiagent
+
+import (
+	"cyberstrike-ai/internal/agentruntime"
+	"cyberstrike-ai/internal/config"
+	"cyberstrike-ai/internal/reasoning"
+	"strings"
+)
+
+func piModelConfig(oa config.OpenAIConfig, intent *reasoning.ClientIntent, conversationID string) agentruntime.Model {
+	mode, effort := oa.Reasoning.ModeEffective(), oa.Reasoning.Effort
+	if intent != nil && oa.Reasoning.AllowClientReasoningEffective() {
+		if intent.Mode != "" {
+			mode = intent.Mode
+		}
+		if intent.Effort != "" {
+			effort = intent.Effort
+		}
+	}
+	thinking := "off"
+	if mode == "on" || (mode == "auto" && effort != "") {
+		thinking = effort
+		if thinking == "" {
+			thinking = "medium"
+		}
+	}
+	api := "openai-completions"
+	provider := strings.ToLower(strings.TrimSpace(oa.Provider))
+	if provider == "claude" || provider == "anthropic" {
+		api = "anthropic-messages"
+	} else if oa.OpenAIToolsRequireResponses() {
+		api = "openai-responses"
+	}
+	base := strings.TrimRight(strings.TrimSpace(oa.BaseURL), "/")
+	if base == "" {
+		base = "https://api.openai.com/v1"
+		if api == "anthropic-messages" {
+			base = "https://api.anthropic.com"
+		}
+	}
+	headers := map[string]string{}
+	for key, value := range oa.Headers {
+		if strings.Contains(value, "%session_id%") && conversationID == "" {
+			continue
+		}
+		headers[key] = strings.ReplaceAll(value, "%session_id%", conversationID)
+	}
+	budget := oa.EffectiveMaxTotalTokens()
+	window := oa.EffectiveContextWindow()
+	if window <= 0 {
+		window = budget + oa.MaxCompletionTokensEffective()
+	}
+	extra := reasoning.AgenticOpenAIExtraFields(&oa, intent)
+	if api == "openai-responses" {
+		extra = oa.Reasoning.ExtraRequestFields
+	}
+	compat := map[string]any{}
+	if oa.IsLocalContextProfile() {
+		compat["maxTokensField"] = "max_tokens"
+		compat["supportsStore"] = false
+	}
+	if oa.Reasoning.ProfileEffective() == "deepseek_compat" || (oa.Reasoning.ProfileEffective() == "auto" && oa.IsDeepSeekEndpointOrModel()) {
+		compat["thinkingFormat"] = "deepseek"
+		compat["requiresReasoningContentOnAssistantMessages"] = true
+	}
+	return agentruntime.Model{Provider: provider, API: api, ID: oa.Model, BaseURL: base, APIKey: oa.APIKey, Headers: headers, ContextWindow: window, InputBudget: budget, MaxTokens: oa.MaxCompletionTokensEffective(), Thinking: thinking, ExtraFields: extra, Compat: compat}
+}
