@@ -86,6 +86,15 @@ func RunDeepAgent(
 		return nil, fmt.Errorf("multiagent: 配置或 Agent 为空")
 	}
 
+	configuredOpenAI := appCfg.OpenAI
+	appCfg = appCfg.WithEffectiveContextBudget()
+	if ma != nil {
+		maCopy := *ma
+		maCopy.EinoMiddleware = appCfg.MultiAgent.EinoMiddleware
+		ma = &maCopy
+	}
+	logContextBudgetWarnings(configuredOpenAI, appCfg.OpenAI, logger, "deep")
+
 	runtimeUserMessage := prepareLatestUserMessageForModel(userMessage, appCfg, &ma.EinoMiddleware, conversationID, logger)
 
 	effectiveSubs := ma.SubAgents
@@ -249,6 +258,7 @@ func RunDeepAgent(
 				agenticSummarization: subSumMw,
 				modelName:            appCfg.OpenAI.Model,
 				maxTotalTokens:       appCfg.OpenAI.MaxTotalTokens,
+				tokenSafetyPercent:   appCfg.OpenAI.TokenEstimateSafetyPercent(),
 				toolMaxBytes:         toolMaxBytesFromMW(&ma.EinoMiddleware),
 				conversationID:       conversationID,
 				middlewareConfig:     &ma.EinoMiddleware,
@@ -428,6 +438,7 @@ func RunDeepAgent(
 		agenticSummarization: mainSumMw,
 		modelName:            appCfg.OpenAI.Model,
 		maxTotalTokens:       appCfg.OpenAI.MaxTotalTokens,
+		tokenSafetyPercent:   appCfg.OpenAI.TokenEstimateSafetyPercent(),
 		toolMaxBytes:         toolMaxBytesFromMW(&ma.EinoMiddleware),
 		conversationID:       conversationID,
 		trace:                modelFacingTrace,
@@ -447,6 +458,7 @@ func RunDeepAgent(
 		agenticSummarization: mainSumMw,
 		modelName:            appCfg.OpenAI.Model,
 		maxTotalTokens:       appCfg.OpenAI.MaxTotalTokens,
+		tokenSafetyPercent:   appCfg.OpenAI.TokenEstimateSafetyPercent(),
 		toolMaxBytes:         toolMaxBytesFromMW(&ma.EinoMiddleware),
 		conversationID:       conversationID,
 		trace:                modelFacingTrace,
@@ -521,15 +533,16 @@ func RunDeepAgent(
 			AgenticFilesystemMiddleware: peFsMw,
 			ModelFacingTrace:            modelFacingTrace,
 			PlannerReplannerRewriteHandlers: appendEinoChatModelTailMiddlewares(nil, einoChatModelTailConfig{
-				logger:           logger,
-				phase:            "plan_execute_planner_replanner",
-				summarization:    planRewriteSumMw,
-				modelName:        appCfg.OpenAI.Model,
-				maxTotalTokens:   appCfg.OpenAI.MaxTotalTokens,
-				toolMaxBytes:     toolMaxBytesFromMW(&ma.EinoMiddleware),
-				conversationID:   conversationID,
-				skipTrace:        true,
-				middlewareConfig: &ma.EinoMiddleware,
+				logger:             logger,
+				phase:              "plan_execute_planner_replanner",
+				summarization:      planRewriteSumMw,
+				modelName:          appCfg.OpenAI.Model,
+				maxTotalTokens:     appCfg.OpenAI.MaxTotalTokens,
+				tokenSafetyPercent: appCfg.OpenAI.TokenEstimateSafetyPercent(),
+				toolMaxBytes:       toolMaxBytesFromMW(&ma.EinoMiddleware),
+				conversationID:     conversationID,
+				skipTrace:          true,
+				middlewareConfig:   &ma.EinoMiddleware,
 			}),
 			AgenticModelRetryConfig:    agenticModelRetryCfg,
 			AgenticModelFailoverConfig: agenticModelFailoverCfg,
@@ -641,6 +654,7 @@ func RunDeepAgent(
 		ModelFacingTrace:        modelFacingTrace,
 		EinoCallbacks:           &ma.EinoCallbacks,
 		MaxTotalTokens:          appCfg.OpenAI.MaxTotalTokens,
+		TokenSafetyPercent:      appCfg.OpenAI.TokenEstimateSafetyPercent(),
 		ToolMaxBytes:            toolMaxBytesFromMW(&ma.EinoMiddleware),
 		ModelName:               appCfg.OpenAI.Model,
 		MiddlewareConfig:        &ma.EinoMiddleware,

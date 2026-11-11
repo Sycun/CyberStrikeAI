@@ -39,11 +39,12 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="/static/css/style.css?v=20261027-pagination-custom-select">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261103-personal-integration">
     <link rel="stylesheet" href="/static/css/vulnerability-download.css?v=20261030-2">
     <link rel="stylesheet" href="/static/css/tool-guard.css?v=20260907-7">
     <link rel="stylesheet" href="/static/css/chat-plan-progress.css?v=20260813-4">
     <link rel="stylesheet" href="/static/css/c2.css">
+    <link rel="stylesheet" href="/static/css/assessments.css">
     <link rel="stylesheet" href="/static/vendor/xterm.css">
     <!-- 移动端样式层：全部规则限定在 767.98px 以下，桌面端零影响 -->
     <link rel="stylesheet" href="/static/css/mobile.css?v=20261015-project-table-3">
@@ -233,6 +234,12 @@
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                             </svg>
                             <span data-i18n="nav.chat">对话</span>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="assessments" data-require-permission="assessment:read">
+                        <div class="nav-item-content" data-title="深度测评" onclick="switchPage('assessments')" data-i18n="nav.assessments" data-i18n-attr="data-title" data-i18n-skip-text="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M12 8v4M12 12l-7 4M12 12l7 4"/></svg>
+                            <span data-i18n="nav.assessments">深度测评</span>
                         </div>
                     </div>
                     <div class="nav-item nav-item-has-submenu" data-page="security" data-require-permission-any="hitl:read config:read">
@@ -2948,6 +2955,8 @@
                 </div>
 
                 <!-- 任务管理页面 -->
+                <div id="page-assessments" class="page"><div id="assessment-workbench"></div></div>
+
                 <div id="page-tasks" class="page">
                     <div class="page-header">
                         <h2 data-i18n="tasks.title">任务管理</h2>
@@ -3607,6 +3616,7 @@
                                 <div class="settings-nav-item" data-section="token-usage" role="button" tabindex="0" onclick="switchSettingsSection('token-usage')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchSettingsSection('token-usage'); }">
                                     <span data-i18n="settings.nav.tokenUsage">Token 用量</span>
                                 </div>
+                                <div class="settings-nav-item" data-section="proxy" role="button" tabindex="0" onclick="switchSettingsSection('proxy')" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchSettingsSection('proxy'); }"><span data-i18n="proxySettings.title">代理设置</span></div>
                                 <div class="settings-nav-item" data-section="hitl" onclick="switchSettingsSection('hitl')">
                                     <span data-i18n="settings.nav.hitl">人机协同</span>
                                 </div>
@@ -3765,6 +3775,23 @@
                                                                 <label for="openai-max-completion-tokens"><span data-i18n="settingsBasic.maxCompletionTokens">最大输出 Token 数</span></label>
                                                                 <input type="number" id="openai-max-completion-tokens" data-i18n="settingsBasic.maxCompletionTokensPlaceholder" data-i18n-attr="placeholder" placeholder="16384" min="1" step="256" />
                                                                 <small class="form-hint" data-i18n="settingsBasic.maxCompletionTokensHint">单次模型回复的输出上限，默认 16384</small>
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label for="openai-context-window"><span data-i18n="settingsBasic.contextWindow">模型上下文窗口（Token）</span></label>
+                                                                <div class="model-pick-row">
+                                                                    <input type="number" id="openai-context-window" data-i18n="settingsBasic.contextWindowPlaceholder" data-i18n-attr="placeholder" placeholder="131072" min="0" step="1024" />
+                                                                    <a href="javascript:void(0)" id="detect-context-btn" class="model-pick-fetch-link" onclick="detectAIContext()" data-i18n="settingsBasic.detectContext">自动检测</a>
+                                                                </div>
+                                                                <small class="form-hint" data-i18n="settingsBasic.contextWindowHint">模型原生窗口；用于校验并收紧预算。本地模型请按服务端 num_ctx/ctx-size 填写。</small>
+                                                                <span id="detect-context-result" class="form-inline-result"></span>
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label for="openai-context-profile"><span data-i18n="settingsBasic.contextProfile">上下文优化档位</span></label>
+                                                                <select id="openai-context-profile">
+                                                                    <option value="auto" data-i18n="settingsBasic.contextProfileAuto">通用（默认）</option>
+                                                                    <option value="local" data-i18n="settingsBasic.contextProfileLocal">本地模型（32K-256K 优化）</option>
+                                                                </select>
+                                                                <small class="form-hint" data-i18n="settingsBasic.contextProfileHint">本地档位会收紧压缩触发、工具输出阈值和常驻工具数；只收紧不放大已有配置。</small>
                                                             </div>
                                                         </div>
                                                     </section>
@@ -4044,7 +4071,22 @@
                                 </div>
                             </div>
 
-                            <!-- 人机协同 -->
+                            <div id="settings-section-proxy" class="settings-section-content"><div class="settings-section-header"><h3 data-i18n="proxySettings.title">代理设置</h3></div><p class="form-hint" data-i18n="proxySettings.scope"></p>
+<div class="form-group"><label for="proxy-setting-mode" data-i18n="proxySettings.mode"></label><select id="proxy-setting-mode" onchange="syncProxySettingsMode()"><option value="manual" data-i18n="proxySettings.manual">沿用工具参数（默认）</option><option value="fixed" data-i18n="proxySettings.fixed">固定代理（推荐稳定会话）</option><option value="pool" data-i18n="proxySettings.pool">代理池（显式启用）</option></select></div>
+<div data-proxy-mode="fixed" hidden><div class="form-group"><label for="proxy-setting-proxy_url" data-i18n="proxySettings.proxy_url"></label><input id="proxy-setting-proxy_url" type="password" autocomplete="new-password"></div></div>
+<div data-proxy-mode="pool" hidden>
+<div class="form-group"><label for="proxy-setting-proxy_pool" data-i18n="proxySettings.proxy_pool"></label><textarea id="proxy-setting-proxy_pool" rows="5" spellcheck="false"></textarea></div>
+<div class="form-group"><label for="proxy-setting-proxy_source" data-i18n="proxySettings.proxy_source"></label><input id="proxy-setting-proxy_source" type="password" autocomplete="new-password"></div>
+<div class="form-group"><label for="proxy-setting-strategy" data-i18n="proxySettings.strategy"></label><select id="proxy-setting-strategy"><option value="sticky" data-i18n="proxySettings.sticky">复用成功代理</option><option value="round_robin" data-i18n="proxySettings.round_robin">按间隔轮询</option></select></div>
+<div class="proxy-limit-grid"><div class="form-group"><label for="proxy-setting-max_attempts" data-i18n="proxySettings.max_attempts"></label><input id="proxy-setting-max_attempts" type="number" value="3" min="1" max="10" step="1" required></div>
+<div class="form-group"><label for="proxy-setting-cooldown" data-i18n="proxySettings.cooldown"></label><input id="proxy-setting-cooldown" type="number" value="60" min="0" max="86400" step="1" required></div>
+<div class="form-group"><label for="proxy-setting-min_switch_interval" data-i18n="proxySettings.min_switch_interval"></label><input id="proxy-setting-min_switch_interval" type="number" value="60" min="0" max="86400" step="1" required></div>
+</div><p class="form-hint" data-i18n="proxySettings.intervalHint"></p></div>
+<p class="form-hint" data-i18n="proxySettings.secrets">已保存的地址与凭证显示为 ********，原样保存会保留，清空可删除。代理池模式中，静态列表和供应商至少填写一项。</p>
+<p class="form-hint" data-i18n="proxySettings.isolation">Kali 工具与大模型 API：此设置仅作用于 http-framework-test。其他扫描工具、终端、外部 MCP 和模型 API 保持自身出口；不会修改系统 HTTP_PROXY，也不会在运行中重启或切换其他工具的连接。需要代理的其他工具请使用其原生固定代理参数。</p>
+<p class="form-hint" data-i18n="proxySettings.stability">固定代理地址不保证供应商固定公网 IP。稳定会话请使用供应商的固定出口或粘性会话服务。设置修改仅影响后续启动的 HTTP 工具调用。受管模式会覆盖模型传入的代理选项；这不是对任意 Shell 命令的网络隔离。</p>
+<div class="settings-actions"><button id="proxy-settings-save" disabled class="btn-primary" onclick="saveProxySettings()" data-require-permission="config:write" data-i18n="proxySettings.save">保存并应用代理设置</button></div></div>
+<!-- 人机协同 -->
                             <div id="settings-section-hitl" class="settings-section-content">
                                 <div class="settings-section-header">
                                     <h3 data-i18n="settings.hitl.title">人机协同</h3>
@@ -7071,29 +7113,31 @@
     <script src="/static/js/hitl.js?v=20260819-1-pagination-20261027"></script>
     <script src="/static/js/tool-guard.js?v=20261010-conflict"></script>
     <script src="/static/js/token-usage.js?v=20261012-token-analytics"></script>
-    <script src="/static/js/settings.js?v=20261011-token-settings-pagination-20261027"></script>
+    <script src="/static/js/proxy-settings.js?v=20261031"></script>
+    <script src="/static/js/settings.js?v=20261103-personal-integration"></script>
     <script src="/static/js/audit-datetime-picker.js"></script>
-    <script src="/static/js/audit.js?v=20261027-pagination-custom-select"></script>
+    <script src="/static/js/audit.js?v=20261103-personal-integration"></script>
     <script src="/static/js/storage.js"></script>
     <script src="/static/js/wechat-robot.js"></script>
     <script src="/static/vendor/xterm.js"></script>
     <script src="/static/vendor/xterm-addon-fit.js"></script>
     <script src="/static/js/terminal.js"></script>
     <script src="/static/js/knowledge.js"></script>
-    <script src="/static/js/skills.js?v=20261027-pagination-custom-select"></script>
+    <script src="/static/js/skills.js?v=20261103-personal-integration"></script>
     <script src="/static/js/fact-graph.js"></script>
     <script src="/static/js/projects.js?v=20260819-1-pagination-20261027"></script>
     <script src="/static/js/vulnerability.js?v=20261030-format-download"></script>
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage"></script>
-    <script src="/static/js/chat-files.js?v=20261027-pagination-custom-select"></script>
-    <script src="/static/js/tasks.js?v=20261027-pagination-custom-select"></script>
+    <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
+    <script src="/static/js/assessments.js"></script>
+    <script src="/static/js/tasks.js?v=20261103-personal-integration"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>
     <script src="/static/js/update.js?v={{.Version}}"></script>
-    <script src="/static/js/roles.js?v=20261027-pagination-custom-select"></script>
+    <script src="/static/js/roles.js?v=20261103-personal-integration"></script>
     <script src="/static/js/rbac.js"></script>
-    <script src="/static/js/c2.js?v=20261027-pagination-custom-select"></script>
+    <script src="/static/js/c2.js?v=20261103-personal-integration"></script>
     <script src="/static/js/rbac-guards.js?v=20260907-1"></script>
     <!-- 移动端交互层：必须最后加载，它包装 window.switchPage 并注入移动端 DOM -->
     <script src="/static/js/mobile-ui.js?v=20261006-9"></script>

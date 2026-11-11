@@ -2,9 +2,13 @@
   <img src="images/logo.png" alt="CyberStrikeAI Logo" width="200">
 </div>
 
-# CyberStrikeAI
+# CyberStrikeAI — 个人维护版
 
 [中文](README_CN.md) | [English](README.md)
+
+> **仓库定位：** 本仓库是 Sycun 基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 的个人维护线，承接日常修复与优化。[架构重构线](https://github.com/Sycun/csai-decouple-refactor)独立演进；[Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI) 保留为向官方贡献选定改动的 fork。
+>
+> 当前主线包含[深度测评工作台](docs/DEEP_ASSESSMENTS.md)。代理池设置和本地模型上下文优化已整合进当前主线，使用与整合状态见[仓库与分支说明](docs/REPOSITORY_GUIDE.md)。代码已保存、自动化检查通过与真实模型、真实目标验收分别记录。
 
 **CyberStrikeAI 是 AI 原生网络安全的智能执行中枢——让意图转化为受治理的行动，让证据沉淀为运营记忆，并让每次行动优化下一次行动。**
 
@@ -196,8 +200,8 @@ CyberStrikeAI 将规划、执行、人工监督、证据与复盘连接在同一
 
 **一条命令部署：**
 ```bash
-git clone https://github.com/Ed1s0nZ/CyberStrikeAI.git
-cd CyberStrikeAI
+git clone https://github.com/Sycun/CyberStrikeAI-personal.git
+cd CyberStrikeAI-personal
 chmod +x run.sh && ./run.sh
 ```
 
@@ -418,3 +422,7 @@ CyberStrikeAI 是一个专业的安全测试平台，旨在帮助安全研究人
 ---
 
 欢迎提交 Issue/PR 贡献新的工具模版或优化建议！
+
+### 深度测评
+
+侧边栏「深度测评」提供独立于聊天的长程任务：动态规划、有限并发执行、证据回流、审批、暂停恢复与报告。使用方法、权限及预算说明见 [深度测评文档](docs/DEEP_ASSESSMENTS.md)。
