@@ -2487,9 +2487,9 @@ type PostRetrieveConfig struct {
 	MaxContextTokens int `yaml:"max_context_tokens,omitempty" json:"max_context_tokens,omitempty"`
 }
 
-// MultiQueryConfig Agent MultiQuery 查询改写（始终启用，无关闭开关）。
+// MultiQueryConfig 配置知识库查询改写。
 type MultiQueryConfig struct {
-	// MaxQueries LLM 生成的检索变体上限（含原问语义覆盖）；0 表示默认 4。
+	// MaxQueries 包含原查询的检索次数上限。1 跳过改写，0 使用默认值 4。
 	MaxQueries int `yaml:"max_queries,omitempty" json:"max_queries,omitempty"`
 }
 

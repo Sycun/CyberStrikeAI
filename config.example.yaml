@@ -469,9 +469,9 @@ knowledge:
   retrieval:
     top_k: 5 # 检索返回的Top-K结果数量
     similarity_threshold: 0.4 # 余弦相似度阈值（0-1），低于此值的结果将被过滤
-    # Pi MultiQuery：LLM 改写查询后多路向量检索再融合（始终启用）
+    # Pi MultiQuery：LLM 改写查询后多路向量检索再融合
     multi_query:
-      max_queries: 4 # 改写变体上限（含语义覆盖）；建议 3~4
+      max_queries: 4 # 含原查询的检索次数上限，设为 1 时直接向量检索
     # 精排（始终启用）：dashscope 用 gte-rerank；其他 OpenAI 兼容端点走 /v1/rerank
     rerank:
       provider: "" # 空=按 base_url 推断：dashscope | cohere
