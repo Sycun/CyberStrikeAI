@@ -114,6 +114,58 @@ func piTestAgent(cfg *config.Config, handler mcp.ToolHandler) *agent.Agent {
 	return agent.NewAgent(&cfg.OpenAI, &cfg.Agent, srv, nil, zap.NewNop(), 8)
 }
 
+func TestPiSingleChatAcceptsParameterlessTaskListSchema(t *testing.T) {
+	cfg := piTestConfig(t)
+	cfg.SkillsDir = t.TempDir()
+	cfg.MultiAgent.Runtime.PlantaskEnable = true
+	cfg.MultiAgent.Skills = config.AgentSkillsConfig{FilesystemTools: new(bool)}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Tools []struct {
+				Function struct {
+					Name       string         `json:"name"`
+					Parameters map[string]any `json:"parameters"`
+				} `json:"function"`
+			} `json:"tools"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, tool := range body.Tools {
+			if tool.Function.Name != "TaskList" {
+				continue
+			}
+			if required, exists := tool.Function.Parameters["required"]; exists {
+				if names, ok := required.([]any); !ok || len(names) != 0 {
+					http.Error(w, "Invalid schema for function 'TaskList': expected an array of required parameters", http.StatusBadRequest)
+					return
+				}
+			}
+			piReply(w, "", "", nil, "hello")
+			return
+		}
+		t.Error("TaskList is missing from the request")
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+	cfg.OpenAI.BaseURL = server.URL + "/v1"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ag := piTestAgent(cfg, func(context.Context, map[string]any) (*mcp.ToolResult, error) {
+		t.Error("plain chat must not execute the fixture tool")
+		return nil, fmt.Errorf("unexpected tool call")
+	})
+	res, err := RunSingleAgent(ctx, cfg, &cfg.MultiAgent, ag, nil, zap.NewNop(), "schema-fixture", "", "say hello", nil, []string{"echo"}, nil, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RuntimeStatus != "completed" || res.Response != "hello" {
+		t.Fatalf("expected a chat reply, got %+v", res)
+	}
+}
+
 func TestPiSinglePreservesHITLAndExecutionEvidence(t *testing.T) {
 	cfg := piTestConfig(t)
 	var calls atomic.Int32

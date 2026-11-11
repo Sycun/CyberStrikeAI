@@ -55,7 +55,12 @@ func runPiSingle(ctx context.Context, cfg *config.Config, ag *agent.Agent, db *d
 }
 
 func piToolSchema(properties map[string]any, required ...string) map[string]any {
-	return map[string]any{"type": "object", "properties": properties, "required": required}
+	schema := map[string]any{"type": "object", "properties": properties}
+	// A nil slice would encode as null, which is not a valid required list.
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
 }
 
 func runPiMulti(ctx context.Context, cfg *config.Config, ma *config.MultiAgentConfig, ag *agent.Agent, db *database.DB, logger *zap.Logger,
