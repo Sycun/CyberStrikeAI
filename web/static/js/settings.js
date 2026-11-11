@@ -883,13 +883,11 @@ async function loadConfig(loadTools = true, options = {}) {
         }
         
         // 填充Agent配置
-        const runtimeConfig = currentConfig.agent_runtime || {};
-        const runtimeEngineEl = document.getElementById('agent-runtime-engine');
-        if (runtimeEngineEl) runtimeEngineEl.value = runtimeConfig.engine || 'pi';
+        const promptProfile = currentConfig.agent_runtime?.purge;
         const purgeEnabledEl = document.getElementById('agent-purge-enabled');
-        if (purgeEnabledEl) purgeEnabledEl.checked = runtimeConfig.purge?.enabled !== false;
+        if (purgeEnabledEl) purgeEnabledEl.checked = promptProfile?.enabled !== false;
         const purgeInstructionEl = document.getElementById('agent-purge-instruction');
-        if (purgeInstructionEl) purgeInstructionEl.value = runtimeConfig.purge?.instruction || '';
+        if (purgeInstructionEl) purgeInstructionEl.value = promptProfile?.instruction || '';
         document.getElementById('agent-max-iterations').value = currentConfig.agent.max_iterations || 30;
         const toolWaitTimeoutEl = document.getElementById('agent-tool-wait-timeout-seconds');
         if (toolWaitTimeoutEl) {
@@ -2084,10 +2082,7 @@ async function applySettings() {
                 audit_agent_prompt_review_edit: document.getElementById('hitl-audit-agent-prompt-review-edit-settings')?.value.trim() || ''
             },
             agent_runtime: {
-                ...(currentConfig.agent_runtime || {}),
-                engine: document.getElementById('agent-runtime-engine')?.value || currentConfig.agent_runtime?.engine || 'pi',
                 purge: {
-                    ...(currentConfig.agent_runtime?.purge || {}),
                     enabled: document.getElementById('agent-purge-enabled')?.checked ?? currentConfig.agent_runtime?.purge?.enabled ?? true,
                     instruction: document.getElementById('agent-purge-instruction')?.value ?? currentConfig.agent_runtime?.purge?.instruction ?? ''
                 }
