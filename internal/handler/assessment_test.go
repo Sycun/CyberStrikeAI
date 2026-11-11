@@ -61,6 +61,7 @@ func assessmentAPI(t *testing.T) (*AssessmentHandler, *security.Session, func(st
 	router.POST("/api/assessments/:id/control/:action", h.Control)
 	router.POST("/api/assessments/:id/steps/:stepId/decision", h.Decision)
 	router.POST("/api/assessments/:id/publish", h.Publish)
+	router.POST("/api/assessments/:id/questions/:questionId/answer", h.Answer)
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(method, path, strings.NewReader(body))

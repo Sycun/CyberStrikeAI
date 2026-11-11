@@ -36,3 +36,5 @@
 - [Testing](testing.md) · [Contributing](contributing-guide.md) · [Release Process](release-process.md)
 
 - [Pi runtime and migration](pi-runtime.md)
+
+- [Delegated work and owner questions](task-delegation.md)

@@ -75,11 +75,18 @@ func (e *Engine) StartAs(id, actorID string) error {
 		return err
 	}
 	if err = e.Store.Change(id, "", "start", "Assessment started", func(t *Task) error {
-		if t.Status != "draft" && t.Status != "paused" && t.Status != "blocked" && t.Status != "partial" && t.Status != "failed" {
+		if t.Status != "draft" && t.Status != "paused" && t.Status != "blocked" && t.Status != "partial" && t.Status != "failed" && t.Status != "awaiting_input" {
 			return ErrConflict
 		}
 		if t.Tokens+t.Reserved >= t.TokenBudget || t.RemainingSeconds <= 0 || t.Rounds >= t.MaxRounds {
 			return ErrBudget
+		}
+		if taskQuestionPending(t) {
+			return ErrConflict
+		}
+		t.ResumeRequested = false
+		if t.Intake != nil && t.Intake.State == "pending" {
+			t.Phase = "understanding"
 		}
 		t.Status = "running"
 		for _, s := range t.Steps {
@@ -116,8 +123,11 @@ func (e *Engine) StartAs(id, actorID string) error {
 			closeAdmission()
 			e.mu.Lock()
 			delete(e.active, id)
-			close(run.done)
 			e.mu.Unlock()
+			defer close(run.done)
+			if err := e.ResumeAnsweredTasks(); err != nil {
+				e.log.Info("answered assessment awaits resume", zap.String("id", id), zap.Error(err))
+			}
 		}()
 		// Isolate and reap local subprocesses even if an MCP tool detaches cancellation.
 		err := func() (err error) {
@@ -126,6 +136,9 @@ func (e *Engine) StartAs(id, actorID string) error {
 					err = fmt.Errorf("assessment runtime panic: %v", p)
 				}
 			}()
+			if err := e.understand(ctx, id); err != nil {
+				return err
+			}
 			return e.run(ctx, id)
 		}()
 		workers.Cancel()
@@ -172,6 +185,9 @@ func (e *Engine) StartAs(id, actorID string) error {
 					interrupt(s, "Execution interrupted; review logs before explicit retry.")
 				}
 			}
+			if t.Terminal() || t.Status == "partial" || (t.Status == "awaiting_input" && !hasLiveWork(t)) {
+				t.ResumeRequested = false
+			}
 			return nil
 		})
 		if changeErr != nil {
@@ -190,6 +206,7 @@ func (e *Engine) Control(id, action string) error {
 		if t.Terminal() {
 			return ErrConflict
 		}
+		t.ResumeRequested = false
 		if action == "pause" {
 			if e.active[id] != nil {
 				t.Status = "pausing"
@@ -307,6 +324,9 @@ func hasLiveWork(t *Task) bool {
 }
 func planningRevision(t *Task) string {
 	var b strings.Builder
+	for _, q := range t.Questions {
+		fmt.Fprintf(&b, "question:%s:%s;", q.ID, q.Status)
+	}
 	for _, s := range t.Steps {
 		if s.Status == "running" && len(s.Evidence) > 0 && s.Checkpoint != "" {
 			fmt.Fprintf(&b, "checkpoint:%s:%d:%s;", s.ID, len(s.Evidence), s.Checkpoint)
@@ -367,7 +387,7 @@ func (e *Engine) run(ctx context.Context, id string) error {
 			if len(active) >= t.Concurrency {
 				break
 			}
-			if s.Status != "pending" || active[s.ID] || !dependenciesReady(t, s) {
+			if taskQuestionPending(t) || s.Status != "pending" || active[s.ID] || !dependenciesReady(t, s) {
 				continue
 			}
 			active[s.ID] = true
@@ -382,7 +402,7 @@ func (e *Engine) run(ctx context.Context, id string) error {
 		}
 		revision := planningRevision(t)
 		// Only external progress wakes planning. Approval polling never spends tokens.
-		if !planning && len(active) < t.Concurrency && !waiting && (revision != lastPlan) {
+		if !planning && !pendingQuestions(t) && len(active) < t.Concurrency && !waiting && (revision != lastPlan) {
 			if t.Rounds >= t.MaxRounds || len(t.Steps) >= MaxSteps {
 				if len(active) == 0 {
 					return ErrBudget
@@ -406,6 +426,24 @@ func (e *Engine) run(ctx context.Context, id string) error {
 			}
 		}
 		if len(active) == 0 && !waiting && !planning {
+			if pendingQuestions(t) {
+				err = e.Store.Change(id, "", "owner_wait", "Waiting for owner input", func(current *Task) error {
+					if !pendingQuestions(current) || (!taskQuestionPending(current) && hasLiveWork(current)) {
+						return ErrConflict
+					}
+					if current.Status != "running" && current.Status != "awaiting_approval" {
+						return ErrConflict
+					}
+					current.Status = "awaiting_input"
+					current.Reason = "owner_input_required"
+					settleTime(current)
+					return nil
+				})
+				if errors.Is(err, ErrConflict) {
+					continue
+				}
+				return err
+			}
 			return nil
 		}
 		if waiting && len(active) == 0 && t.Status != "awaiting_approval" {
@@ -542,10 +580,10 @@ func (e *Engine) plan(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	msgs := []agent.ChatMessage{{Role: "system", Content: `You plan an authorized security assessment. You have only a task-scoped memory reader, not external execution tools. Search and read worker observations when a direction is blocked or detailed evidence is needed. Use only recorded facts; never claim a test ran without tool evidence. Respect scope and exclusions. Do not repeat completed/blocked directions under new keys. Propose small concrete tasks, at most 4 per round. Dependencies reference earlier step keys only. Maintain a persistent strategy describing the remaining roadmap and dependencies. Address gaps from previous_review before proposing completion; reuse completed observations instead of blindly repeating them. Retire obsolete pending or blocked steps with an explicit reason when an alternative route supersedes them. Never retire running, awaiting-approval or completed steps. Do not reissue an interrupted operation; propose a distinct alternative or leave the gap for explicit human retry. Stop with blocked when no useful untried direction remains. completed means the stated goal is supported by recorded execution evidence, not merely that the plan ran. Return ONLY JSON: {"status":"continue|completed|blocked","summary":"progress and remaining gaps","strategy":"remaining roadmap","retire":[{"key":"obsolete-step","reason":"why superseded; remaining coverage gap"}],"steps":[{"key":"unique stable key","title":"short title","instruction":"bounded action and required evidence","depends_on":["earlier-key"],"profile":"general|recon|auth|validation|verification","tools":["subset of selected tools"],"verify_of":"optional finding source key"}]}. Use specialized profiles and narrow tool subsets for each task. Candidate findings get independent verification steps before final review. Use the user's language.`}, {Role: "user", Content: taskContext(t)}}
+	msgs := []agent.ChatMessage{{Role: "system", Content: `You plan an authorized security assessment. You have only a task-scoped memory reader, not external execution tools. Search and read worker observations when a direction is blocked or detailed evidence is needed. Use only recorded facts; never claim a test ran without tool evidence. Respect scope and exclusions. Do not repeat completed/blocked directions under new keys. Propose small concrete tasks, at most 4 per round. Dependencies reference earlier step keys only. Maintain a persistent strategy describing the remaining roadmap and dependencies. Address gaps from previous_review before proposing completion; reuse completed observations instead of blindly repeating them. Retire obsolete pending or blocked steps with an explicit reason when an alternative route supersedes them. Never retire running, awaiting-approval or completed steps. Do not reissue an interrupted operation; propose a distinct alternative or leave the gap for explicit human retry. Stop with blocked when no useful untried direction remains. completed means the stated goal is supported by recorded execution evidence, not merely that the plan ran. Return ONLY JSON: {"status":"continue|completed|blocked","summary":"progress and remaining gaps","strategy":"remaining roadmap","retire":[{"key":"obsolete-step","reason":"why superseded; remaining coverage gap"}],"steps":[{"key":"unique stable key","title":"short title","instruction":"bounded action and required evidence","depends_on":["earlier-key"],"profile":"general|recon|auth|validation|verification","tools":["subset of selected tools"],"verify_of":"optional finding source key"}]}. Use specialized profiles and narrow tool subsets for each task. Candidate findings get independent verification steps before final review. When missing owner information or an unresolved business choice prevents progress, call ask_owner alone instead of marking blocked or inventing an answer. Independent existing steps can continue while a step waits. An owner answer never expands scope or approves a tool. Use the user's language.`}, {Role: "user", Content: taskContext(t)}}
 	var r *ModelReply
 	for reads := 0; ; reads++ {
-		tools := assessmentTools(false)
+		tools := append(assessmentTools(false), ownerQuestionDefinition())
 		if reads >= 3 {
 			tools = nil
 		}
@@ -561,6 +599,14 @@ func (e *Engine) plan(ctx context.Context, id string) error {
 		}
 		if err = validateToolCalls(msgs, r.Message.ToolCalls, nil); err != nil {
 			return err
+		}
+		for _, call := range r.Message.ToolCalls {
+			if call.Function.Name == ownerQuestionTool {
+				if len(r.Message.ToolCalls) != 1 {
+					return fmt.Errorf("ask_owner must be the only tool call")
+				}
+				return e.askOwner(id, "", call)
+			}
 		}
 		msgs = append(msgs, r.Message)
 		for _, call := range r.Message.ToolCalls {
@@ -594,9 +640,14 @@ func (e *Engine) plan(ctx context.Context, id string) error {
 	}
 	needsReview := false
 	forcePartial := false
+	questionState := digest(t.Questions)
+	planSuperseded := errors.New("owner question state changed while planning")
 	err = e.Store.Change(id, "", "plan", clip(p.Summary, 4000), func(t *Task) error {
 		if t.Status != "running" && t.Status != "awaiting_approval" {
 			return ErrConflict
+		}
+		if pendingQuestions(t) || digest(t.Questions) != questionState {
+			return planSuperseded
 		}
 		t.Rounds++
 		t.Summary = clip(p.Summary, 8000)
@@ -692,6 +743,9 @@ func (e *Engine) plan(ctx context.Context, id string) error {
 		}
 		return nil
 	})
+	if errors.Is(err, planSuperseded) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

@@ -31,7 +31,7 @@
         graph.destroy(); graph = null;
     }
     function shell() {
-        root().innerHTML = '<div class="assessment-header"><div><h1>' + esc(tr('title')) + '</h1><p>' + esc(tr('subtitle')) + '</p></div><div class="assessment-actions">' + button('refresh', tr('refresh')) + button('new', tr('new'), 'assessment:write') + '</div></div>' +
+        root().innerHTML = '<div class="assessment-header"><div><h1>' + esc(tr('title')) + '</h1><p>' + esc(tr('subtitle')) + '</p></div><div class="assessment-actions">' + button('refresh', tr('refresh')) + button('delegate', tr('delegate'), 'assessment:write', !can('agent:execute') ? ' disabled' : '') + button('new', tr('new'), 'assessment:write') + '</div></div>' +
             '<p id="assessment-message" role="status" aria-live="polite"></p><div class="assessment-layout"><aside class="assessment-list"><h2>' + esc(tr('tasks')) + '</h2><div id="assessment-task-list"></div><div class="assessment-actions">' + button('previous', tr('previous')) + button('next', tr('next')) + '</div></aside><section id="assessment-detail" class="assessment-detail"></section></div>';
     }
     function list() {
@@ -41,6 +41,8 @@
     }
     function detail() {
         const pickerFocused = document.activeElement?.id === 'assessment-dag-picker';
+        const answerFocus = document.activeElement?.dataset?.ownerQuestion;
+        const answerPosition = answerFocus ? document.activeElement.selectionStart : 0;
         destroyGraph();
         const el = document.getElementById('assessment-detail'); if (!el) return;
         if (!task) { el.innerHTML = '<div class="assessment-empty"><h2>' + esc(tr('welcome')) + '</h2><p>' + esc(tr('welcomeBody')) + '</p></div>'; return; }
@@ -50,13 +52,13 @@
         let controls = '';
         if (resumable && can('agent:execute')) controls += button('start', tr(task.status === 'draft' ? 'start' : 'resume'), 'assessment:write');
         if (['running', 'awaiting_approval'].includes(task.status)) controls += button('pause', tr('pause'), 'assessment:write');
-        if (!['completed', 'stopped', 'exhausted', 'failed'].includes(task.status)) controls += button('stop', tr('stop'), 'assessment:write');
+        if (!['completed', 'answered', 'stopped', 'exhausted', 'failed'].includes(task.status)) controls += button('stop', tr('stop'), 'assessment:write');
         controls += button('report', tr('report'), 'assessment:read') + button('metrics', tr('metrics'), 'assessment:read');
         if (['draft','paused','blocked','partial','failed','exhausted'].includes(task.status)) controls += button('budget', tr('adjustBudget'), 'assessment:write');
         if (!active) controls += button('delete', tr('delete'), 'assessment:delete');
         el.innerHTML = '<div class="assessment-detail-heading"><div><h2>' + esc(task.name) + '</h2>' + badge(task.status) + '</div><div class="assessment-actions">' + controls + '</div></div>' +
             '<div class="assessment-metrics"><div><strong>' + task.steps.filter(s => s.status === 'completed').length + ' / ' + task.steps.filter(s => s.status !== 'skipped').length + '</strong><span>' + esc(tr('steps')) + (task.steps.some(s => s.status === 'skipped') ? ' · ' + esc(tr('status.skipped')) + ' ' + task.steps.filter(s => s.status === 'skipped').length : '') + '</span></div><div><strong>' + task.tokens.toLocaleString() + ' / ' + task.token_budget.toLocaleString() + '</strong><span>' + esc(tr('tokens')) + '</span></div><div><strong>' + task.rounds + ' / ' + task.max_rounds + '</strong><span>' + esc(tr('rounds')) + '</span></div><div><strong>' + Math.max(0, Math.ceil((task.deadline ? task.deadline - Date.now() / 1000 : task.remaining_seconds) / 60)) + '</strong><span>' + esc(tr('minutes')) + '</span></div></div>' +
-            '<div class="assessment-tabs" role="tablist">' + ['overview', 'dag', 'plan', 'review', 'chain', 'evidence', 'logs'].map(id => '<button role="tab" aria-selected="' + (tab === id) + '" class="' + (tab === id ? 'active' : '') + '" data-assessment-action="tab" data-tab="' + id + '">' + esc(tr(id)) + '</button>').join('') + '</div><div id="assessment-tab" role="tabpanel"></div>';
+            delegationPanel(task) + '<div class="assessment-tabs" role="tablist">' + ['overview', 'dag', 'plan', 'review', 'chain', 'evidence', 'logs'].map(id => '<button role="tab" aria-selected="' + (tab === id) + '" class="' + (tab === id ? 'active' : '') + '" data-assessment-action="tab" data-tab="' + id + '">' + esc(tr(id)) + '</button>').join('') + '</div><div id="assessment-tab" role="tabpanel"></div>';
         const body = document.getElementById('assessment-tab');
         if (tab === 'overview') {
             body.innerHTML = ['goal', 'scope', 'material', 'strategy', 'summary'].map(key => '<section class="assessment-card"><h3>' + esc(tr(key)) + '</h3><div class="assessment-text">' + esc(task[key] || tr('none')) + '</div></section>').join('') +
@@ -70,7 +72,7 @@
         } else if (tab === 'plan') {
             body.innerHTML = task.steps.map(s => '<article class="assessment-card"><div class="assessment-step-title"><h3>' + esc(s.title) + '</h3>' + badge(s.status) + '</div><small>' + esc(s.key) + (s.depends_on && s.depends_on.length ? ' ← ' + esc(s.depends_on.join(', ')) : '') + '</small><p class="assessment-text">' + esc(s.instruction) + '</p><p class="assessment-text">' + esc(s.result) + '</p>' + (s.checkpoint ? '<p class="assessment-text">' + esc(tr('checkpoint')) + ': ' + esc(s.checkpoint) + '</p>' : '') + (s.retired_reason ? '<p class="assessment-text">' + esc(tr('retiredReason')) + ': ' + esc(s.retired_reason) + '</p>' : '') +
                 (s.pending ? '<div class="assessment-approval"><h4>' + esc(tr('approval')) + '</h4><p>' + esc(tr('approvalHint')) + '</p><strong>' + esc(s.pending.function.name) + '</strong><pre>' + esc(JSON.stringify(s.pending.function.arguments, null, 2)) + '</pre>' +
-                    (s.status === 'awaiting_approval' && !['completed', 'stopped', 'exhausted', 'failed'].includes(task.status) ? button('approve', tr('approve'), 'hitl:write', 'data-step="' + esc(s.id) + '" data-approval="' + esc(s.approval_id) + '"' + (!can('assessment:write') ? ' disabled' : '')) + button('deny', tr('deny'), 'hitl:write', 'data-step="' + esc(s.id) + '" data-approval="' + esc(s.approval_id) + '"' + (!can('assessment:write') ? ' disabled' : '')) : '<p>' + esc(tr('approved')) + '</p>') + '</div>' : '') +
+                    (s.status === 'awaiting_approval' && !['completed', 'answered', 'stopped', 'exhausted', 'failed'].includes(task.status) ? button('approve', tr('approve'), 'hitl:write', 'data-step="' + esc(s.id) + '" data-approval="' + esc(s.approval_id) + '"' + (!can('assessment:write') ? ' disabled' : '')) + button('deny', tr('deny'), 'hitl:write', 'data-step="' + esc(s.id) + '" data-approval="' + esc(s.approval_id) + '"' + (!can('assessment:write') ? ' disabled' : '')) : '<p>' + esc(tr('approved')) + '</p>') + '</div>' : '') +
                 (s.status === 'blocked' && resumable ? button('retry', tr('retry'), 'assessment:write', 'data-step="' + esc(s.id) + '"') : '') + '</article>').join('') || '<p class="assessment-empty">' + esc(tr('noSteps')) + '</p>';
         } else if (tab === 'evidence') {
             body.innerHTML = '<p>' + esc(tr('candidateHint')) + '</p>' + task.steps.map(s => (s.evidence || []).map((v, i) => '<article class="assessment-card"><small>' + esc(s.title) + ' · ' + esc(v.kind) + '</small><h3>' + esc(v.title) + '</h3><p class="assessment-text">' + esc(v.detail) + '</p><p class="assessment-text">' + esc((v.execution_ids || []).join('\n')) + '</p>' +
@@ -81,6 +83,31 @@
             body.innerHTML = '<p>' + esc(tr('chainHint')) + '</p><div id="assessment-graph" aria-label="' + esc(tr('chain')) + '"></div><p id="assessment-graph-selection" class="assessment-text"></p>';
             renderGraph();
         }
+        if (answerFocus) {
+            const field = document.getElementById('assessment-answer-' + answerFocus);
+            if (field) { field.focus({preventScroll: true}); field.setSelectionRange(answerPosition, answerPosition); }
+        }
+    }
+    const answerDrafts = new Map();
+    function onOwnerInput(ev) {
+        const qid = ev.target?.dataset?.ownerQuestion;
+        if (qid && task) answerDrafts.set(task.id + ':' + qid, ev.target.value);
+    }
+    function delegationPanel(current) {
+        const questions = current.questions || [], reports = current.reports || [];
+        const questionHTML = questions.map(q => {
+            const pending = q.status === 'pending';
+            const content = '<p class="assessment-text">' + esc(q.reason) + '</p>' +
+                (q.recommendation ? '<p class="assessment-text">' + esc(tr('recommendation')) + ': ' + esc(q.recommendation) + '</p>' : '') +
+                (pending ? '<div class="assessment-actions">' + (q.options || []).map(option => button('choose-answer', option, 'assessment:write', 'data-question="' + esc(q.id) + '" data-option="' + esc(option) + '"')).join('') + '</div><label class="assessment-field"><span>' + esc(tr('ownerAnswer')) + '</span><textarea id="assessment-answer-' + esc(q.id) + '" data-owner-question="' + esc(q.id) + '" maxlength="8000" rows="3">' + esc(answerDrafts.get(current.id + ':' + q.id) || '') + '</textarea></label>' + button('answer-owner', tr('answerAndContinue'), 'assessment:write', 'data-question="' + esc(q.id) + '" data-revision="' + q.revision + '"' + (!can('agent:execute') ? ' disabled' : '')) : '<p class="assessment-text">' + esc(tr('ownerAnswer')) + ': ' + esc(q.answer || tr('supersededQuestion')) + '</p>');
+            return pending ? '<article class="assessment-card assessment-owner-question"><h3>' + esc(tr('needsOwner')) + '</h3><strong>' + esc(q.question) + '</strong>' + content + '</article>' : '<details class="assessment-card"><summary>' + esc(q.question) + '</summary>' + content + '</details>';
+        }).join('');
+        const recent = reports.slice(-3).reverse().map((r, index) => '<details class="assessment-card"' + (index === 0 ? ' open' : '') + '><summary>' + esc(tr('stageReport')) + ' · ' + esc(new Date(r.created_at).toLocaleString()) + '</summary>' +
+            ['completed', 'remaining'].map(key => '<h4>' + esc(tr(key === 'completed' ? 'workCompleted' : 'workRemaining')) + '</h4><ul>' + (r[key] || []).map(item => '<li>' + esc(item.title) + ' · ' + esc(tr('status.' + item.status)) + (item.summary ? '<p class="assessment-text">' + esc(item.summary) + '</p>' : '') + ((item.execution_ids || []).length ? '<small>' + esc(tr('executionRefs')) + ': ' + esc(item.execution_ids.join(', ')) + '</small>' : '') + '</li>').join('') + '</ul>').join('') +
+            '<h4>' + esc(tr('workBlockers')) + '</h4><ul>' + (r.blockers || []).map(b => '<li>' + esc(b) + '</li>').join('') + '</ul><p>' + esc(tr('nextAction')) + ': ' + esc(tr('nextActionValues.' + r.next_action)) + '</p></details>').join('');
+        const intake = current.intake;
+        const understanding = intake ? '<details class="assessment-card"><summary>' + esc(tr('taskUnderstanding')) + '</summary><p class="assessment-text">' + esc(intake.message) + '</p>' + ['deliverables', 'constraints', 'assumptions', 'missing_fields'].map(key => '<h4>' + esc(tr(key)) + '</h4><ul>' + (intake[key] || []).map(v => '<li>' + esc(v) + '</li>').join('') + '</ul>').join('') + (intake.reply ? '<p class="assessment-text">' + esc(intake.reply) + '</p>' : '') + '</details>' : '';
+        return '<div class="assessment-delegation">' + questionHTML + understanding + recent + '</div>';
     }
     // Longest-path ranks keep every dependency left of its successor, including
     // multi-parent joins. No external layout plugin or CDN is required.
@@ -155,7 +182,7 @@
             { selector: 'node[kind="goal"]', style: { 'background-color': '#4f46e5', color: '#fff', 'border-color': '#4f46e5', width: 140, height: 52 } },
             { selector: 'node[kind="running"]', style: { 'border-color': '#6366f1', 'border-width': 3 } },
             { selector: 'node[kind="completed"]', style: { 'border-color': '#0d9488', 'border-width': 2 } },
-            { selector: 'node[kind="awaiting_approval"], node[kind="blocked"]', style: { 'border-color': '#d97706', 'border-width': 2 } },
+            { selector: 'node[kind="awaiting_approval"], node[kind="awaiting_input"], node[kind="blocked"]', style: { 'border-color': '#d97706', 'border-width': 2 } },
             { selector: 'node[kind="failed"]', style: { 'border-color': '#dc2626', 'border-width': 2 } },
             { selector: 'node[kind="skipped"]', style: { 'border-style': 'dashed', 'background-opacity': .6 } },
             { selector: 'edge', style: { width: 1.5, 'line-color': color('--text-muted', '#94a3b8'), 'target-arrow-color': color('--text-muted', '#94a3b8'), 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'arrow-scale': .85 } },
@@ -278,7 +305,7 @@
         finally { loading = false; }
     }
     let createDialogLoading = false;
-    async function createDialog() {
+    async function createDialog(natural = false) {
         if (createDialogLoading || document.getElementById('assessment-create')?.open) return;
         createDialogLoading = true;
         const version = epoch;
@@ -298,12 +325,12 @@
             const modelOptions = (inherit) => (inherit ? '<option value="">' + esc(tr('inheritModel')) + '</option>' : '') + options.models.map(m => '<option value="' + esc(m.id) + '"' + (!inherit && m.default ? ' selected' : '') + '>' + esc((m.name || m.id || tr('default')) + (m.model ? ' · ' + m.model : '')) + '</option>').join('');
             const closeIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>';
             dialog.innerHTML = '<form id="assessment-create-form">' +
-                '<header class="assessment-dialog-header"><div><h2 id="assessment-create-title">' + esc(tr('new')) + '</h2><p id="assessment-create-intro">' + esc(tr('createIntro')) + '</p></div><button type="button" class="assessment-icon-button" data-assessment-action="cancel-create" aria-label="' + esc(tr('cancel')) + '">' + closeIcon + '</button></header>' +
+                '<header class="assessment-dialog-header"><div><h2 id="assessment-create-title">' + esc(tr(natural ? 'delegate' : 'new')) + '</h2><p id="assessment-create-intro">' + esc(tr(natural ? 'delegateIntro' : 'createIntro')) + '</p></div><button type="button" class="assessment-icon-button" data-assessment-action="cancel-create" aria-label="' + esc(tr('cancel')) + '">' + closeIcon + '</button></header>' +
                 '<div class="assessment-create-scroll"><div class="assessment-create-grid"><div class="assessment-create-main">' +
                 '<section class="assessment-create-section"><h3>' + esc(tr('taskBasics')) + '</h3><div class="assessment-form-grid">' +
-                '<label class="assessment-field"><span>' + esc(tr('name')) + required + '</span><input name="name" type="text" required maxlength="200" placeholder="' + esc(tr('namePlaceholder')) + '" autofocus></label>' +
+                (natural ? '' : '<label class="assessment-field"><span>' + esc(tr('name')) + required + '</span><input name="name" type="text" required maxlength="200" placeholder="' + esc(tr('namePlaceholder')) + '" autofocus></label>') +
                 '<label class="assessment-field"><span>' + esc(tr('project')) + '<small>' + esc(tr('optional')) + '</small></span><select name="project_id"><option value="">' + esc(tr('noProject')) + '</option>' + (options.projects || []).map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('') + '</select></label></div>' +
-                textarea('goal', 3, true, 'goalPlaceholder') + textarea('scope', 3, true, 'scopePlaceholder') +
+                (natural ? textarea('request', 5, true, 'requestPlaceholder') : textarea('goal', 3, true, 'goalPlaceholder') + textarea('scope', 3, true, 'scopePlaceholder')) +
                 '<details class="assessment-disclosure"><summary>' + esc(tr('materialsAndCriteria')) + '<span>' + esc(tr('optional')) + '</span></summary><div class="assessment-disclosure-body">' + textarea('material', 2, false, 'materialPlaceholder') + textarea('criteria', 2, false, 'criteriaPlaceholder') + '</div></details></section>' +
                 '<section class="assessment-create-section"><div class="assessment-section-heading"><h3>' + esc(tr('tools')) + required + '</h3><span id="assessment-tools-count" class="assessment-selection-count" role="status"></span></div>' +
                 '<div class="assessment-tool-toolbar"><input type="search" id="assessment-tools-search" placeholder="' + esc(tr('searchTools')) + '" aria-label="' + esc(tr('searchTools')) + '"><button type="button" class="btn-secondary btn-small" data-tool-selection="all">' + esc(tr('selectAllTools')) + '</button><button type="button" class="btn-secondary btn-small" data-tool-selection="visible" hidden>' + esc(tr('selectVisible')) + '</button><button type="button" class="assessment-text-button" data-tool-selection="clear">' + esc(tr('clearSelection')) + '</button></div>' +
@@ -314,7 +341,7 @@
                 '<details class="assessment-disclosure"><summary>' + esc(tr('advancedSettings')) + '</summary><div class="assessment-disclosure-body"><label class="assessment-field"><span>' + esc(tr('reviewModel')) + '</span><select name="reviewer_model">' + modelOptions(true) + '</select></label>' +
                 ['general', 'recon', 'auth', 'validation', 'verification'].map(p => '<label class="assessment-field"><span>' + esc(tr('profiles.' + p)) + '</span><select name="worker_model_' + p + '">' + modelOptions(true) + '</select></label>').join('') +
                 '<label class="assessment-field"><span>' + esc(tr('selectedSkills')) + '</span><select name="skill_ids" multiple size="4">' + (options.skills || []).map(id => '<option value="' + esc(id) + '">' + esc(id) + '</option>').join('') + '</select></label>' + (!(options.skills || []).length ? '<p class="assessment-inline-hint">' + esc(tr('noSkillsAvailable')) + '</p>' : '') + '</div></details></aside></div></div>' +
-                '<footer class="assessment-dialog-footer"><div class="assessment-footer-copy"><p id="assessment-create-error" role="alert"></p><p>' + esc(tr('draftHint')) + '</p></div><div class="assessment-actions"><button type="button" class="btn-secondary" data-assessment-action="cancel-create">' + esc(tr('cancel')) + '</button><button class="btn-primary" type="submit">' + esc(tr('createDraft')) + '</button></div></footer></form>';
+                '<footer class="assessment-dialog-footer"><div class="assessment-footer-copy"><p id="assessment-create-error" role="alert"></p><p>' + esc(tr(natural ? 'delegateHint' : 'draftHint')) + '</p></div><div class="assessment-actions"><button type="button" class="btn-secondary" data-assessment-action="cancel-create">' + esc(tr('cancel')) + '</button><button class="btn-primary" type="submit">' + esc(tr(natural ? 'submitWork' : 'createDraft')) + '</button></div></footer></form>';
             document.body.appendChild(dialog);
             dialog.addEventListener('close', () => dialog.remove());
             dialog.addEventListener('click', onClick);
@@ -359,6 +386,7 @@
                 error.textContent = '';
                 const data = new FormData(ev.target), body = Object.fromEntries(data.entries());
                 body.tools = data.getAll('tools');
+                if (natural) body.auto_start = true;
                 if (!body.tools.length || body.tools.length > 100) { error.textContent = tr('chooseTools'); dialog.querySelector('#assessment-tools-search').focus(); return; }
                 body.criteria = String(data.get('criteria') || '').split(/\n/).map(s => s.trim()).filter(Boolean);
                 body.skill_ids = data.getAll('skill_ids');
@@ -375,6 +403,7 @@
                     events = []; after = 0; task = created.assessment; tab = 'overview';
                     dialog.close();
                     await refresh(true);
+                    if (created.start_error) message(created.start_error, true);
                 } catch (err) { error.textContent = err.message; submit.disabled = false; }
             });
             updateSelection();
@@ -394,14 +423,27 @@
             if (action === 'select') { epoch++; selected = target.dataset.id; history.replaceState(null, '', '#assessments?task=' + encodeURIComponent(selected)); task = null; events = []; after = 0; delete root().dataset.updated; detail(); await refresh(true); return; }
             if (action === 'tab') { tab = target.dataset.tab; detail(); return; }
             if (action === 'refresh') { await refresh(true); return; }
-            if (action === 'new') { const label=target.textContent; target.disabled=true;target.textContent=tr('loadingOptions');try{await createDialog();}finally{target.textContent=label;target.disabled=false;}return; }
+            if (action === 'new' || action === 'delegate') { const label=target.textContent; target.disabled=true;target.textContent=tr('loadingOptions');try{await createDialog(action === 'delegate');}finally{target.textContent=label;target.disabled=false;}return; }
             if (action === 'cancel-budget') { document.getElementById('assessment-budget').remove(); return; }
             if (action === 'budget') { budgetDialog(); return; }
             if (action === 'cancel-create') { document.getElementById('assessment-create').close(); return; }
             if (action === 'next' || action === 'previous') { offset = Math.max(0, offset + (action === 'next' ? 50 : -50)); await refresh(true); return; }
             if (!id) return;
+            if (action === 'choose-answer') {
+                const field = document.getElementById('assessment-answer-' + target.dataset.question);
+                if (field) {field.value = target.dataset.option; answerDrafts.set(id + ':' + target.dataset.question, field.value);field.focus();} return;
+            }
+            let resumeError = '';
             target.disabled = true;
-            if (['start', 'pause', 'stop'].includes(action)) await api('/' + id + '/control/' + action, 'POST', {});
+            if (action === 'answer-owner') {
+                const qid = target.dataset.question;
+                const field = document.getElementById('assessment-answer-' + qid);
+                const answer = String(field?.value || '').trim();
+                if (!answer) throw new Error(tr('answerRequired'));
+                const result = await api('/' + id + '/questions/' + encodeURIComponent(qid) + '/answer', 'POST', {revision: Number(target.dataset.revision), answer});
+                answerDrafts.delete(id + ':' + qid); resumeError = result.resume_error || '';
+            }
+            else if (['start', 'pause', 'stop'].includes(action)) await api('/' + id + '/control/' + action, 'POST', {});
             else if (action === 'steer') await api('/' + id + '/control/steer', 'POST', { message: document.getElementById('assessment-guidance').value });
             else if (action === 'approve' || action === 'deny') await api('/' + id + '/steps/' + target.dataset.step + '/decision', 'POST', { approved: action === 'approve', approval_id: target.dataset.approval });
             else if (action === 'retry') { if (!window.confirm(tr('retryConfirm'))) return; await api('/' + id + '/steps/' + target.dataset.step + '/retry', 'POST', {}); }
@@ -412,12 +454,13 @@
                 const url = URL.createObjectURL(await response.blob()); const link = document.createElement('a'); link.href = url; link.download = 'assessment-' + id + (action === 'metrics' ? '-metrics.json' : '.md'); link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
             }
             await refresh(true);
+            if (resumeError) message(resumeError, true);
         } catch (err) { message(err.message, true); }
         finally { target.disabled = false; }
     }
     window.initAssessmentsPage = function () {
-        window.cleanupAssessmentsPage(); epoch++; const hash=window.location.hash.split('?'); if(hash[0]==='#assessments'){selected=new URLSearchParams(hash[1]||'').get('task')||selected;} if (!root()) return; shell(); root().addEventListener('click', onClick); refresh(true);
+        window.cleanupAssessmentsPage(); epoch++; const hash=window.location.hash.split('?'); if(hash[0]==='#assessments'){selected=new URLSearchParams(hash[1]||'').get('task')||selected;} if (!root()) return; shell(); root().addEventListener('click', onClick); root().addEventListener('input', onOwnerInput); refresh(true);
         timer = setInterval(() => { if (!document.hidden) refresh(false); }, 2500);
     };
-    window.cleanupAssessmentsPage = function () { if (timer) clearInterval(timer); timer = null; epoch++; destroyGraph(); const dialog=document.getElementById('assessment-create'); if(dialog) dialog.remove(); const budget=document.getElementById('assessment-budget');if(budget)budget.remove(); if (root()) root().removeEventListener('click', onClick); };
+    window.cleanupAssessmentsPage = function () { if (timer) clearInterval(timer); timer = null; epoch++; destroyGraph(); const dialog=document.getElementById('assessment-create'); if(dialog) dialog.remove(); const budget=document.getElementById('assessment-budget');if(budget)budget.remove(); if (root()) {root().removeEventListener('click', onClick);root().removeEventListener('input', onOwnerInput);} };
 })();
