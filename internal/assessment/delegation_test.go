@@ -318,3 +318,14 @@ func TestIntakePreservesExplicitScopeAndCriteria(t *testing.T) {
 		t.Fatal("model expanded explicit owner scope/criteria")
 	}
 }
+
+func TestIntakeLongChineseRequestProducesValidTitle(t *testing.T) {
+	task := &Task{Tools: []string{"inspect"}}
+	request := strings.Repeat("请整理现有材料并报告缺口。", 12)
+	if err := task.PrepareIntake(request); err != nil {
+		t.Fatal(err)
+	}
+	if len(task.Name) > 200 || task.Intake.Message != request {
+		t.Fatal("title truncation corrupted request")
+	}
+}

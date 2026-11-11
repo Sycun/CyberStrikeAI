@@ -147,7 +147,12 @@ func (t *Task) PrepareIntake(message string) error {
 		return fmt.Errorf("request must contain 1..12000 bytes")
 	}
 	if t.Name == "" {
-		t.Name = clip(message, 60)
+		title := []rune(message)
+		if len(title) > 60 {
+			t.Name = string(title[:60]) + "…"
+		} else {
+			t.Name = message
+		}
 	}
 	providedGoal, providedScope, providedCriteria := t.Goal, t.Scope, append([]string(nil), t.Criteria...)
 	if len(providedGoal) > 12000 || len(providedScope) > 12000 {
