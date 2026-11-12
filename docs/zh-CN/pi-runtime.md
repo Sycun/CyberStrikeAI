@@ -23,6 +23,10 @@ agent_runtime:
 
 `worker_path` 是管理员的显式覆盖，适合开发或独立打包。留空使用源码指纹校验后的构建包。
 
+源码安装拉取 Worker 修复后，请在该安装目录执行 `bash scripts/build-pi-runtime.sh` 再重启服务。如果设置了 `agent_runtime.worker_path`，请确认它指向新构建。保留原有会话文件：Worker 会在发送 OpenAI 兼容请求时整理被插话打断的工具批次。
+
+模型请求使用 HTTP/1.1，遵循服务进程环境里的 `HTTP_PROXY`、`HTTPS_PROXY` 和 `NO_PROXY`。重定向只允许在原站点内跳转，避免模型凭据外传。
+
 ## 执行边界
 
 - 聊天、机器人、批量任务、工作流 Agent 节点通过统一调度入口进入 Pi。正式单代理路由为 `/api/agent`、模式值为 `single`；旧路由与模式只做输入兼容，执行始终使用 Pi。

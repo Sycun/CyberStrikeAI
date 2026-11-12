@@ -1,7 +1,8 @@
+import { EnvHttpProxyAgent, install, setGlobalDispatcher } from "undici";
+
 // Model credentials may use arbitrary custom header names. Fetch's default
 // redirect handling only protects selected standard headers, so the isolated
 // worker follows redirects explicitly and only within the original origin.
-const upstreamFetch = globalThis.fetch.bind(globalThis);
 const redirects = new Set([301, 302, 303, 307, 308]);
 
 function blocked(message: string): Response {
@@ -9,7 +10,7 @@ function blocked(message: string): Response {
     { status: 400, headers: { "Content-Type": "application/json" } });
 }
 
-export async function modelFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+async function modelFetch(upstreamFetch: typeof fetch, input: string | URL | Request, init?: RequestInit): Promise<Response> {
   let request = new Request(input, { ...init, redirect: "manual" });
   const origin = new URL(request.url).origin;
   const body = request.body ? await request.clone().arrayBuffer() : undefined;
@@ -32,4 +33,17 @@ export async function modelFetch(input: string | URL | Request, init?: RequestIn
   return blocked("redirect limit exceeded");
 }
 
-export function installModelFetchPolicy(): void { globalThis.fetch = modelFetch; }
+export function installModelFetchPolicy(): void {
+  setGlobalDispatcher(new EnvHttpProxyAgent({
+    allowH2: false,
+    proxyTunnel: true,
+    headersTimeout: 300_000,
+    bodyTimeout: 300_000,
+    connect: { autoSelectFamilyAttemptTimeout: 2_000 },
+  }));
+  // The Pi SDK does not run its CLI dispatcher setup. Install npm Undici's
+  // fetch and matching web types before wrapping fetch for the model SDKs.
+  install();
+  const upstreamFetch = globalThis.fetch;
+  globalThis.fetch = (input, init) => modelFetch(upstreamFetch, input, init);
+}

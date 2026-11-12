@@ -13,9 +13,13 @@ go build -o cyberstrike-ai ./cmd/server
 
 The launcher and self-update build prepare the worker. Dependency installation uses the lockfile with lifecycle scripts disabled. Complete bundles are published under `runtime/pi/.builds/<source fingerprint>`; running workers keep their original dependencies, and source rollback selects the corresponding old bundle. Retain the runtime sources and matching bundle when deploying, or rebuild on the destination. A Go binary alone is insufficient for Pi.
 
+After pulling a worker fix into a source installation, run `bash scripts/build-pi-runtime.sh` in that installation before restarting the service. If `agent_runtime.worker_path` is set, make sure it points to the rebuilt worker. Keep existing session files: the worker corrects interrupted OpenAI-compatible tool batches when preparing model requests.
+
 ## Configuration
 
 `agent_runtime.engine` accepts only `pi` (also the default). The former engine and dependencies have been removed. Optional `node_path`, `worker_path`, and `session_dir` control deployment. The retired `agent_runtime.purge` key is ignored on load and removed when system settings are saved.
+
+The model worker uses HTTP/1.1 and respects the service's `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` environment variables. Model redirects stay on the original origin to protect credentials.
 
 Chat agents, specialists and workflow Agent nodes use Pi. Durable assessments use a single Pi model proposal per step; their existing engine retains tool execution, approvals and budgets. Large catalogs can use native tool search. Conversation task boards remain compatible with the existing UI.
 
