@@ -23,7 +23,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: go test -race ./internal/update ./internal/app ./internal/security ./internal/config ./internal/handler ./cmd/server ./internal/workflow
+      - run: go test -race ./internal/update ./internal/app ./internal/config ./internal/handler ./cmd/server ./internal/workflow
+      - name: Authentication and update session handoff
+        run: go test -race ./internal/security -run '^(TestAuthManager|TestAttachRBACStore|TestRevokeRoleSessions|TestPublishSession|TestRestartHandoff)'
       - run: go build ./...
       - name: Frontend regression tests
         shell: bash
