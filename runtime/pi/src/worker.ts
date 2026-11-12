@@ -134,6 +134,32 @@ function repairInterruptedCalls(manager: SessionManager): void {
     isError: true, timestamp: Date.now() });
 }
 
+function pairToolResults(messages: readonly Message[]): Message[] {
+  const paired: Message[] = [];
+  const deferred: Message[] = [];
+  let pending = new Set<string>();
+  for (const message of messages) {
+    if (message.role === "toolResult") {
+      if (pending.delete(message.toolCallId)) paired.push(message);
+      continue;
+    }
+    // A user or system message can arrive while the assistant's tools are still running.
+    // Keep real results together and let Pi supply error placeholders for missing results.
+    if (message.role !== "assistant" && pending.size > 0) {
+      deferred.push(message);
+      continue;
+    }
+    paired.push(...deferred, message);
+    deferred.length = 0;
+    if (message.role === "assistant") {
+      pending = new Set(message.stopReason === "error" || message.stopReason === "aborted" ? [] :
+        message.content.flatMap(block => block.type === "toolCall" ? [block.id] : []));
+    }
+  }
+  paired.push(...deferred);
+  return paired;
+}
+
 function publishSession(manager: SessionManager, dir?: string): void {
   const path = manager.getSessionFile();
   if (!dir || !path || !existsSync(path)) return;
@@ -175,7 +201,8 @@ async function run(req: RunRequest): Promise<void> {
       modelConfigs.set(provider, config);
     }
     const streamSimple = runtime.streamSimple.bind(runtime);
-    runtime.streamSimple = (m, context, options) => streamSimple(m, context, {
+    runtime.streamSimple = (m, context, options) => streamSimple(m,
+      m.api === "openai-completions" ? { ...context, messages: pairToolResults(context.messages) } : context, {
       ...options,
       transport: "sse",
       onPayload: async (original, currentModel) => {

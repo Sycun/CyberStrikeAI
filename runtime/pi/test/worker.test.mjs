@@ -98,6 +98,43 @@ test("real Pi SDK streams, invokes only host tools and restores persisted sessio
   assert.ok(fixture.requests[2].messages.some(m => m.role === "tool" && m.content === "hello"));
 });
 
+test("OpenAI-compatible requests keep historical tool results in their own assistant batch", { timeout: 30000 }, async t => {
+  const fixture = await startFixture(t, (body, res) => {
+    let pending = new Set();
+    for (const message of body.messages) {
+      if (message.role === "tool" ? !pending.delete(message.tool_call_id) : pending.size > 0) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "Invalid tool result sequence" } }));
+        return;
+      }
+      if (message.role === "assistant") pending = new Set(message.tool_calls?.map(call => call.id));
+    }
+    sse(res, { role: "assistant", content: "verified history" }, "stop");
+  });
+  const call = id => ({ id, function: { name: "echo", arguments: "{}" } });
+  const result = (id, content) => ({ role: "tool", tool_call_id: id, tool_name: "echo", content });
+  const req = request(fixture.url);
+  req.generateOnly = true;
+  req.history = [
+    { role: "user", content: "Use echo" },
+    { role: "assistant", tool_calls: [call("reused"), call("second")] },
+    result("reused", "first result"),
+    { role: "user", content: "An interruption" },
+    result("second", "second result"),
+    result("second", "duplicate result"),
+    { role: "assistant", content: "Continuing" },
+    result("reused", "orphaned result"),
+    { role: "assistant", tool_calls: [call("reused")] },
+    result("reused", "new batch result"),
+    { role: "user", content: "Summarize" },
+  ];
+  const run = await invoke(t, req);
+  assert.equal(run.result.status, "completed", run.result.error);
+  assert.equal(run.result.response, "verified history");
+  assert.deepEqual(fixture.requests[0].messages.filter(m => m.role === "tool" || m.content === "An interruption").map(m => m.content),
+    ["first result", "second result", "An interruption", "new batch result"]);
+});
+
 test("cancel rejects a pending host tool and settles without another model call", { timeout: 30000 }, async t => {
   const fixture = await startFixture(t, (_, res) => sse(res, { role: "assistant", tool_calls: [{ index: 0, id: "call-wait", type: "function", function: { name: "echo", arguments: '{"text":"wait"}' } }] }, "tool_calls"));
   const { result } = await invoke(t, request(fixture.url), (r, send) => {
