@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createServer } from "node:http";
+import { connect } from "node:net";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
@@ -40,8 +41,10 @@ function sse(res, delta, reason) {
   res.end("data: [DONE]\n\n");
 }
 
-async function invoke(t, request, onRecord = () => {}) {
-  const worker = spawn(process.execPath, ["dist/worker.js"], { stdio: ["pipe", "pipe", "pipe"] });
+const fixtureEnv = { ...process.env, NO_PROXY: "127.0.0.1", no_proxy: "127.0.0.1" };
+
+async function invoke(t, request, onRecord = () => {}, env = fixtureEnv) {
+  const worker = spawn(process.execPath, ["dist/worker.js"], { stdio: ["pipe", "pipe", "pipe"], env });
   t.after(() => { worker.kill(); });
   const exit = once(worker, "exit");
   const records = [];
@@ -133,6 +136,50 @@ test("OpenAI-compatible requests keep historical tool results in their own assis
   assert.equal(run.result.response, "verified history");
   assert.deepEqual(fixture.requests[0].messages.filter(m => m.role === "tool" || m.content === "An interruption").map(m => m.content),
     ["first result", "second result", "An interruption", "new batch result"]);
+
+  const dir = await mkdtemp(join(tmpdir(), "csai-pi-history-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const seeded = await invoke(t, { ...req, generateOnly: false, sessionDir: dir });
+  assert.equal(seeded.result.status, "completed", seeded.result.error);
+  const resumed = await invoke(t, { ...request(fixture.url, dir), runId: "resume-history", message: "Continue" });
+  assert.equal(resumed.result.status, "completed", resumed.result.error);
+  assert.deepEqual(fixture.requests[2].messages.filter(m => m.role === "tool" || m.content === "An interruption").map(m => m.content),
+    ["first result", "second result", "An interruption", "new batch result"]);
+});
+
+test("model transport honors HTTP_PROXY and NO_PROXY", { timeout: 30000 }, async t => {
+  const fixture = await startFixture(t, (_, res) => sse(res, { role: "assistant", content: "transport verified" }, "stop"));
+  const target = new URL(fixture.url);
+  const tunnels = [];
+  const sockets = new Set();
+  const proxy = createServer();
+  proxy.on("connect", (req, socket, head) => {
+    tunnels.push(req.url);
+    assert.equal(req.url, target.host);
+    const upstream = connect(Number(target.port), target.hostname, () => {
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      if (head.length) upstream.write(head);
+      socket.pipe(upstream).pipe(socket);
+    });
+    sockets.add(socket);
+    socket.on("close", () => { sockets.delete(socket); upstream.destroy(); });
+    socket.on("error", () => upstream.destroy());
+    upstream.on("close", () => socket.destroy());
+    upstream.on("error", () => socket.destroy());
+  });
+  proxy.listen(0, "127.0.0.1");
+  await once(proxy, "listening");
+  t.after(() => { for (const socket of sockets) socket.destroy(); proxy.close(); });
+  const proxyURL = "http://127.0.0.1:" + proxy.address().port;
+  const env = { ...fixtureEnv, HTTP_PROXY: proxyURL, http_proxy: proxyURL, NO_PROXY: "", no_proxy: "", NODE_USE_ENV_PROXY: "0" };
+  const req = request(fixture.url);
+  const throughProxy = await invoke(t, { ...req, generateOnly: true, history: [{ role: "user", content: req.message }] }, undefined, env);
+  assert.equal(throughProxy.result.response, "transport verified", throughProxy.result.error);
+  assert.deepEqual(tunnels, [target.host]);
+  const direct = await invoke(t, req, undefined, { ...env, NO_PROXY: target.hostname, no_proxy: target.hostname });
+  assert.equal(direct.result.response, "transport verified", direct.result.error);
+  assert.equal(fixture.requests.length, 2);
+  assert.deepEqual(tunnels, [target.host]);
 });
 
 test("cancel rejects a pending host tool and settles without another model call", { timeout: 30000 }, async t => {
@@ -165,7 +212,7 @@ test("process loss preserves the session and marks uncertain tools without repla
   });
   const dir = await mkdtemp(join(tmpdir(), "csai-pi-crash-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const worker = spawn(process.execPath, ["dist/worker.js"], { stdio: ["pipe", "pipe", "ignore"] });
+  const worker = spawn(process.execPath, ["dist/worker.js"], { stdio: ["pipe", "pipe", "ignore"], env: fixtureEnv });
   t.after(() => worker.kill());
   const ended = once(worker, "exit");
   const reader = new RecordReader();
