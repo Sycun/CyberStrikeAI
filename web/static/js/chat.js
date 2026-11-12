@@ -4205,10 +4205,7 @@ function renderProcessDetails(messageId, processDetails, options) {
         return;
     }
 
-    const prependAnchor = prependMode ? timeline.firstChild : null;
-    const prependScrollBox = prependMode ? document.getElementById('chat-messages') : null;
-    const prependScrollHeight = prependScrollBox ? prependScrollBox.scrollHeight : 0;
-    const prependScrollTop = prependScrollBox ? prependScrollBox.scrollTop : 0;
+    const prependAnchor = prependMode ? timeline.querySelector(':scope > .timeline-item') : null;
     const prependedIds = [];
 
     if (!appendMode && !prependMode) {
@@ -4501,10 +4498,13 @@ function renderProcessDetails(messageId, processDetails, options) {
             const node = document.getElementById(id);
             if (node) fragment.appendChild(node);
         });
-        timeline.insertBefore(fragment, prependAnchor || timeline.firstChild);
-        if (prependScrollBox) {
-            const delta = prependScrollBox.scrollHeight - prependScrollHeight;
-            prependScrollBox.scrollTop = prependScrollTop + delta;
+        // 过程详情独立滚动。分帧渲染期间外层对话可能已被用户滚到别处。
+        const anchor = prependAnchor && prependAnchor.parentNode === timeline ? prependAnchor : null;
+        const anchorTop = anchor ? anchor.getBoundingClientRect().top : 0;
+        timeline.insertBefore(fragment, anchor || timeline.firstChild);
+        if (anchor && timeline.classList.contains('expanded')) {
+            const delta = anchor.getBoundingClientRect().top - anchorTop;
+            if (delta) timeline.scrollTo({ top: timeline.scrollTop + delta, behavior: 'instant' });
         }
     }
 
@@ -6618,11 +6618,6 @@ async function loadConversation(conversationId) {
                         if (offset < rest.length) {
                             requestAnimationFrame(renderNextBatch);
                         } else {
-                            if (window.CyberStrikeChatScroll) {
-                                window.CyberStrikeChatScroll.forceScrollToBottom(false);
-                            } else {
-                                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-                            }
                             resolve();
                         }
                     };
@@ -6631,7 +6626,7 @@ async function loadConversation(conversationId) {
             }
 
             if (window.CyberStrikeChatScroll) {
-                window.CyberStrikeChatScroll.forceScrollToBottom(false);
+                window.CyberStrikeChatScroll.forceScrollToBottom();
             } else {
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
             }
@@ -6648,6 +6643,9 @@ async function loadConversation(conversationId) {
             if (currentConversationId === conversationId && typeof window.restoreHitlInlineForConversation === 'function') {
                 await window.restoreHitlInlineForConversation(conversationId);
             }
+            if (seq !== loadConversationRequestSeq || currentConversationId !== conversationId) {
+                return;
+            }
             if (
                 window.CyberStrikeChatScroll &&
                 typeof window.CyberStrikeChatScroll.settleConversationRestoreToBottom === 'function'
@@ -6657,7 +6655,7 @@ async function loadConversation(conversationId) {
         } else {
             renderChatWelcomeEmptyState();
             if (window.CyberStrikeChatScroll) {
-                window.CyberStrikeChatScroll.forceScrollToBottom(false);
+                window.CyberStrikeChatScroll.forceScrollToBottom();
             } else {
                 messagesDiv.scrollTop = messagesDiv.scrollHeight;
             }

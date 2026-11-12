@@ -1879,7 +1879,9 @@ function syncProcessDetailsLatestFollowAfterManualReturn(timeline) {
         if (!state || state.timeline !== timeline) return;
         state.detached = false;
         state.hasPendingNewBelow = false;
+        state.userScrollIntentUntil = 0;
         state.lastScrollTop = timeline.scrollTop;
+        state.lastScrollRange = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
         if (!state.stopped && typeof state.scheduleFollowLatest === 'function') {
             state.scheduleFollowLatest();
         }
@@ -1936,20 +1938,10 @@ function ensureProcessDetailsReturnLatestControl(timeline) {
             event.preventDefault();
             event.stopPropagation();
         }
-        const targetTop = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
-        if (typeof timeline.scrollTo === 'function') {
-            timeline.scrollTo({ top: targetTop, behavior: 'smooth' });
-        } else {
-            timeline.scrollTop = targetTop;
-        }
+        timeline.scrollTo({ top: timeline.scrollHeight, behavior: 'instant' });
         state.hasPendingNewBelow = false;
         syncProcessDetailsLatestFollowAfterManualReturn(timeline);
         updateProcessDetailsReturnLatestControl(timeline);
-        setTimeout(function () {
-            if (timeline.isConnected) {
-                updateProcessDetailsReturnLatestControl(timeline);
-            }
-        }, 360);
         button.blur();
     };
     const onScroll = function () {
@@ -2116,11 +2108,7 @@ function scrollProcessDetailsToLatest(assistantMessageId, smooth = true) {
     const timeline = container && container.querySelector('.progress-timeline');
     if (!timeline) return false;
     const targetTop = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
-    if (smooth && typeof timeline.scrollTo === 'function') {
-        timeline.scrollTo({ top: targetTop, behavior: 'smooth' });
-    } else {
-        timeline.scrollTop = targetTop;
-    }
+    timeline.scrollTo({ top: targetTop, behavior: smooth ? 'smooth' : 'instant' });
     const state = processDetailsReturnLatestControls.get(timeline);
     if (state) {
         state.hasPendingNewBelow = false;
@@ -2180,6 +2168,7 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
         timeline: timeline,
         hasPendingNewBelow: false,
         lastScrollTop: timeline.scrollTop,
+        lastScrollRange: Math.max(0, timeline.scrollHeight - timeline.clientHeight),
         userScrollIntentUntil: 0,
         touchLastY: null,
         rafId: 0,
@@ -2241,20 +2230,21 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
     const onScroll = function () {
         if (state.stopped) return;
         const currentTop = timeline.scrollTop;
-        const scrolledUp = currentTop < state.lastScrollTop - 1;
-        const scrolledDown = currentTop > state.lastScrollTop + 1;
-        const distance = Math.max(0, timeline.scrollHeight - timeline.clientHeight - timeline.scrollTop);
+        const range = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
+        const topChange = currentTop - state.lastScrollTop;
+        const distance = Math.max(0, range - currentTop);
+        const hasUserScrollIntent = Date.now() <= state.userScrollIntentUntil ||
+            Math.abs(topChange) > Math.abs(range - state.lastScrollRange) + 1;
+        state.lastScrollTop = currentTop;
+        state.lastScrollRange = range;
 
-        // 第一次小幅上滑时仍可能处在“距底部 32px”阈值内，不能在同一个 scroll
-        // 事件里刚脱离又立即恢复，否则持续输出会把视口反复拉回底部。
-        // 刷新后重建历史迭代会引起无用户输入的滚动锚定变化；这种布局滚动
-        // 不能停止内层最新内容跟随，只有明确用户意图或已分离状态才保持分离。
-        if (scrolledUp && (state.detached || Date.now() <= state.userScrollIntentUntil)) {
+        // 用滚动范围的变化区分原生滚动条拖动和详情重绘引起的滚动锚定。
+        if (topChange < -1 && hasUserScrollIntent && distance > PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX) {
             detachForUserNavigation();
         } else if (
             state.detached &&
-            scrolledDown &&
-            Date.now() <= state.userScrollIntentUntil &&
+            topChange > 1 &&
+            hasUserScrollIntent &&
             distance <= PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX
         ) {
             state.detached = false;
@@ -2264,7 +2254,6 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
         if (distance <= PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX) {
             state.hasPendingNewBelow = false;
         }
-        state.lastScrollTop = currentTop;
         updateProcessDetailsReturnLatestControl(timeline);
     };
     timeline.addEventListener('wheel', onWheel, { passive: true });
@@ -2289,13 +2278,12 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
             return;
         }
         if (state.detached) return;
-        if (typeof opts.scrollToLatest === 'function') {
-            opts.scrollToLatest(timeline);
-        } else {
-            scrollProcessDetailsToLatest(String(assistantMessageId || ''), false);
+        if (processDetailsDistanceFromLatest(timeline) > PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX) {
+            timeline.scrollTo({ top: timeline.scrollHeight, behavior: 'instant' });
         }
         state.hasPendingNewBelow = false;
         state.lastScrollTop = timeline.scrollTop;
+        state.lastScrollRange = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
         updateProcessDetailsReturnLatestControl(timeline);
         // 内层迭代区与外层对话区分别粘底；用户上滑内层后，本状态会暂停两者的自动跟随。
         if (window.CyberStrikeChatScroll &&
@@ -2341,10 +2329,7 @@ function startLiveProgressLatestFollow(progressId) {
     return startProcessDetailsLatestFollow(id, {
         stateKey: liveProgressLatestFollowKey(id),
         timeline: timeline,
-        persistent: true,
-        scrollToLatest: function (target) {
-            target.scrollTop = Math.max(0, target.scrollHeight - target.clientHeight);
-        }
+        persistent: true
     });
 }
 
@@ -2461,17 +2446,13 @@ async function loadProcessDetailsPaginated(assistantMessageId, backendMessageId,
             durationMs: PROCESS_DETAILS_RESTORE_FOLLOW_MS
         });
         requestAnimationFrame(function () {
-            scrollProcessDetailsToLatest(assistantMessageId, false);
             if (detailsContainer) {
                 delete detailsContainer.dataset.autoLoadSuspended;
             }
         });
     } else if (opts.initialStart) {
-        requestAnimationFrame(function () {
-            const container = document.getElementById('process-details-' + assistantMessageId);
-            const timeline = container && container.querySelector('.progress-timeline');
-            if (timeline) timeline.scrollTop = 0;
-        });
+        const timeline = detailsContainer && detailsContainer.querySelector('.progress-timeline');
+        if (timeline) timeline.scrollTo({ top: 0, behavior: 'instant' });
     }
 }
 
@@ -2625,13 +2606,11 @@ function toggleProcessDetails(progressId, assistantMessageId) {
     
     // 滚动到展开的详情位置（流式且用户上滑阅读时不抢主列表滚动）
     if (timeline && timeline.classList.contains('expanded')) {
-        setTimeout(() => {
-            if (window.CyberStrikeChatScroll && typeof window.CyberStrikeChatScroll.scrollIntoViewIfFollowing === 'function') {
-                window.CyberStrikeChatScroll.scrollIntoViewIfFollowing(detailsContainer, { behavior: 'smooth', block: 'nearest' });
-            } else if (typeof window.captureScrollPinState === 'function' ? window.captureScrollPinState() : true) {
-                detailsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-        }, 100);
+        if (window.CyberStrikeChatScroll && typeof window.CyberStrikeChatScroll.scrollIntoViewIfFollowing === 'function') {
+            window.CyberStrikeChatScroll.scrollIntoViewIfFollowing(detailsContainer);
+        } else if (typeof window.captureScrollPinState === 'function' ? window.captureScrollPinState() : true) {
+            detailsContainer.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+        }
     }
 }
 
@@ -5327,13 +5306,6 @@ function expandProcessDetailsTimeline(assistantMessageId) {
     if (typeof window.syncAssistantTurnSummary === 'function') {
         window.syncAssistantTurnSummary(document.getElementById(assistantMessageId));
     }
-    setTimeout(function () {
-        if (window.CyberStrikeChatScroll && typeof window.CyberStrikeChatScroll.scrollIntoViewIfFollowing === 'function') {
-            window.CyberStrikeChatScroll.scrollIntoViewIfFollowing(detailsContainer, { behavior: 'smooth', block: 'nearest' });
-        } else if (typeof window.captureScrollPinState === 'function' ? window.captureScrollPinState() : true) {
-            detailsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-    }, 100);
 }
 
 function findLastAssistantMessageElInChat() {
