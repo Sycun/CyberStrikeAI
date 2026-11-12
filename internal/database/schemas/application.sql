@@ -249,6 +249,7 @@ CREATE TABLE conversations (
     agent_mode TEXT NOT NULL DEFAULT 'eino_single',
     last_react_input TEXT,
     last_react_output TEXT,
+    pi_session_revision INTEGER NOT NULL DEFAULT 0,
     pinned INTEGER DEFAULT 0,
     webshell_connection_id TEXT,
     project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
@@ -883,3 +884,7 @@ CREATE TABLE IF NOT EXISTS assessment_events (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_assessment_events_task ON assessment_events(assessment_id, id);
+-- Retain roots across configuration changes so conversation deletion removes all copies.
+CREATE TABLE pi_session_roots (
+    path TEXT PRIMARY KEY
+);
