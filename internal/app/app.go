@@ -705,6 +705,17 @@ func (a *App) Run() error {
 	return a.RunWithContext(context.Background())
 }
 
+// RestoreUpdateSessions consumes the handoff before the new HTTP listener starts.
+func (a *App) RestoreUpdateSessions(handoff *os.File) {
+	if handoff == nil {
+		return
+	}
+	defer handoff.Close()
+	if err := a.auth.RestoreRestartSessions(handoff); err != nil {
+		a.logger.Warn("无法恢复更新前的登录会话", zap.Error(err))
+	}
+}
+
 // RunWithContext 启动应用，支持通过 context 取消来优雅关闭
 func (a *App) RunWithContext(ctx context.Context) error {
 	// 启动MCP服务器（如果启用）
