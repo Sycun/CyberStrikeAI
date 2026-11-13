@@ -11703,11 +11703,6 @@ html[data-theme="dark"] .robot-binding-service-hint-icon {
     margin-top: 0;
 }
 
-/* 漏洞管理页面的分页栏间距优化 */
-#vulnerability-pagination.pagination-fixed {
-    margin-top: 12px;
-}
-
 /* Skills管理页面分页优化 */
 .page-content-with-pagination {
     display: flex;
