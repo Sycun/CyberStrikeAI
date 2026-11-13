@@ -232,7 +232,7 @@ func TestRBACVulnerabilityAccessInheritsProject(t *testing.T) {
 	}
 	for _, group := range []string{"host", "task"} {
 		access := RBACListAccess{UserID: user.ID, Scope: RBACScopeAssigned}
-		items, err := db.ListVulnerabilitiesByGroupForAccess(1, 0, VulnerabilityListFilter{}, access, group)
+		items, err := db.ListVulnerabilitiesByGroupForAccess(1, 0, VulnerabilityListFilter{}, access, group, "severity")
 		if err != nil || len(items) != 1 || items[0].ID != v1.ID {
 			t.Fatalf("group %s returned %#v, %v; want only %s", group, items, err, v1.ID)
 		}

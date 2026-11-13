@@ -39,7 +39,7 @@
             }
         })();
     </script>
-    <link rel="stylesheet" href="/static/css/style.css?v=20261113-vulnerability-views">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261113-vulnerability-domain-browser">
     <link rel="stylesheet" href="/static/css/vulnerability-download.css?v=20261030-2">
     <link rel="stylesheet" href="/static/css/tool-guard.css?v=20260907-7">
     <link rel="stylesheet" href="/static/css/chat-plan-progress.css?v=20260813-4">
@@ -2857,6 +2857,23 @@
                         </div>
 
                         <!-- 漏洞列表 -->
+                        <div id="vulnerability-list-toolbar" class="vulnerability-list-toolbar">
+                            <span id="vulnerability-page-summary" aria-live="polite"></span>
+                            <div class="vulnerability-list-tools">
+                                <label class="vulnerability-sort-label">
+                                    <span data-i18n="vulnerabilityPage.sortLabel">排序</span>
+                                    <select id="vulnerability-sort" onchange="changeVulnerabilitySort(this.value)">
+                                        <option value="" data-i18n="vulnerabilityPage.sortDefault">默认顺序</option>
+                                        <option value="severity" data-i18n="vulnerabilityPage.sortSeverity">高危优先</option>
+                                        <option value="latest" data-i18n="vulnerabilityPage.sortLatest">最新发现</option>
+                                    </select>
+                                </label>
+                                <div id="vulnerability-group-controls" class="vulnerability-group-controls">
+                                    <button type="button" id="vulnerability-expand-groups" class="btn-secondary" onclick="setVulnerabilityGroupsOpen(true)" data-i18n="vulnerabilityPage.expandPage">展开本页</button>
+                                    <button type="button" id="vulnerability-collapse-groups" class="btn-secondary" onclick="setVulnerabilityGroupsOpen(false)" data-i18n="vulnerabilityPage.collapsePage">收起本页</button>
+                                </div>
+                            </div>
+                        </div>
                         <div id="vulnerabilities-list" class="vulnerabilities-list">
                             <div class="loading-spinner" data-i18n="vulnerabilityPage.loading">加载中...</div>
                         </div>
@@ -7089,7 +7106,7 @@
     <script src="/static/js/skills.js?v=20261103-personal-integration"></script>
     <script src="/static/js/fact-graph.js"></script>
     <script src="/static/js/projects.js?v=20260819-1-pagination-20261027"></script>
-    <script src="/static/js/vulnerability.js?v=20261113-vulnerability-group-pagination"></script>
+    <script src="/static/js/vulnerability.js?v=20261113-vulnerability-domain-browser"></script>
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>
     <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
