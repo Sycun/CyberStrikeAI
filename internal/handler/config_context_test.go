@@ -6,10 +6,35 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/modelmeta"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 )
+
+func TestDetectedContextSettingsRoundTripThroughSavedYAML(t *testing.T) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte("ai:\n  default_channel: local\n  channels:\n    local:\n      model: fixture\n      context_profile: custom\n      context_window: 131072\n"), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, profile := range []string{"local_auto", "custom", ""} {
+		ch := config.AIChannelConfig{Model: "fixture", ContextWindow: 32768, ContextProfile: profile}
+		updateAIConfig(&doc, config.AIConfig{DefaultChannel: "local", Channels: map[string]config.AIChannelConfig{"local": ch}})
+		raw, err := yaml.Marshal(&doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var saved config.Config
+		if err := yaml.Unmarshal(raw, &saved); err != nil {
+			t.Fatal(err)
+		}
+		oa := saved.AI.Channels["local"].ToOpenAIConfig()
+		if oa.ContextWindow != 32768 || oa.ContextProfile != profile || oa.Model != "fixture" {
+			t.Fatalf("context settings lost on save: %+v", oa)
+		}
+	}
+}
 
 func TestAddModelContextToResponseLocalProfilePreview(t *testing.T) {
 	t.Parallel()

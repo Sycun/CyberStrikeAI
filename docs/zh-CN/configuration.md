@@ -71,11 +71,21 @@ ai:
 | `name` | Web UI 展示名。留空时使用通道 ID。 |
 | `provider` | `openai_compatible` 或 `claude`。`openai_compatible` 会在运行时映射为 `openai`；`claude` 使用 Pi 原生 Anthropic Messages API。 |
 | `base_url/api_key/model` | 必填。Base URL 通常需要包含版本路径，如 OpenAI/兼容网关的 `/v1`。 |
-| `max_total_tokens` | 上下文压缩、攻击链构建、多代理摘要等共用的总预算。已知 `context_window` 时会收紧到“窗口 − 输出预留”。 |
-| `max_completion_tokens` | 单次模型输出上限；未填时使用默认值，并会被压到已知/假定窗口的一半以内。 |
-| `context_window` | 模型原生上下文窗口（token）。填写后运行时会按窗口收紧 `max_total_tokens`；0/省略表示未知。 |
-| `context_profile` | 后台配置项，页面自动处理。`auto`（默认）通过 DeepSeek 官方地址、推理线路或模型名启用节省输入。保存通道时识别到本地推理服务会记录 `local_auto` 并应用本地预算。配置文件兼容 `economy`、`custom` 和手动 `local`。 |
+| `max_total_tokens` | 上下文压缩、攻击链构建、多代理摘要等共用的总预算。 |
+| `max_completion_tokens` | 单次模型输出上限；未填时使用默认值。 |
+| `context_window` | 运行时上下文窗口，0 表示未知。保存通道时可自动填入服务报告的窗口，已填写的更小窗口优先。 |
+| `context_profile` | 后台策略，默认 `auto`。识别本地服务后记录 `local_auto`。配置文件支持手动 `local`、显式节省 `economy` 和使用运行时参数的 `custom`。 |
 | `reasoning` | 该通道的默认推理扩展字段。不同网关支持差异较大，异常时先尝试 `mode: off`。 |
+
+### 自动输入优化
+
+DeepSeek 官方地址、明确的 DeepSeek 推理线路或包含 DeepSeek 的模型名会自动启用输入节省。达到 16 个工具时使用按需发现，默认常驻前 6 个工具、核心工具及显式常驻清单。JSON 回包精简格式空白。有授权的本地读取工具时，超过 8,000 字节的结果保存全文并返回可回读的预览。推理 Token 单列统计且计入输出总量。
+
+保存通道和测试连接会探测 Ollama、llama.cpp、LM Studio、vLLM 和 oMLX 的元数据。oMLX 通过 `owned_by: omlx` 识别，优先读取 `/v1/models/status` 的匹配模型或别名窗口，权限不足时回退到模型列表。普通兼容响应和内网 IP 本身不足以触发本地策略。探测失败可继续保存。
+
+本地输入预算取窗口的 60%，上限 131,072 Token，并预留输出空间。窗口未知时使用 32,768 的保守窗口。工具发现和回包上限按本地窗口收紧，输出字段使用 `max_tokens`。模型只报告架构上限时，新通道保留窗口未知状态。切换模型或服务会清除旧的自动判定。页面在后台应用这些策略。
+
+验证成本时，应比较完整任务的输入、缓存命中、输出及调用次数。工具搜索和分段回读可能增加调用。已有配置文件的显式覆盖继续生效。
 
 ### 按提供商和模型关闭推理
 
@@ -88,37 +98,6 @@ ai:
 GPT-5.6 和 GPT-6 Sol/Luna 在 Chat Completions 中使用函数工具时，应明确选择“关闭”；不指定强度会采用模型默认推理，不等同于关闭。工具与推理不兼容时会提示关闭推理，不会静默改写用户选择的强度。GPT-6.1 Sol 和 GPT-6 Astra 不支持 `none`，工具调用必须使用 Responses；当前 Chat Completions 后端会明确提示该限制，需要选择兼容模型。仅把 `base_url` 改成 Responses URL 不能完成协议适配。详见 [OpenAI 官方推理说明](https://developers.openai.com/api/docs/guides/reasoning)。
 
 `allow_client_reasoning: false` 时忽略对话或请求的推理覆盖，按通道设置执行。
-
-### DeepSeek 输入优化
-
-升级后，后台默认通过 `api.deepseek.com`、`deepseek` / `deepseek_compat` 推理线路或包含 `deepseek`（大小写不敏感）的模型名识别通道，自动启用以下规则。用户配置模型后即可使用。
-
-- 工具数达到 16 时使用 Pi 原生 `tool_search`，默认常驻前 6 个工具和会话、执行控制、读取文件等核心工具。配置的 `tool_search_always_visible_tools` 继续作为常驻清单，其他内置工具按需发现和调用。
-- 有本地文件读取权限时，超过 8,000 字节的工具结果保存全文并返回首尾预览，模型可用 `read_file` 按行读取中间证据。更小的已配置阈值优先，落盘失败时返回完整内容。
-- 发送给模型的 JSON 工具回包精简格式空白，保留字符串、数字原文和字段顺序。已有会话中的 JSON 工具回包也会在请求时精简，原始会话记录保留完整文本。
-
-输出上限和推理强度由通道与对话设置决定。工具检索和分段回读会增加必要调用，收益随工具目录和任务变化。已有配置文件中的档位覆盖继续生效，保存页面设置时会保留它们。
-
-### 本地模型（32K–256K）上下文要点
-
-本地模型的有效上下文通常明显小于标称窗口，且不同后端的“模型上限”和“运行时窗口”可能不一致。建议：
-
-保存通道、测试连接或检测上下文时，系统会通过服务元数据自动识别本地后端。探测失败时可继续保存，后续探测成功后应用优化。Ollama 使用 `/api/version` 与 `/api/ps`，llama.cpp 使用 `/props`，LM Studio 使用模型状态信息，vLLM 和 oMLX 使用模型列表中的 `owned_by` 标识。普通 OpenAI 兼容列表或内网 IP 地址本身不足以触发本地档位。
-
-oMLX 优先使用 `/v1/models/status` 中匹配模型或别名的 `max_context_window`，状态接口不可读时使用 `/v1/models` 的 `max_model_len`。支持反向代理路径。自动检测只读取元数据，按服务给出的窗口收紧过大的已有配置。更小的手动窗口继续生效。仅取得架构上限时，新通道保留窗口未知状态，运行时采用本地默认预算。切换服务或模型后会重新判定。[oMLX 接口实现](https://github.com/jundot/omlx/blob/main/omlx/server.py)
-
-1. **先确认运行时窗口**：在 **系统设置 → 基本设置 → AI 通道配置 → 模型上下文窗口** 右侧点击「自动检测」。探测顺序为 Ollama `/api/ps`、`/api/show`，llama.cpp `/props`，LM Studio `/api/v0/models`，vLLM/OpenAI 兼容 `/v1/models`；同时支持反向代理子路径（如 `https://host/ollama/v1`）。检测结果会显示按当前档位折算后的有效预算。检测不到时请手动填写服务端实际配置。
-2. **自动应用本地预算**。识别到本地服务后，预算按窗口 60% 计算，同时不超过“窗口 − 输出预留”。例如 32K 窗口、默认输出上限 16K 时，预算为 16K。常驻工具和工具回包按窗口收紧，输出上限字段采用 `max_tokens`。配置文件仍可用 `context_profile: local` 手动指定。
-3. **不要按标称 1M 规划**：Qwen3.5 等模型原生 262,144，可用 YaRN 扩到 1M，但本地显存与长上下文性能衰减（context rot）会让实际效果明显下降；带工具的 agent 建议把有效预算控制在 64K–128K。
-4. **Ollama 必须设置 `num_ctx`**：Ollama 的 `/v1` 兼容端点会忽略请求里的 `num_ctx`，并按显存选择默认窗口（约 4K/32K/256K）；超长时从开头截断，系统提示词和工具定义会先丢失。请用 `OLLAMA_CONTEXT_LENGTH=65536 ollama serve` 或 Modelfile `PARAMETER num_ctx 65536`，重启后用 `ollama ps` 确认 `CONTEXT`。
-5. **KV cache 与前缀缓存**：
-   - llama.cpp：`--ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 -fa`；`--cache-prompt` 默认开启。`--parallel` 会让每个槽位分摊上下文；检测结果会返回 `context_slots` 并在大于 1 时提示，请按实际 KV 模式（如 `--kv-unified`）确认单请求可用窗口。
-   - vLLM：`--max-model-len 65536 --enable-prefix-caching --kv-cache-dtype fp8`；用 `--max-num-seqs` 控制并发 KV 占用。
-   - Ollama：`OLLAMA_KV_CACHE_TYPE=q8_0`、`OLLAMA_NUM_PARALLEL=1`；窗口越大 KV cache 越大。
-   - LM Studio：在模型设置中显式设置 Context Length，并开启可用的 KV cache 量化。
-6. **思考模型**：Qwen3.5 等默认开启 thinking，会在工具循环中消耗大量上下文。可通过通道的 `reasoning.extra_request_fields.chat_template_kwargs.enable_thinking: false` 关闭（vLLM、llama.cpp `--jinja` 支持）；`reasoning.mode: off` 只清理 OpenAI/DeepSeek 推理字段，不一定能关闭本地 chat template 的 thinking。
-7. **建议窗口下限**：带 90+ 工具的 agent 在 16K 以下很难稳定运行；32K 需要依赖 `tool_search` 和 `context_profile: local`；64K 以上更接近云端模型的使用体验。
-8. **故障转移通道不会重新预算**：`multi_agent.runtime.model_failover_channels` 只切换模型端点，预算仍按主通道计算；请让 failover 通道的可用窗口不小于主通道，否则可能依赖超窗压缩/重试。
 
 对话页的“AI 通道”下拉框会读取已保存通道。请求体中的 `aiChannelId` 非空时仅对本次/本会话运行配置生效，不会把 API Key 发送给模型；为空时跟随 `ai.default_channel`。
 

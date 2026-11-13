@@ -962,20 +962,6 @@ func (c OpenAIReasoningConfig) ModeEffective() string {
 	return m
 }
 
-// ApplyExtraRequestFields merges admin-provided root JSON fields into a
-// Chat Completions payload. Existing fields win, matching the Agent path.
-func ApplyExtraRequestFields(payload map[string]interface{}, fields map[string]interface{}) {
-	if payload == nil || len(fields) == 0 {
-		return
-	}
-	for key, value := range fields {
-		if _, exists := payload[key]; exists {
-			continue
-		}
-		payload[key] = value
-	}
-}
-
 // ProfileEffective returns auto when empty.
 func (c OpenAIReasoningConfig) ProfileEffective() string {
 	p := strings.ToLower(strings.TrimSpace(c.Profile))

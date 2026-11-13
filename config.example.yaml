@@ -125,8 +125,8 @@ ai:
       # HITL 审计仅在未显式配置 provider/base_url/api_key 时继承主渠道 headers；
       # 独立审计身份如需请求头，请在 hitl.audit_model.headers 中单独配置。
       # 空 headers 与未配置等价；所有自定义头值在设置接口中均按敏感值脱敏。
-      context_window: 262144 # 模型原生上下文窗口（token）；0/省略=未知。检测到窗口后，预算会被自动收紧
-      context_profile: auto # auto=DeepSeek 自动节省输入；economy=显式启用；custom=按运行时配置；local=本地模型预算档位
+      context_window: 0 # 0=未知；保存通道时按服务元数据自动检测
+      context_profile: auto # 默认自动优化；识别本地服务后保存为 local_auto；custom 可使用手动运行时参数
       # Pi 路径模型推理：DeepSeek/OpenAI 为 thinking / reasoning_effort；Claude 4.6+ 为 adaptive + output_config.effort（仅显式配置 effort 时下发）；3.7 为 enabled+budget_tokens:10000（文档示例），effort 不映射，自定义预算用 extra_request_fields
       reasoning:
         mode: on # auto | on | off；off：OpenAI/Claude 不附加推理字段，DeepSeek 发送 thinking.type=disabled（其默认开启思考）
@@ -142,24 +142,6 @@ ai:
     #   model: qwen-plus
     #   max_total_tokens: 120000
     #   max_completion_tokens: 32768
-    # 本地模型示例（Ollama / llama.cpp / vLLM / LM Studio 均走 OpenAI 兼容端点）
-    # local-qwen:
-    #   name: Local Qwen
-    #   provider: openai_compatible
-    #   base_url: http://127.0.0.1:11434/v1
-    #   api_key: ollama
-    #   model: qwen3.5:9b
-    #   max_total_tokens: 65536 # 运行时会再被 context_window * 60% 收紧
-    #   max_completion_tokens: 8192
-    #   context_window: 131072 # 建议用页面「自动检测」填入实际 runtime 窗口
-    #   context_profile: local
-    #   # Ollama 的 /v1 接口忽略 num_ctx：请同时设置 OLLAMA_CONTEXT_LENGTH=131072 或 Modelfile PARAMETER num_ctx；
-    #   # 否则 Ollama 会按显存使用 4K/32K/256K 默认值，并从开头截断系统提示词。
-    #   reasoning:
-    #     mode: off
-    #     extra_request_fields:
-    #       chat_template_kwargs:
-    #         enable_thinking: false # Qwen3.5 等思考模型在 agent 工具循环中建议关闭思考
 # 视觉分析（analyze_image MCP 工具；图片仅在单次 VL 调用中出现，Agent 上下文只保留文字摘要）
 vision:
   enabled: false # true 且 model 非空时注册 analyze_image
@@ -389,7 +371,7 @@ multi_agent:
     tool_search_min_tools: 20
     tool_search_always_visible: 12
     tool_search_always_visible_tools: [get_tool_execution, wait_tool_execution, cancel_tool_execution, search_knowledge_base]
-    tool_search_include_builtins: true # local context profile automatically narrows visibility
+    tool_search_include_builtins: true # true：后端内置工具始终常驻，绕过 tool_search
     plantask_enable: true
     plantask_rel_dir: .pi/plantask
     reduction_enable: true

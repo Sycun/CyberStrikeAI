@@ -70,33 +70,23 @@ ai:
 | `name` | Display name in the Web UI; falls back to the ID. |
 | `provider` | `openai_compatible` or `claude`. OpenAI-compatible channels map to runtime `openai`; Claude channels use Pi's native Anthropic Messages API component. |
 | `base_url/api_key/model` | Required. Base URL usually includes a version path such as `/v1`. |
-| `max_total_tokens` | Shared context budget for compression, attack-chain generation, multi-agent summaries, and similar paths. When `context_window` is known, it is clamped to the window minus the output reserve. |
-| `max_completion_tokens` | Per-response output cap; default is used when empty, and it is clamped to half of the known/assumed window. |
-| `context_window` | Native model context window in tokens. When set, the runtime clamps `max_total_tokens` to it; 0/omitted means unknown. |
-| `context_profile` | Managed in the background. `auto` enables input savings based on the DeepSeek endpoint, reasoning profile or model name. Channel saves probe backend metadata and record `local_auto` for recognized local inference servers. Configuration files also accept `economy`, `custom` and manual `local` overrides. |
+| `max_total_tokens` | Shared context budget for compression, attack-chain generation, multi-agent summaries, and similar paths. |
+| `max_completion_tokens` | Per-response output cap; default is used when empty. |
+| `context_window` | Runtime context window, or 0 when unknown. Channel saves can fill the detected value and retain a smaller configured window. |
+| `context_profile` | Background policy, default `auto`. Recognized local backends use `local_auto`. Configuration files also accept manual `local`, explicit `economy` savings, and `custom` runtime settings. |
 | `reasoning` | Default reasoning fields for the channel. Gateway support varies; try `mode: off` first when a provider rejects requests. |
 
-### Local Model Context (32K–256K)
-
-A local model's effective context is usually much smaller than its advertised window, and the “model maximum” can differ from the runtime window. Recommended setup:
-
-1. **Confirm the runtime window**: click **Auto-detect** next to the context window field in **System Settings → Basic Settings → AI Channel Configuration**. The probe checks Ollama `/api/ps`/`/api/show`, llama.cpp `/props`, LM Studio `/api/v0/models`, then vLLM/OpenAI-compatible `/v1/models`; reverse-proxy subpaths such as `https://host/ollama/v1` are supported. The result also shows the effective budget for the current profile. Enter the server's actual value if detection fails.
-2. **Automatic local budgets**. Saving a channel, testing its connection or detecting its context probes Ollama, llama.cpp, LM Studio, vLLM and oMLX metadata. Recognized backends activate local optimization automatically. The budget is capped at 60% of the window and reserves output space. Smaller manual windows are preserved. Generic compatible responses and private IP addresses alone do not identify a local backend. Failed probes allow saving the channel, and configuration files still accept `context_profile: local`.
-
-   oMLX is identified by `owned_by: omlx`. Its matching `/v1/models/status` entry supplies `max_context_window`, including model aliases. If status access is unavailable, discovery falls back to `max_model_len` in `/v1/models`. Reverse-proxy prefixes are supported. New channels whose runtime window remains unknown use the local default budget. Changing the endpoint or model clears the previous automatic classification. [oMLX implementation](https://github.com/jundot/omlx/blob/main/omlx/server.py)
-
-3. **Do not plan around a nominal 1M window**: Qwen3.5-class models ship with 262,144 native context and can be extended to 1M with YaRN, but local VRAM limits and context rot degrade quality. For tool-using agents, keep the effective budget around 64K–128K.
-4. **Ollama requires `num_ctx`**: Ollama's `/v1` compatibility endpoint ignores `num_ctx` in requests and picks a default window from VRAM (roughly 4K/32K/256K). Oversized prompts are truncated from the beginning, dropping the system prompt and tool definitions first. Use `OLLAMA_CONTEXT_LENGTH=65536 ollama serve` or a Modelfile `PARAMETER num_ctx 65536`, then confirm `CONTEXT` in `ollama ps` after restart.
-5. **KV cache and prefix caching**:
-   - llama.cpp: `--ctx-size 65536 --cache-type-k q8_0 --cache-type-v q8_0 -fa`; `--cache-prompt` is on by default. `--parallel` splits the context across slots; detection returns `context_slots` and warns when it is greater than 1, so confirm the per-request window for your KV mode (for example `--kv-unified`).
-   - vLLM: `--max-model-len 65536 --enable-prefix-caching --kv-cache-dtype fp8`; use `--max-num-seqs` to bound concurrent KV usage.
-   - Ollama: `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_NUM_PARALLEL=1`; larger windows consume more KV cache.
-   - LM Studio: set Context Length explicitly in the model settings and enable KV-cache quantization when available.
-6. **Thinking models**: Qwen3.5-class models enable thinking by default, which burns context inside tool loops. Disable it per channel with `reasoning.extra_request_fields.chat_template_kwargs.enable_thinking: false` (supported by vLLM and llama.cpp with `--jinja`). `reasoning.mode: off` only clears OpenAI/DeepSeek reasoning fields and may not disable the local chat template's thinking.
-7. **Minimum viable window**: an agent with 90+ tools is unreliable below 16K. 32K depends on `tool_search` and `context_profile: local`; 64K and above is closer to a cloud-model experience.
-8. **Failover channels are not re-budgeted**: `multi_agent.runtime.model_failover_channels` only switches the model endpoint; the budget still follows the primary channel. Keep each failover channel's available window at least as large as the primary, or expect overflow compaction/retry.
-
 The chat page reads saved channels into the “AI Channel” selector. A non-empty request `aiChannelId` selects a channel for that run/session without sending API credentials through the prompt path. Empty `aiChannelId` follows `ai.default_channel`.
+
+### Automatic input savings
+
+DeepSeek endpoints, explicit DeepSeek reasoning profiles and model names containing DeepSeek enable input savings automatically. With at least 16 tools, discovery declares six catalog entries, core tools and explicitly pinned tools. JSON tool results lose formatting whitespace. When an authorized local reader is available, results over 8,000 bytes become previews backed by the full output. Provider-reported reasoning tokens are shown separately within completion usage.
+
+Channel saves and connection tests probe metadata from Ollama, llama.cpp, LM Studio, vLLM and oMLX. oMLX is identified by `owned_by: omlx`. Its matching model or alias in `/v1/models/status` supplies the preferred window, with the model list as a fallback when status access is unavailable. Generic compatible responses and private IP addresses alone do not select local optimization. Failed probes allow the channel to be saved.
+
+The local input budget is capped at 60% of the window and 131,072 tokens, with output room reserved. An unknown window uses 32,768 tokens. Local policies tighten tool discovery and result limits, and use the `max_tokens` output field. New channels reporting only an architecture maximum retain an unknown runtime window. Changing a model or endpoint clears the previous automatic classification. These policies are applied in the background.
+
+Compare complete tasks using input, cache hits, output and call counts to measure savings. Tool discovery and evidence readback may add calls. Explicit configuration-file overrides remain supported.
 
 ### Disabling reasoning by provider and model
 

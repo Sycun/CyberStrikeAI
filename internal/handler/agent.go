@@ -426,7 +426,7 @@ func (h *AgentHandler) configForAIChannel(channelID string) (*config.Config, str
 	}
 	cfgCopy := *h.config
 	cfgCopy.OpenAI = oa
-	return cfgCopy.WithEffectiveContextBudget(), resolvedID, nil
+	return &cfgCopy, resolvedID, nil
 }
 
 func chatReasoningToClientIntent(r *ChatReasoningRequest) *reasoning.ClientIntent {

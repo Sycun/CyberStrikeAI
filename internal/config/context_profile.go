@@ -13,9 +13,6 @@ const (
 	LocalContextBudgetCap = 131072
 	// MinLocalContextWindow 以下不建议运行带工具的 agent。
 	MinLocalContextWindow = 16384
-	// LocalTokenEstimateSafetyPercent 是 local 档位对 token 估算的保守放大比例。
-	// 本地 tokenizer 与 tiktoken 不一致（CJK 尤甚），留出余量避免踩到运行时窗口。
-	LocalTokenEstimateSafetyPercent = 110
 
 	ContextWarningLocalWindowUnknown   = "local_context_window_unknown"
 	ContextWarningLocalWindowSmall     = "local_context_window_small"
@@ -51,14 +48,6 @@ func (c OpenAIConfig) IsEconomyContextProfile() bool {
 func (c OpenAIConfig) IsLocalContextProfile() bool {
 	profile := NormalizeContextProfile(c.ContextProfile)
 	return profile == "local" || profile == "local_auto"
-}
-
-// TokenEstimateSafetyPercent 供 token 计数器使用：local 档位放大估算，auto 保持原值。
-func (c OpenAIConfig) TokenEstimateSafetyPercent() int {
-	if c.IsLocalContextProfile() {
-		return LocalTokenEstimateSafetyPercent
-	}
-	return 100
 }
 
 // OutputLimitField 返回输出上限字段名。本地端点普遍只认旧字段 max_tokens。
@@ -155,17 +144,6 @@ func (c OpenAIConfig) ContextBudgetWarnings() []string {
 	return out
 }
 
-// WithEffectiveContextBudget 返回运行期副本：预算与 local 档位中间件参数都在这里收口。
-func (c *Config) WithEffectiveContextBudget() *Config {
-	if c == nil {
-		return nil
-	}
-	out := *c
-	out.OpenAI.MaxTotalTokens = c.OpenAI.EffectiveMaxTotalTokens()
-	out.MultiAgent.Runtime = EffectiveRuntimeForChannel(c.MultiAgent.Runtime, c.OpenAI)
-	return &out
-}
-
 // EffectiveRuntimeForChannel applies input-saving or local-model limits to a
 // runtime copy. Explicit custom profiles use the configured runtime settings.
 func EffectiveRuntimeForChannel(mw AgentTuningConfig, oa OpenAIConfig) AgentTuningConfig {
@@ -184,51 +162,13 @@ func EffectiveRuntimeForChannel(mw AgentTuningConfig, oa OpenAIConfig) AgentTuni
 		return mw
 	}
 	window := oa.EffectiveContextWindow()
-	budget := oa.EffectiveMaxTotalTokens()
 	out := mw
 
-	triggerRatio := mw.SummarizationTriggerRatioEffective()
-	if triggerRatio > 0.85 {
-		triggerRatio = 0.85
-	}
-	out.SummarizationTriggerRatio = triggerRatio
-
-	out.SummarizationOutputReserveTokens = tightenInt(
-		mw.SummarizationOutputReserveTokensEffective(),
-		localSummaryOutputReserve(window, oa.MaxCompletionTokensEffective()),
-	)
 	out.ReductionMaxLengthForTrunc = tightenInt(
 		mw.ReductionMaxLengthForTruncEffective(),
 		localToolTruncBytes(window),
 	)
-	out.ReductionMaxTokensForClear = tightenInt(
-		mw.ReductionMaxTokensForClearEffective(),
-		localToolClearTokens(budget),
-	)
 	out.ReductionEnable = true
-	out.ReductionSubAgents = true
-
-	out.SummarizationUserIntentLedgerMaxRunes = tightenInt(
-		mw.SummarizationUserIntentLedgerMaxRunesEffective(),
-		localLedgerRunes(budget),
-	)
-	out.SummarizationUserIntentLedgerEntryMaxRunes = tightenInt(
-		mw.SummarizationUserIntentLedgerEntryMaxRunesEffective(),
-		localLedgerEntryRunes(out.SummarizationUserIntentLedgerMaxRunes),
-	)
-
-	out.LatestUserMessageMaxRunes = tightenInt(
-		mw.LatestUserMessageMaxRunesEffective(),
-		localLatestUserRunes(budget),
-	)
-	out.LatestUserMessageHeadRunes = tightenInt(
-		mw.LatestUserMessageHeadRunesEffective(),
-		out.LatestUserMessageMaxRunes/2,
-	)
-	out.LatestUserMessageTailRunes = tightenInt(
-		mw.LatestUserMessageTailRunesEffective(),
-		out.LatestUserMessageMaxRunes-out.LatestUserMessageHeadRunes,
-	)
 
 	out.ToolSearchEnable = true
 	if mw.ToolSearchMinTools <= 0 || mw.ToolSearchMinTools > 8 {
@@ -241,10 +181,6 @@ func EffectiveRuntimeForChannel(mw AgentTuningConfig, oa OpenAIConfig) AgentTuni
 	includeBuiltins := false
 	out.ToolSearchIncludeBuiltins = &includeBuiltins
 
-	out.PlanExecuteMaxStepResultRunes = tightenInt(
-		mw.PlanExecuteMaxStepResultRunesEffective(),
-		2000,
-	)
 	return out
 }
 
@@ -256,20 +192,6 @@ func tightenInt(current, ceil int) int {
 		return ceil
 	}
 	return current
-}
-
-func localSummaryOutputReserve(window, maxCompletion int) int {
-	reserve := window / 32
-	if reserve < 2048 {
-		reserve = 2048
-	}
-	if reserve > 8192 {
-		reserve = 8192
-	}
-	if maxCompletion > 0 && reserve > maxCompletion {
-		reserve = maxCompletion
-	}
-	return reserve
 }
 
 func localToolTruncBytes(window int) int {
@@ -284,50 +206,6 @@ func localToolTruncBytes(window int) int {
 		bytes = window
 	}
 	return bytes
-}
-
-func localToolClearTokens(budget int) int {
-	tokens := budget * 35 / 100
-	if tokens < 4096 {
-		tokens = 4096
-	}
-	if budget > 0 && tokens > budget {
-		tokens = budget
-	}
-	return tokens
-}
-
-func localLedgerRunes(budget int) int {
-	runes := budget * 2
-	if runes > DefaultSummarizationUserIntentLedgerMaxRunes {
-		runes = DefaultSummarizationUserIntentLedgerMaxRunes
-	}
-	if runes < 4096 {
-		runes = 4096
-	}
-	return runes
-}
-
-func localLedgerEntryRunes(ledgerMax int) int {
-	runes := ledgerMax / 6
-	if runes > DefaultSummarizationUserIntentLedgerEntryMaxRunes {
-		runes = DefaultSummarizationUserIntentLedgerEntryMaxRunes
-	}
-	if runes < 1024 {
-		runes = 1024
-	}
-	return runes
-}
-
-func localLatestUserRunes(budget int) int {
-	runes := budget * 2
-	if runes > DefaultLatestUserMessageMaxRunes {
-		runes = DefaultLatestUserMessageMaxRunes
-	}
-	if runes < 4096 {
-		runes = 4096
-	}
-	return runes
 }
 
 // localCoreToolNames 是本地小窗口下值得常驻的工具；其余交给 tool_search 按需解锁。

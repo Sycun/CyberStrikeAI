@@ -38,34 +38,27 @@ func WireRetrieverPipeline(ctx context.Context, r *Retriever, oa *config.OpenAIC
 		logger = zap.NewNop()
 	}
 	mq := &nativeMultiQuery{
-		inner:      vector,
-		max:        maxQueries,
-		client:     openai.NewClient(oa, &http.Client{Timeout: 120 * time.Second}, logger),
-		model:      oa.Model,
-		logger:     logger,
-		maxTokens:  oa.MaxCompletionTokensEffective(),
-		limitField: oa.OutputLimitField(),
+		inner:  vector,
+		max:    maxQueries,
+		client: openai.NewClient(oa, &http.Client{Timeout: 120 * time.Second}, logger),
+		model:  oa.Model,
+		logger: logger,
 	}
 	r.pipeline = newKnowledgePipelineRetriever(mq, r)
 	return nil
 }
 
 type nativeMultiQuery struct {
-	inner      DocumentRetriever
-	max        int
-	client     *openai.Client
-	model      string
-	logger     *zap.Logger
-	maxTokens  int
-	limitField string
+	inner  DocumentRetriever
+	max    int
+	client *openai.Client
+	model  string
+	logger *zap.Logger
 }
 
 func (q *nativeMultiQuery) Retrieve(ctx context.Context, query string, opts ...RetrievalOption) ([]*Document, error) {
 	queries := []string{query}
 	payload := map[string]any{"model": q.model, "messages": []map[string]string{{"role": "system", "content": fmt.Sprintf("Return only a JSON array containing at most %d alternative search queries for the user's knowledge search. Preserve technical identifiers and the user's language.", q.max-1)}, {"role": "user", "content": query}}}
-	if q.maxTokens > 0 {
-		payload[q.limitField] = q.maxTokens
-	}
 	var answer struct {
 		Choices []struct {
 			Message struct {
