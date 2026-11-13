@@ -9,8 +9,10 @@ function concurrencyHarness(value) {
  const ctx = {_bqInlineSaving:false, batchQueuesState:{currentQueueId:'q'},
   document:{getElementById:() => input}, _t:x => x, alert:x => {message=x;},
   apiFetch:async () => {calls++;return {ok:true,json:async () => ({queue:{title:'title'}})};},
-  showBatchQueueDetail() {},refreshBatchQueues() {},console};
+  showBatchQueueDetail() {},isAppModalOpen:() => true,refreshBatchQueues() {},console};
  vm.createContext(ctx);
+ const refreshStart = taskSource.indexOf('function refreshBatchQueueDetailIfCurrent(');
+ vm.runInContext(taskSource.slice(refreshStart,taskSource.indexOf('// 开始批量任务队列',refreshStart)),ctx);
  const start = taskSource.indexOf('async function saveInlineConcurrency(');
  vm.runInContext(taskSource.slice(start,taskSource.indexOf('// --- 单条执行 ---',start)),ctx);
  return {ctx,calls:() => calls,message:() => message,focused:() => focused};

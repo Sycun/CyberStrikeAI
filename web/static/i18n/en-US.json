@@ -5286,7 +5286,7 @@
     "instruction": "Step instructions",
     "noResult": "No result yet",
     "trace": "View execution",
-    "retry": "Retry step",
+    "retry": "Prepare retry",
     "attempts": "{{count}} attempt(s)",
     "noPlan": "Start the task to generate its plan.",
     "noEvents": "No activity yet",
@@ -5295,7 +5295,7 @@
     "progress": "{{done}} / {{total}} planned steps done · Planning {{rounds}} / {{max}} rounds · About {{minutes}} budget minutes left",
     "deleteConfirm": "Delete this task and its activity? Execution conversations will be retained.",
     "cancelConfirm": "Cancel the whole goal task? Saved results will be retained.",
-    "retryConfirm": "Retry creates a new execution attempt. Check whether the previous attempt already took effect before repeating it.",
+    "retryConfirm": "Queue this step for retry, then click Resume. First check previous effects and confirm its execution has stopped.",
     "close": "Close",
     "save": "Save",
     "name": "Task name",
@@ -5326,6 +5326,9 @@
       "waiting_input": "Awaiting input",
       "budget_exhausted": "Budget exhausted",
       "cleanup_unconfirmed": "Cleanup unconfirmed"
-    }
+    },
+    "answerSaved": "Answer saved; the task has not started:",
+    "extendFirst": "Adjust the execution budget before resuming.",
+    "roundLimit": "The 200-round limit has been reached. Export the results and create a new goal task."
   }
 }

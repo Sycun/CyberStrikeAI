@@ -50,7 +50,7 @@
     <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-aligned-overview">
     <link rel="stylesheet" href="/static/css/vulnerability-list.css?v=20261113-compact-rows">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
-    <link rel="stylesheet" href="/static/css/long-tasks.css?v=20261113-goal-tasks">
+    <link rel="stylesheet" href="/static/css/long-tasks.css?v=20261113-task-controls">
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -6453,7 +6453,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="closeBatchImportModal()" data-i18n="common.cancel">取消</button>
-                <button class="btn-primary" data-require-permission="tasks:write" onclick="createBatchQueue()" data-i18n="batchImportModal.createQueue">创建队列</button>
+                <button class="btn-primary" data-require-permission="tasks:write" id="batch-queue-create-btn" onclick="createBatchQueue()" data-i18n="batchImportModal.createQueue">创建队列</button>
             </div>
         </div>
     </div>
@@ -6494,7 +6494,7 @@
                     <textarea id="add-task-message" class="form-control" rows="5" data-i18n="addBatchTaskModal.taskMessagePlaceholder" data-i18n-attr="placeholder" placeholder="请输入任务消息"></textarea>
                 </div>
                 <div class="form-actions">
-                    <button class="btn-primary" data-require-permission="tasks:write" onclick="saveAddBatchTask()" data-i18n="addBatchTaskModal.add">添加</button>
+                    <button class="btn-primary" data-require-permission="tasks:write" id="batch-task-add-btn" onclick="saveAddBatchTask()" data-i18n="addBatchTaskModal.add">添加</button>
                     <button class="btn-secondary" onclick="closeAddBatchTaskModal()" data-i18n="common.cancel">取消</button>
                 </div>
             </div>
@@ -7174,8 +7174,8 @@
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>
     <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
-    <script src="/static/js/tasks.js?v=20261113-goal-tasks"></script>
-    <script src="/static/js/long-tasks.js?v=20261113-goal-tasks"></script>
+    <script src="/static/js/tasks.js?v=20261113-task-controls"></script>
+    <script src="/static/js/long-tasks.js?v=20261113-task-controls"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>
     <script src="/static/js/update.js?v={{.Version}}-update-status"></script>

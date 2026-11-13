@@ -5274,7 +5274,7 @@
     "instruction": "查看步骤要求",
     "noResult": "尚无结果",
     "trace": "查看执行会话",
-    "retry": "重试此步骤",
+    "retry": "准备重试",
     "attempts": "已执行 {{count}} 次",
     "noPlan": "启动后根据目标生成计划。",
     "noEvents": "暂无动态",
@@ -5283,7 +5283,7 @@
     "progress": "已完成 {{done}} / 当前计划 {{total}} 步 · 规划 {{rounds}} / {{max}} 轮 · 剩余预算约 {{minutes}} 分钟",
     "deleteConfirm": "删除此任务及动态？关联执行会话仍保留。",
     "cancelConfirm": "取消整个目标任务？已保存的结果会保留。",
-    "retryConfirm": "重试会开启新的执行尝试。请先检查上次执行是否已产生效果，避免重复操作。",
+    "retryConfirm": "将此步骤重新置为待执行，随后点击“继续任务”执行。请先检查上次是否已产生效果、执行资源是否已停止。",
     "close": "关闭",
     "save": "保存",
     "name": "任务名称",
@@ -5314,6 +5314,9 @@
       "waiting_input": "待答复",
       "budget_exhausted": "预算耗尽",
       "cleanup_unconfirmed": "停止状态待确认"
-    }
+    },
+    "answerSaved": "答复已保存，任务暂未启动：",
+    "extendFirst": "请先调整执行预算，再继续任务。",
+    "roundLimit": "已达到 200 轮上限，可导出结果后创建新的目标任务。"
   }
 }
