@@ -3788,10 +3788,12 @@
                                                             <div class="form-group">
                                                                 <label for="openai-context-profile"><span data-i18n="settingsBasic.contextProfile">上下文优化档位</span></label>
                                                                 <select id="openai-context-profile">
-                                                                    <option value="auto" data-i18n="settingsBasic.contextProfileAuto">通用（默认）</option>
+                                                                    <option value="auto" data-i18n="settingsBasic.contextProfileAuto">自动（DeepSeek 启用节省）</option>
+                                                                    <option value="economy" data-i18n="settingsBasic.contextProfileEconomy">节省输入</option>
+                                                                    <option value="custom" data-i18n="settingsBasic.contextProfileCustom">自定义（使用运行时配置）</option>
                                                                     <option value="local" data-i18n="settingsBasic.contextProfileLocal">本地模型（32K-256K 优化）</option>
                                                                 </select>
-                                                                <small class="form-hint" data-i18n="settingsBasic.contextProfileHint">本地档位会收紧压缩触发、工具输出阈值和常驻工具数；只收紧不放大已有配置。</small>
+                                                                <small class="form-hint" data-i18n="settingsBasic.contextProfileHint">节省输入按需加载工具、精简 JSON 回包，并为大结果提供可回读的预览。本地档位同时收紧上下文预算。</small>
                                                             </div>
                                                         </div>
                                                     </section>

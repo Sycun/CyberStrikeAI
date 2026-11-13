@@ -306,6 +306,56 @@ func TestEffectiveAgentMiddlewareForChannelAutoUnchanged(t *testing.T) {
 	}
 }
 
+func TestEconomyContextProfileSelectionAndLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		oa   OpenAIConfig
+		want bool
+	}{
+		{"official default", OpenAIConfig{BaseURL: "https://api.deepseek.com/v1"}, true},
+		{"gateway explicit profile", OpenAIConfig{Reasoning: OpenAIReasoningConfig{Profile: "deepseek_compat"}}, true},
+		{"model name alone", OpenAIConfig{Model: "deepseek-flash", BaseURL: "https://gateway.example/v1"}, false},
+		{"lookalike host", OpenAIConfig{BaseURL: "https://api.deepseek.com.example/v1"}, false},
+		{"custom opt out", OpenAIConfig{BaseURL: "https://api.deepseek.com", ContextProfile: "custom"}, false},
+		{"local opt in", OpenAIConfig{BaseURL: "https://api.deepseek.com", ContextProfile: "local"}, false},
+		{"economy opt in", OpenAIConfig{ContextProfile: " ECONOMY "}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.oa.IsEconomyContextProfile(); got != tc.want {
+				t.Fatalf("economy=%v, want %v", got, tc.want)
+			}
+		})
+	}
+	includeBuiltins := true
+	mw := AgentTuningConfig{ToolSearchMinTools: 20, ToolSearchAlwaysVisible: 12, ToolSearchIncludeBuiltins: &includeBuiltins,
+		ToolSearchAlwaysVisibleTools: []string{"record_vulnerability"}, ReductionMaxLengthForTrunc: 12000}
+	oa := OpenAIConfig{BaseURL: "https://api.deepseek.com/v1", MaxTotalTokens: 120000, MaxCompletionTokens: 32768,
+		Reasoning: OpenAIReasoningConfig{Mode: "on", Effort: "high"}}
+	out := EffectiveRuntimeForChannel(mw, oa)
+	if !out.ToolSearchEnable || out.ToolSearchMinTools != 16 || out.ToolSearchAlwaysVisible != 6 || out.ToolSearchIncludeBuiltinsEffective() || !out.ReductionEnable || out.ReductionMaxLengthForTrunc != 8000 {
+		t.Fatalf("unexpected economy runtime: %+v", out)
+	}
+	if !reflect.DeepEqual(out.ToolSearchAlwaysVisibleTools, mw.ToolSearchAlwaysVisibleTools) || !*mw.ToolSearchIncludeBuiltins || mw.ToolSearchEnable {
+		t.Fatal("explicit visible tools or original config modified")
+	}
+	if again := EffectiveRuntimeForChannel(out, oa); !reflect.DeepEqual(out, again) {
+		t.Fatal("economy profile is not idempotent")
+	}
+	out.ToolSearchMinTools, out.ToolSearchAlwaysVisible, out.ReductionMaxLengthForTrunc = 4, 2, 2048
+	if again := EffectiveRuntimeForChannel(out, oa); !reflect.DeepEqual(out, again) {
+		t.Fatal("economy profile loosened tighter limits")
+	}
+	for _, profile := range []string{"auto", "economy", "custom", "local"} {
+		if err := ValidateContextSettings("channel", 0, profile); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oa.ContextProfile = "custom"
+	if got := EffectiveRuntimeForChannel(mw, oa); !reflect.DeepEqual(got, mw) {
+		t.Fatal("custom profile did not preserve runtime settings")
+	}
+}
+
 func TestWithEffectiveContextBudgetIsIdempotent(t *testing.T) {
 	t.Parallel()
 	cfg := &Config{

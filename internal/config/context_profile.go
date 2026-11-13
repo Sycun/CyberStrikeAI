@@ -23,12 +23,26 @@ const (
 	ContextWarningMaxCompletionClamped = "max_completion_tokens_clamped"
 )
 
-// NormalizeContextProfile 只接受 auto（空）与 local；未知值按 auto 处理，避免配置拼写错误放大预算。
+// NormalizeContextProfile returns an explicit profile, or empty for auto.
 func NormalizeContextProfile(raw string) string {
-	if strings.EqualFold(strings.TrimSpace(raw), "local") {
-		return "local"
+	switch profile := strings.ToLower(strings.TrimSpace(raw)); profile {
+	case "local", "economy", "custom":
+		return profile
 	}
 	return ""
+}
+
+// IsEconomyContextProfile enables input savings for DeepSeek by default. An
+// explicit custom/local profile takes precedence, including on older channels.
+func (c OpenAIConfig) IsEconomyContextProfile() bool {
+	switch NormalizeContextProfile(c.ContextProfile) {
+	case "economy":
+		return true
+	case "custom", "local":
+		return false
+	}
+	profile := c.Reasoning.ProfileEffective()
+	return c.IsDeepSeekOfficialEndpoint() || profile == "deepseek" || profile == "deepseek_compat"
 }
 
 func (c OpenAIConfig) IsLocalContextProfile() bool {
@@ -148,9 +162,20 @@ func (c *Config) WithEffectiveContextBudget() *Config {
 	return &out
 }
 
-// EffectiveRuntimeForChannel 在 local 档位下只收紧参数，不放大用户已经设得更小的值。
-// 档位是显式 opt-in；希望完全自定义时使用 auto。
+// EffectiveRuntimeForChannel applies input-saving or local-model limits to a
+// runtime copy. Explicit custom profiles use the configured runtime settings.
 func EffectiveRuntimeForChannel(mw AgentTuningConfig, oa OpenAIConfig) AgentTuningConfig {
+	if oa.IsEconomyContextProfile() {
+		out := mw
+		out.ToolSearchEnable = true
+		out.ToolSearchMinTools = tightenInt(mw.ToolSearchMinTools, 16)
+		out.ToolSearchAlwaysVisible = tightenInt(mw.ToolSearchAlwaysVisible, 6)
+		includeBuiltins := false
+		out.ToolSearchIncludeBuiltins = &includeBuiltins
+		out.ReductionEnable = true
+		out.ReductionMaxLengthForTrunc = tightenInt(mw.ReductionMaxLengthForTruncEffective(), 8000)
+		return out
+	}
 	if !oa.IsLocalContextProfile() {
 		return mw
 	}

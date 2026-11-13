@@ -73,7 +73,7 @@ ai:
 | `max_total_tokens` | Shared context budget for compression, attack-chain generation, multi-agent summaries, and similar paths. When `context_window` is known, it is clamped to the window minus the output reserve. |
 | `max_completion_tokens` | Per-response output cap; default is used when empty, and it is clamped to half of the known/assumed window. |
 | `context_window` | Native model context window in tokens. When set, the runtime clamps `max_total_tokens` to it; 0/omitted means unknown. |
-| `context_profile` | `auto` (default) or `local`. `local` targets 32K–256K local models: the budget is 60% of the window (capped at 128K), while summary reserve, tool-output truncation/clearing, user-message and ledger caps are tightened, and `tool_search` with a small always-visible tool set is enabled. It only tightens numeric middleware settings and enables tool_search/reduction where needed. |
+| `context_profile` | `auto` (default) enables input savings for the official DeepSeek endpoint or an explicit DeepSeek reasoning profile. Select `economy` to enable savings on another channel, `custom` to use runtime settings, or `local` to tighten context budgets and tool overhead for 32K–256K local models. |
 | `reasoning` | Default reasoning fields for the channel. Gateway support varies; try `mode: off` first when a provider rejects requests. |
 
 ### Local Model Context (32K–256K)

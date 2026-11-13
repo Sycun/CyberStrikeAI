@@ -406,7 +406,16 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 			result.IsError = true
 		}
 		if r.cfg.MultiAgent.Runtime.ReductionEnable {
-			result.Content = tooloutput.BoundWithSpill(result.Content, r.cfg.MultiAgent.Runtime.ReductionMaxLengthForTruncEffective(), tooloutput.SpillOpts{RootDir: r.cfg.MultiAgent.Runtime.ReductionRootDir, ConversationID: r.conversationID, ExecutionID: result.ExecutionID})
+			limit := r.cfg.MultiAgent.Runtime.ReductionMaxLengthForTruncEffective()
+			opts := tooloutput.SpillOpts{RootDir: r.cfg.MultiAgent.Runtime.ReductionRootDir, ConversationID: r.conversationID, ExecutionID: result.ExecutionID}
+			if oa.IsEconomyContextProfile() {
+				// Automatic previews require an authorized way to read the full evidence.
+				if localNames["read_file"] {
+					result.Content = tooloutput.ReduceForModel(result.Content, limit, opts)
+				}
+			} else {
+				result.Content = tooloutput.BoundWithSpill(result.Content, limit, opts)
+			}
 		}
 		progress("tool_result", result.Content, map[string]any{"toolName": call.Name, "toolCallId": call.ID, "executionId": result.ExecutionID, "result": result.Content, "success": !result.IsError, "isError": result.IsError, "agentFacing": true})
 		return result, err

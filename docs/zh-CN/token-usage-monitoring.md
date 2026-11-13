@@ -24,3 +24,5 @@
 在 AI 通道的推理设置中，可用 `off` 处理简单问答和格式转换，或用 `auto` 配合 `low` 保留低强度推理。官方接口未指定强度时默认使用 `high`，`medium` 也映射到 `high`。通道的「单次输出上限」通过 `max_tokens` 发送，推理和正文共用额度。对照面板里的输出、推理 Token 和缓存命中率，可比较相同任务在不同强度下的用量。[DeepSeek 推理模式](https://api-docs.deepseek.com/guides/thinking_mode/) · [Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)
 
 官方接口自动缓存可复用的请求前缀。Pi 按名称固定 MCP 工具定义的顺序，以减少相同工具目录在请求之间的前缀变化。缓存命中以供应商返回的用量为准。[DeepSeek 上下文缓存](https://api-docs.deepseek.com/guides/kv_cache/)
+
+默认 `auto` 上下文档位会为官方 DeepSeek 地址及显式 DeepSeek 线路启用按需工具发现、JSON 回包精简与可回读的大结果预览。具体阈值和 `custom` 选项见[配置说明](configuration.md#deepseek-输入优化)。验证节省效果时，对照完整任务的输入、输出、缓存命中和调用次数，并检查任务产物与证据完整性。

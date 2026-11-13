@@ -352,6 +352,11 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 	if load, err := agents.LoadMarkdownAgentsDir(agentsDir); err == nil {
 		subAgentCount = len(agents.MergeYAMLAndMarkdown(h.config.MultiAgent.SubAgents, load.SubAgents))
 	}
+	effectiveRuntime := config.EffectiveRuntimeForChannel(h.config.MultiAgent.Runtime, h.config.OpenAI)
+	builtinAlwaysVisible := builtin.GetAllBuiltinTools()
+	if !effectiveRuntime.ToolSearchIncludeBuiltinsEffective() {
+		builtinAlwaysVisible = []string{builtin.ToolGetToolExecution, builtin.ToolWaitToolExecution, builtin.ToolCancelToolExecution}
+	}
 	multiPub := config.MultiAgentPublic{
 		Enabled:                      h.config.MultiAgent.Enabled,
 		RobotDefaultAgentMode:        config.NormalizeRobotAgentMode(h.config.MultiAgent),
@@ -366,7 +371,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		ToolSearchAlwaysVisibleTools: append([]string(nil), h.config.MultiAgent.Runtime.ToolSearchAlwaysVisibleTools...),
 		ToolSearchAlwaysVisibleEffectiveTools: mergeToolNameLists(
 			h.config.MultiAgent.Runtime.ToolSearchAlwaysVisibleTools,
-			builtin.GetAllBuiltinTools(),
+			builtinAlwaysVisible,
 		),
 	}
 

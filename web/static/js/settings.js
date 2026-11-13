@@ -2700,7 +2700,7 @@ function writeAIChannelToMainForm(id) {
     const contextWindowEl = document.getElementById('openai-context-window');
     if (contextWindowEl) contextWindowEl.value = ch.context_window || '';
     const contextProfileEl = document.getElementById('openai-context-profile');
-    if (contextProfileEl) contextProfileEl.value = ['auto', 'local'].includes(String(ch.context_profile || '').toLowerCase()) ? String(ch.context_profile).toLowerCase() : 'auto';
+    if (contextProfileEl) contextProfileEl.value = ['auto', 'economy', 'custom', 'local'].includes(String(ch.context_profile || '').toLowerCase()) ? String(ch.context_profile).toLowerCase() : 'auto';
     const r = ch.reasoning || {};
     const modeEl = document.getElementById('openai-reasoning-mode');
     if (modeEl) {

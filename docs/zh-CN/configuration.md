@@ -74,7 +74,7 @@ ai:
 | `max_total_tokens` | 上下文压缩、攻击链构建、多代理摘要等共用的总预算。已知 `context_window` 时会收紧到“窗口 − 输出预留”。 |
 | `max_completion_tokens` | 单次模型输出上限；未填时使用默认值，并会被压到已知/假定窗口的一半以内。 |
 | `context_window` | 模型原生上下文窗口（token）。填写后运行时会按窗口收紧 `max_total_tokens`；0/省略表示未知。 |
-| `context_profile` | `auto`（默认）或 `local`。`local` 面向 32K–256K 本地模型：预算折到窗口的 60%（上限 128K），收紧摘要预留、工具输出截断/清理、用户消息与账本上限，并启用 `tool_search` 与精简常驻工具。数值参数只收紧、不放大，同时按需启用 tool_search/reduction。 |
+| `context_profile` | `auto`（默认）为官方 DeepSeek 地址或显式 DeepSeek 推理线路启用节省输入；其他通道可选 `economy` 启用。`custom` 使用运行时配置。`local` 面向 32K–256K 本地模型，收紧上下文预算与工具开销。 |
 | `reasoning` | 该通道的默认推理扩展字段。不同网关支持差异较大，异常时先尝试 `mode: off`。 |
 
 ### 按提供商和模型关闭推理
@@ -88,6 +88,17 @@ ai:
 GPT-5.6 和 GPT-6 Sol/Luna 在 Chat Completions 中使用函数工具时，应明确选择“关闭”；不指定强度会采用模型默认推理，不等同于关闭。工具与推理不兼容时会提示关闭推理，不会静默改写用户选择的强度。GPT-6.1 Sol 和 GPT-6 Astra 不支持 `none`，工具调用必须使用 Responses；当前 Chat Completions 后端会明确提示该限制，需要选择兼容模型。仅把 `base_url` 改成 Responses URL 不能完成协议适配。详见 [OpenAI 官方推理说明](https://developers.openai.com/api/docs/guides/reasoning)。
 
 `allow_client_reasoning: false` 时忽略对话或请求的推理覆盖，按通道设置执行。
+
+### DeepSeek 输入优化
+
+升级后，`auto` 在 `api.deepseek.com` 或推理线路为 `deepseek` / `deepseek_compat` 的通道启用以下规则。第三方通道可显式选择 `economy`。
+
+- 工具数达到 16 时使用 Pi 原生 `tool_search`，默认常驻前 6 个工具和会话、执行控制、读取文件等核心工具。配置的 `tool_search_always_visible_tools` 继续作为常驻清单，其他内置工具按需发现和调用。
+- 有本地文件读取权限时，超过 8,000 字节的工具结果保存全文并返回首尾预览，模型可用 `read_file` 按行读取中间证据。更小的已配置阈值优先，落盘失败时返回完整内容。
+- 发送给模型的 JSON 工具回包精简格式空白，保留字符串、数字原文和字段顺序。已有会话中的 JSON 工具回包也会在请求时精简，原始会话记录保留完整文本。
+
+输出上限和推理强度由通道与对话设置决定。工具检索和分段回读会增加必要调用，收益随工具目录和任务变化。可在「上下文优化档位」选 `custom`，按已有运行时参数控制工具发现与结果缩减。
+
 ### 本地模型（32K–256K）上下文要点
 
 本地模型的有效上下文通常明显小于标称窗口，且不同后端的“模型上限”和“运行时窗口”可能不一致。建议：
