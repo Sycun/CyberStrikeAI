@@ -921,3 +921,24 @@ CREATE TABLE IF NOT EXISTS deep_assessment_calls (
  execution_id TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '', updated_at DATETIME NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_deep_assessment_calls_task ON deep_assessment_calls(task_id,step_id,status);
+
+-- Durable exploration memory. Summaries are views over evidence, never replacements.
+CREATE TABLE IF NOT EXISTS deep_assessment_nodes (
+ task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ id TEXT NOT NULL, step_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, state TEXT NOT NULL,
+ title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT '{}',
+ updated_round INTEGER NOT NULL DEFAULT 0, updated_at DATETIME NOT NULL,
+ PRIMARY KEY(task_id,id)
+);
+CREATE INDEX IF NOT EXISTS idx_deep_assessment_nodes_step ON deep_assessment_nodes(task_id,step_id,kind);
+CREATE TABLE IF NOT EXISTS deep_assessment_edges (
+ task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ source_id TEXT NOT NULL, target_id TEXT NOT NULL, relation TEXT NOT NULL,
+ PRIMARY KEY(task_id,source_id,target_id,relation)
+);
+CREATE TABLE IF NOT EXISTS deep_assessment_sessions (
+ task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ step_id TEXT NOT NULL, conversation_id TEXT NOT NULL,
+ PRIMARY KEY(task_id,step_id,conversation_id)
+);
+CREATE INDEX IF NOT EXISTS idx_deep_assessment_sessions_conversation ON deep_assessment_sessions(conversation_id,task_id);

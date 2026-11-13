@@ -1115,6 +1115,8 @@ func setupRoutes(
 		protected.GET("/deep-assessments", agentHandler.ListDeepAssessments)
 		protected.POST("/deep-assessments", agentHandler.CreateDeepAssessment)
 		protected.GET("/deep-assessments/:id", agentHandler.GetDeepAssessment)
+		protected.GET("/deep-assessments/:id/graph", agentHandler.DeepAssessmentGraph)
+		protected.GET("/deep-assessments/:id/graph/node", agentHandler.DeepAssessmentNode)
 		protected.GET("/deep-assessments/:id/events", agentHandler.DeepAssessmentEvents)
 		protected.GET("/deep-assessments/:id/receipts", agentHandler.DeepAssessmentReceipts)
 		protected.GET("/deep-assessments/:id/report", agentHandler.DeepAssessmentReport)

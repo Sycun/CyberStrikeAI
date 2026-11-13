@@ -97,8 +97,27 @@ func (s *Store) FinishCall(call agentruntime.ToolCall, result agentruntime.ToolR
 	if uncertain {
 		state = "uncertain"
 	}
-	_, err := s.DB.Exec(`UPDATE deep_assessment_calls SET status=?,execution_id=?,result=?,updated_at=? WHERE id=?`, state, result.ExecutionID, Clip(result.Content, 16000), time.Now().UTC(), call.ID)
-	return err
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE deep_assessment_calls SET status=?,execution_id=?,result=?,updated_at=? WHERE id=?`, state, result.ExecutionID, Clip(result.Content, 16000), time.Now().UTC(), call.ID); err != nil {
+		return err
+	}
+	var task, step string
+	var round int
+	if err = tx.QueryRow(`SELECT c.task_id,c.step_id,COALESCE(json_extract(t.payload,'$.rounds'),0) FROM deep_assessment_calls c JOIN deep_assessments t ON t.id=c.task_id WHERE c.id=?`, call.ID).Scan(&task, &step, &round); err != nil {
+		return err
+	}
+	src, _ := json.Marshal(map[string]any{"call_id": call.ID, "execution_id": result.ExecutionID})
+	if err = graphNode(tx, task, Node{ID: "receipt:" + call.ID, StepID: step, Kind: "receipt", State: state, Title: call.Name, Body: Clip(result.Content, 16000), Source: src, Round: round}); err != nil {
+		return err
+	}
+	if err = graphEdge(tx, task, stepNode(step), "receipt:"+call.ID, "executes"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (s *Store) UncertainSteps(id string) (map[string]bool, error) {
 	rows, err := s.DB.Query(`SELECT DISTINCT step_id FROM deep_assessment_calls WHERE task_id=? AND status IN ('running','uncertain')`, id)

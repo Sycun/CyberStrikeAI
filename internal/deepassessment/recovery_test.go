@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestRecoveryBlocksUnreceiptedCallAndPreserves48HourDeadline(t *testing.T) {
+func TestRecoveryBlocksUnreceiptedCallWithoutTaskDeadline(t *testing.T) {
 	s, task := fixture(t)
 	deadline := time.Now().UTC().Add(48 * time.Hour)
 	if err := s.Change(task.ID, "", "", "", func(v *Task) error {
@@ -30,7 +30,7 @@ func TestRecoveryBlocksUnreceiptedCallAndPreserves48HourDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := s.Get(task.ID)
-	if got.Status != "needs_review" || got.Step("one").Status != "uncertain" || got.Step("one").ConversationID != "stable-session" || !got.Deadline.Equal(deadline) {
+	if got.Status != "needs_review" || got.Step("one").Status != "uncertain" || got.Step("one").ConversationID != "stable-session" || got.Deadline != nil {
 		t.Fatalf("unsafe recovery: %+v", got)
 	}
 	if err := s.RetryStep(task.ID, "one", got.Revision, false); err == nil {
@@ -75,7 +75,7 @@ func TestSafeRestartAutomaticallyResumesOriginalSession(t *testing.T) {
 	t.Cleanup(engine.Close)
 	engine.StartRecovery()
 	got := await(t, s, task.ID, func(v *Task) bool { return v.Status == "completed" })
-	if runs.Load() != 1 || !got.Deadline.Equal(deadline) {
+	if runs.Load() != 1 || got.Deadline != nil {
 		t.Fatal(got, runs.Load())
 	}
 }
@@ -235,5 +235,36 @@ func TestIdenticalSuccessfulCallsDoNotCountAsNewProgress(t *testing.T) {
 	count, err := s.CallCount(task.ID, "one")
 	if err != nil || count != 1 {
 		t.Fatalf("duplicate progress: %d %v", count, err)
+	}
+}
+
+func TestContinuousStepPassesFormerSegmentLimit(t *testing.T) {
+	s, task := fixture(t)
+	if err := s.Change(task.ID, "", "seed", "", func(v *Task) error {
+		v.Steps = []Step{{ID: "long", Title: "long", Instruction: "continue work", Status: "pending", Attempts: 512}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	task, _ = s.Get(task.ID)
+	e := NewEngine(s, fakeRuntime{plan: func(context.Context, *Task) (Proposal, error) { return Proposal{}, nil }, run: successful})
+	start(t, e, task)
+	got := await(t, s, task.ID, func(v *Task) bool { return v.Status == "completed" })
+	if got.Step("long").Attempts != 513 {
+		t.Fatal(got.Steps)
+	}
+}
+
+func TestTransientFailureBeyondOldRetryCountWaitsForRecovery(t *testing.T) {
+	s, task := fixture(t)
+	s.Change(task.ID, "", "retry_scheduled", "", func(v *Task) error { v.Status = "waiting_retry"; v.RetryCount = 9; return nil })
+	task, _ = s.Get(task.ID)
+	e := NewEngine(s, fakeRuntime{plan: func(context.Context, *Task) (Proposal, error) {
+		return Proposal{}, fmt.Errorf("%w: fixture outage", ErrRetryable)
+	}, run: successful})
+	start(t, e, task)
+	got := await(t, s, task.ID, func(v *Task) bool { return v.Status == "waiting_retry" && v.RetryCount == 10 })
+	if got.NextWake == nil {
+		t.Fatal("retry was not scheduled")
 	}
 }

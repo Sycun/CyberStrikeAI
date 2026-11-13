@@ -454,6 +454,9 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 	var modelCalls, promptTokens, completionTokens, cacheRead, cacheWrite, reasoningTokens int
 	reasonID := func() string { return fmt.Sprintf("%s-reasoning-%d", runID, iteration.Load()) }
 	emit := func(e agentruntime.Event) {
+		if options.Event != nil {
+			options.Event(e)
+		}
 		if e.Type == "session_metrics" && options.Metrics != nil {
 			var data map[string]any
 			if json.Unmarshal(e.Data, &data) == nil {

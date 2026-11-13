@@ -20,6 +20,9 @@ import (
 
 func (h *AgentHandler) InitDeepAssessments(snapshot func() (*config.Config, error)) error {
 	s := &deepassessment.Store{DB: h.db}
+	if err := s.MigrateContinuous(); err != nil {
+		return err
+	}
 	if err := s.Recover(); err != nil {
 		return err
 	}
@@ -137,9 +140,6 @@ func (h *AgentHandler) CreateDeepAssessment(c *gin.Context) {
 		Model       string `json:"model"`
 		HITLPolicy  string `json:"hitl_policy"`
 		Concurrency int    `json:"concurrency"`
-		MaxRounds   int    `json:"max_rounds"`
-		Seconds     int64  `json:"remaining_seconds"`
-		TokenBudget int64  `json:"token_budget"`
 		AutoResume  *bool  `json:"auto_resume"`
 	}
 	if !deepAssessmentBody(c, &req) {
@@ -156,25 +156,12 @@ func (h *AgentHandler) CreateDeepAssessment(c *gin.Context) {
 	if req.Concurrency == 0 {
 		req.Concurrency = 2
 	}
-	if req.MaxRounds == 0 {
-		req.MaxRounds = 512
-	}
-	if req.Seconds == 0 {
-		req.Seconds = 48 * 3600
-	}
 	if err := validateBatchHITLPolicy(req.HITLPolicy); err != nil {
 		deepAssessmentError(c, err)
 		return
 	}
 	if req.ProjectID != "" && (!security.SessionHasPermission(c, "project:read") || !h.db.UserCanAccessResource(session.UserID, session.ScopeFor("project:read"), "project", req.ProjectID)) {
 		c.JSON(403, gin.H{"error": "无权访问项目"})
-		return
-	}
-	if req.TokenBudget == 0 {
-		req.TokenBudget = 2000000
-	}
-	if req.TokenBudget < 1 || req.TokenBudget > 100000000 {
-		deepAssessmentError(c, fmt.Errorf("Token budget out of range"))
 		return
 	}
 	if strings.TrimSpace(req.Criteria) == "" {
@@ -185,7 +172,7 @@ func (h *AgentHandler) CreateDeepAssessment(c *gin.Context) {
 		autoResume = *req.AutoResume
 	}
 	now := time.Now().UTC()
-	t := &deepassessment.Task{ID: uuid.NewString(), AutoResume: autoResume, TokenBudget: req.TokenBudget, OwnerID: session.UserID, ExecutorID: session.UserID, Name: strings.TrimSpace(req.Name), Objective: strings.TrimSpace(req.Objective), Scope: strings.TrimSpace(req.Scope), Criteria: strings.TrimSpace(req.Criteria), ProjectID: req.ProjectID, Role: req.Role, Model: req.Model, HITLPolicy: req.HITLPolicy, Concurrency: req.Concurrency, MaxRounds: req.MaxRounds, RemainingSeconds: req.Seconds, Status: "draft", Steps: []deepassessment.Step{}, Guidance: []string{}, CreatedAt: now, UpdatedAt: now}
+	t := &deepassessment.Task{ID: uuid.NewString(), AutoResume: autoResume, OwnerID: session.UserID, ExecutorID: session.UserID, Name: strings.TrimSpace(req.Name), Objective: strings.TrimSpace(req.Objective), Scope: strings.TrimSpace(req.Scope), Criteria: strings.TrimSpace(req.Criteria), ProjectID: req.ProjectID, Role: req.Role, Model: req.Model, HITLPolicy: req.HITLPolicy, Concurrency: req.Concurrency, Status: "draft", Steps: []deepassessment.Step{}, Guidance: []string{}, CreatedAt: now, UpdatedAt: now}
 	if _, err := h.deepAssessmentRuntime.configuration(t); err != nil {
 		deepAssessmentError(c, err)
 		return
@@ -221,13 +208,38 @@ func (h *AgentHandler) ListDeepAssessments(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{"tasks": list, "has_more": more})
 }
+
+// Explicit paging keeps long-lived workspaces small without limiting stored work.
+func deepAssessmentView(c *gin.Context, t *deepassessment.Task) gin.H {
+	limit, _ := strconv.Atoi(c.Query("step_limit"))
+	offset, _ := strconv.Atoi(c.Query("step_offset"))
+	if limit <= 0 {
+		return gin.H{"task": t}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	total := len(t.Steps)
+	offset = min(offset, total)
+	end := min(total, offset+limit)
+	view := *t
+	view.Steps = []deepassessment.Step{}
+	for i := offset; i < end; i++ {
+		view.Steps = append(view.Steps, t.Steps[total-1-i])
+	}
+	return gin.H{"task": &view, "step_total": total, "step_next_offset": end, "step_has_more": end < total}
+}
+
 func (h *AgentHandler) GetDeepAssessment(c *gin.Context) {
 	t, err := h.deepAssessments.Store.Get(c.Param("id"))
 	if err != nil {
 		deepAssessmentError(c, err)
 		return
 	}
-	c.JSON(200, gin.H{"task": t})
+	c.JSON(200, deepAssessmentView(c, t))
 }
 func (h *AgentHandler) DeepAssessmentEvents(c *gin.Context) {
 	after, _ := strconv.ParseInt(c.Query("after"), 10, 64)
@@ -258,9 +270,6 @@ func (h *AgentHandler) ControlDeepAssessment(c *gin.Context) {
 		CleanupConfirmed bool   `json:"cleanup_confirmed"`
 		Message          string `json:"message"`
 		StepID           string `json:"step_id"`
-		MaxRounds        int    `json:"max_rounds"`
-		Seconds          int64  `json:"remaining_seconds"`
-		TokenBudget      int64  `json:"token_budget"`
 		Reconciled       bool   `json:"reconciled"`
 	}
 	if !deepAssessmentBody(c, &req) {
@@ -313,7 +322,10 @@ func (h *AgentHandler) ControlDeepAssessment(c *gin.Context) {
 		err = h.deepAssessments.Stop(id, *req.Revision, action == "cancel")
 	case "retry":
 		err = h.deepAssessments.Store.RetryStep(id, req.StepID, *req.Revision, req.Reconciled || req.CleanupConfirmed)
-	case "guidance", "answer", "budget":
+	case "budget":
+		c.JSON(410, gin.H{"error": "深度测评已改为持续执行，不再设置任务预算"})
+		return
+	case "guidance", "answer":
 		err = h.deepAssessments.Store.Change(id, req.StepID, action, req.Message, func(t *deepassessment.Task) error {
 			if (action != "guidance" && t.Revision != *req.Revision) || *req.Revision > t.Revision || t.Status == "completed" || t.Status == "cancelled" {
 				return deepassessment.ErrConflict
@@ -323,8 +335,8 @@ func (h *AgentHandler) ControlDeepAssessment(c *gin.Context) {
 			}
 			switch action {
 			case "guidance", "answer":
-				if strings.TrimSpace(req.Message) == "" || len(req.Message) > 8000 || len(t.Guidance) >= 32 {
-					return fmt.Errorf("补充内容为空、过长或已达到条数上限")
+				if strings.TrimSpace(req.Message) == "" || len(req.Message) > 8000 {
+					return fmt.Errorf("补充内容为空或过长")
 				}
 				if action == "answer" && t.Question == "" {
 					return deepassessment.ErrConflict
@@ -335,21 +347,7 @@ func (h *AgentHandler) ControlDeepAssessment(c *gin.Context) {
 					t.Question = ""
 					t.Status = "paused"
 				}
-			case "budget":
-				if req.MaxRounds < t.Rounds+1 || req.MaxRounds > 4096 || req.Seconds < 1 || req.Seconds > 7*86400 {
-					return fmt.Errorf("预算超出范围")
-				}
-				t.MaxRounds = req.MaxRounds
-				t.RemainingSeconds = req.Seconds
-				deadline := time.Now().UTC().Add(time.Duration(req.Seconds) * time.Second)
-				t.Deadline = &deadline
-				if req.TokenBudget > 0 {
-					if req.TokenBudget < t.TokensUsed || req.TokenBudget > 100000000 {
-						return fmt.Errorf("Token budget out of range")
-					}
-					t.TokenBudget = req.TokenBudget
-				}
-				t.Status = "paused"
+
 			}
 			return nil
 		})
@@ -368,13 +366,13 @@ func (h *AgentHandler) ControlDeepAssessment(c *gin.Context) {
 	if action == "guidance" {
 		h.deepAssessmentRuntime.steer(id, req.Message)
 	}
-	response := gin.H{"task": t}
+	response := deepAssessmentView(c, t)
 	if action == "answer" {
 		if err = h.deepAssessments.Start(id, session.UserID, t.Revision); err != nil {
 			response["start_error"] = err.Error()
 		} else {
 			t, _ = h.deepAssessments.Store.Get(id)
-			response["task"] = t
+			response = deepAssessmentView(c, t)
 		}
 	}
 	if h.audit != nil {
@@ -391,7 +389,7 @@ func (h *AgentHandler) DeepAssessmentReport(c *gin.Context) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n状态：%s\n\n## 目标\n%s\n\n## 范围\n%s\n\n## 验收条件\n%s\n\n## 当前结论\n%s\n\n## 路线\n%s\n", t.Name, t.Status, t.Objective, t.Scope, t.Criteria, t.Summary, t.Strategy)
-	fmt.Fprintf(&b, "\n## 运行记录\n\n截止时间：%v\n\n规划：%d / %d\n\nToken：%d / %d\n", t.Deadline, t.Rounds, t.MaxRounds, t.TokensUsed, t.TokenBudget)
+	fmt.Fprintf(&b, "\n## 运行记录\n\n模式：持续执行\n\n累计规划：%d\n\n累计 Token：%d\n", t.Rounds, t.TokensUsed)
 	for _, s := range t.Steps {
 		fmt.Fprintf(&b, "\n## %s · %s [%s]\n\n%s\n\n前置：%s\n\n%s\n\n执行会话：%s\n\n证据回执：%s\n", s.ID, s.Title, s.Status, s.Instruction, strings.Join(s.DependsOn, ", "), s.Summary, s.ConversationID, strings.Join(s.Evidence, ", "))
 	}

@@ -6,14 +6,14 @@ import (
 )
 
 func assessmentObject(props map[string]any, required ...string) map[string]any {
-	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}
+	return map[string]any{"type": "object", "properties": props, "required": append([]string{}, required...), "additionalProperties": false}
 }
 func assessmentString() map[string]any { return map[string]any{"type": "string"} }
 func assessmentStrings() map[string]any {
 	return map[string]any{"type": "array", "items": assessmentString()}
 }
 func assessmentPlanSchema() map[string]any {
-	return assessmentObject(map[string]any{"strategy": assessmentString(), "summary": assessmentString(), "question": assessmentString(), "retire": assessmentStrings(), "steps": map[string]any{"type": "array", "maxItems": 8, "items": assessmentObject(map[string]any{"id": assessmentString(), "title": assessmentString(), "instruction": assessmentString(), "depends_on": assessmentStrings()}, "id", "title", "instruction", "depends_on")}}, "strategy", "summary", "steps", "retire", "question")
+	return assessmentObject(map[string]any{"strategy": assessmentString(), "summary": assessmentString(), "question": assessmentString(), "retire": assessmentStrings(), "steps": map[string]any{"type": "array", "maxItems": 8, "items": assessmentObject(map[string]any{"id": assessmentString(), "title": assessmentString(), "instruction": assessmentString(), "depends_on": assessmentStrings(), "source_ids": assessmentStrings()}, "id", "title", "instruction", "depends_on")}}, "strategy", "summary", "steps", "retire", "question")
 }
 func assessmentReviewSchema() map[string]any {
 	return assessmentObject(map[string]any{"complete": map[string]any{"type": "boolean"}, "summary": assessmentString(), "missing": assessmentString(), "evidence": assessmentStrings()}, "complete", "summary", "missing", "evidence")

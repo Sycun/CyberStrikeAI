@@ -37,7 +37,6 @@ func (e *Engine) Start(id, executor string, revision int64) error {
 	if len(e.active) >= 8 {
 		return ErrBusy
 	}
-	var executionDeadline time.Time
 	err := e.Store.Change(id, "", "started", "开始/继续任务", func(t *Task) error {
 		if t.Revision != revision || Active(t.Status) || t.Status == "completed" || t.Status == "cancelled" {
 			return ErrConflict
@@ -50,9 +49,6 @@ func (e *Engine) Start(id, executor string, revision int64) error {
 		if t.Question != "" {
 			return fmt.Errorf("answer the pending question before continuing")
 		}
-		if t.Rounds >= t.MaxRounds || t.SecondsLeft() <= 0 || (t.TokenBudget > 0 && t.TokensUsed >= t.TokenBudget) {
-			return fmt.Errorf("extend the task budget before continuing")
-		}
 		if t.Status != "waiting_retry" && t.Status != "recovering" {
 			t.RetryCount = 0
 		}
@@ -60,11 +56,6 @@ func (e *Engine) Start(id, executor string, revision int64) error {
 		t.ExecutorID = executor
 		now := time.Now().UTC()
 		t.RunStartedAt = &now
-		if t.Deadline == nil {
-			deadline := now.Add(time.Duration(t.RemainingSeconds) * time.Second)
-			t.Deadline = &deadline
-		}
-		executionDeadline = *t.Deadline
 		t.RestartPending = false
 		t.NextWake = nil
 		return nil
@@ -72,7 +63,7 @@ func (e *Engine) Start(id, executor string, revision int64) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithDeadline(context.Background(), executionDeadline)
+	ctx, cancel := context.WithCancel(context.Background())
 	e.active[id] = cancel
 	e.wg.Add(1)
 	go func() {
@@ -176,12 +167,7 @@ func (e *Engine) run(parent context.Context, id string) {
 					t.Status = "recovering"
 				}
 			case "running":
-				if parent.Err() == context.DeadlineExceeded {
-					t.Status = "budget_exhausted"
-					t.Summary = "时间预算已耗尽，已保留未完成工作。"
-				} else {
-					t.Status = "paused"
-				}
+				t.Status = "paused"
 			}
 			for i := range t.Steps {
 				if unknown[t.Steps[i].ID] {
@@ -200,6 +186,18 @@ func (e *Engine) run(parent context.Context, id string) {
 	workers := map[string]bool{}
 	planning, reviewing, needPlan := false, false, true
 	noProgress := 0
+	waitForProgress := func(message string) {
+		_ = e.Store.Change(id, "", "waiting_progress", message, func(t *Task) error {
+			if t.Status != "running" {
+				return ErrConflict
+			}
+			t.Status = "waiting_progress"
+			t.Summary = Clip(message, 12000)
+			wake := time.Now().UTC().Add(2 * time.Minute)
+			t.NextWake = &wake
+			return nil
+		})
+	}
 	lastGuidance := 0
 	stop := func(status, message string) {
 		_ = e.Store.Change(id, "", status, message, func(t *Task) error {
@@ -224,10 +222,6 @@ func (e *Engine) run(parent context.Context, id string) {
 	for {
 		t, err := e.Store.Get(id)
 		if err != nil {
-			return
-		}
-		if t.TokenBudget > 0 && t.TokensUsed >= t.TokenBudget {
-			stop("budget_exhausted", "Token 预算已到，保存结果后停止派发。")
 			return
 		}
 		if len(t.Guidance) > lastGuidance {
@@ -318,9 +312,9 @@ func (e *Engine) run(parent context.Context, id string) {
 						}
 						s.LastProgress = out.Progress
 						s.Status = "pending"
-						if s.StalledSegments >= 3 || s.Attempts >= 512 {
+						if s.StalledSegments >= 3 {
 							s.Status = "blocked"
-							s.Summary += "\n连续分段没有新增证据或达到分段上限。"
+							s.Summary += "\n连续分段没有新增证据，等待规划器换路。"
 						}
 					} else if (out.Status == "completed" || out.Status == "blocked") && out.Summary != "" {
 						s.Status = out.Status
@@ -337,43 +331,26 @@ func (e *Engine) run(parent context.Context, id string) {
 			})
 		}
 		if needPlan && !planning && !reviewing {
-			if t.Rounds >= t.MaxRounds {
-				if len(workers) == 0 {
-					allSettled := len(t.Steps) > 0
-					for _, step := range t.Steps {
-						if step.Status != "completed" && step.Status != "retired" {
-							allSettled = false
-						}
-					}
-					if !allSettled {
-						stop("budget_exhausted", "规划轮数已耗尽，未完成的步骤与结果已保存。")
-						return
-					}
-					// Keep a final acceptance check after the last planning round.
-					needPlan = false
+			err = e.Store.Change(id, "", "planning", "根据最新结果更新计划。", func(current *Task) error {
+				if current.Status != "running" {
+					return ErrConflict
 				}
-			} else {
-				err = e.Store.Change(id, "", "planning", "根据最新结果更新计划。", func(current *Task) error {
-					if current.Status != "running" {
-						return ErrConflict
-					}
-					current.Rounds++
-					return nil
-				})
-				if err != nil {
-					return
-				}
-				snapshot, err := e.Store.Get(id)
-				if err != nil {
-					return
-				}
-				planning = true
-				needPlan = false
-				launch(func() result {
-					p, err := e.Runtime.Plan(ctx, snapshot)
-					return result{kind: "plan", proposal: p, err: err, guidance: len(snapshot.Guidance), revision: snapshot.Revision}
-				})
+				current.Rounds++
+				return nil
+			})
+			if err != nil {
+				return
 			}
+			snapshot, err := e.Store.Get(id)
+			if err != nil {
+				return
+			}
+			planning = true
+			needPlan = false
+			launch(func() result {
+				p, err := e.Runtime.Plan(ctx, snapshot)
+				return result{kind: "plan", proposal: p, err: err, guidance: len(snapshot.Guidance), revision: snapshot.Revision}
+			})
 		}
 		if len(workers) == 0 && !planning && !reviewing && !needPlan {
 			if t.Question != "" {
@@ -388,12 +365,12 @@ func (e *Engine) run(parent context.Context, id string) {
 				continue
 			}
 			if len(t.Steps) == 0 {
-				stop("blocked", "规划没有产生可执行步骤，请补充目标或方向。")
+				waitForProgress("当前没有可执行的新方向，已保留探索图，稍后重新评估；也可补充线索。")
 				return
 			}
 			for _, s := range t.Steps {
 				if s.Status != "completed" && s.Status != "retired" {
-					stop("blocked", "存在失败、中断或依赖未满足的步骤。请检查结果、补充方向或明确重试。")
+					waitForProgress("仍有受阻方向或依赖缺口，稍后结合已有证据重新规划。")
 					return
 				}
 			}
@@ -412,14 +389,10 @@ func (e *Engine) run(parent context.Context, id string) {
 			if errors.Is(r.err, ErrRetryable) {
 				_ = e.Store.Change(id, "", "retry_scheduled", r.err.Error(), func(t *Task) error {
 					t.RetryCount++
-					if t.RetryCount > 8 {
-						t.Status = "blocked"
-						t.Summary = "模型连续恢复失败，请检查渠道后继续。"
-					} else {
-						t.Status = "waiting_retry"
-						wake := time.Now().Add(time.Duration(min(t.RetryCount, 5)) * 30 * time.Second)
-						t.NextWake = &wake
-					}
+					t.Status = "waiting_retry"
+					wake := time.Now().UTC().Add(time.Duration(min(t.RetryCount, 5)) * 30 * time.Second)
+					t.NextWake = &wake
+
 					return nil
 				})
 				return
@@ -490,13 +463,9 @@ func (e *Engine) run(parent context.Context, id string) {
 					}
 					return
 				}
-				if current.Rounds >= current.MaxRounds {
-					stop("budget_exhausted", "规划轮数已耗尽；验收缺口: "+r.verdict.Missing)
-					return
-				}
 				noProgress++
 				if noProgress >= 2 {
-					stop("blocked", "验收仍有缺口且没有新增进展: "+r.verdict.Missing)
+					waitForProgress("验收仍有缺口，已保存证据，稍后继续评估: " + r.verdict.Missing)
 					return
 				}
 				if err = e.Store.Change(id, "", "review_gap", r.verdict.Missing, func(latest *Task) error {
@@ -539,6 +508,10 @@ func (e *Engine) StartRecovery() {
 			waiting, err := e.Store.List("", "all", "waiting_retry", "", 100, 0)
 			if err == nil {
 				tasks = append(tasks, waiting...)
+				more, err := e.Store.List("", "all", "waiting_progress", "", 100, 0)
+				if err == nil {
+					tasks = append(tasks, more...)
+				}
 			}
 			for _, row := range tasks {
 				if ctx.Err() != nil {
@@ -553,7 +526,7 @@ func (e *Engine) StartRecovery() {
 						return
 					}
 					_ = e.Store.Change(t.ID, "", "recovery_wait", err.Error(), func(current *Task) error {
-						if current.Status == "recovering" || current.Status == "waiting_retry" {
+						if current.Status == "recovering" || current.Status == "waiting_retry" || current.Status == "waiting_progress" {
 							current.Status = "paused"
 							current.Summary = err.Error()
 						}

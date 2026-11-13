@@ -11,12 +11,15 @@ import (
 )
 
 type Task struct {
+	ActiveSeconds int64 `json:"active_seconds"`
+	// Legacy budget fields are decoded only to normalize old saved tasks.
+
 	Deadline         *time.Time                `json:"deadline,omitempty"`
 	AutoResume       bool                      `json:"auto_resume"`
 	RestartPending   bool                      `json:"restart_pending,omitempty"`
 	NextWake         *time.Time                `json:"next_wake,omitempty"`
 	RetryCount       int                       `json:"retry_count"`
-	TokenBudget      int64                     `json:"token_budget"`
+	TokenBudget      int64                     `json:"token_budget,omitempty"`
 	TokensUsed       int64                     `json:"tokens_used"`
 	Metrics          map[string]SessionMetrics `json:"metrics,omitempty"`
 	ID               string                    `json:"id"`
@@ -31,8 +34,8 @@ type Task struct {
 	Model            string                    `json:"model"`
 	HITLPolicy       string                    `json:"hitl_policy"`
 	Concurrency      int                       `json:"concurrency"`
-	MaxRounds        int                       `json:"max_rounds"`
-	RemainingSeconds int64                     `json:"remaining_seconds"`
+	MaxRounds        int                       `json:"max_rounds,omitempty"`
+	RemainingSeconds int64                     `json:"remaining_seconds,omitempty"`
 	Rounds           int                       `json:"rounds"`
 	Status           string                    `json:"status"`
 	Revision         int64                     `json:"revision"`
@@ -47,6 +50,7 @@ type Task struct {
 }
 
 type Step struct {
+	Sources         []string `json:"source_ids,omitempty"`
 	Evidence        []string `json:"evidence,omitempty"`
 	LastProgress    string   `json:"last_progress,omitempty"`
 	StalledSegments int      `json:"stalled_segments"`
@@ -110,8 +114,8 @@ func (t *Task) Validate() error {
 			return fmt.Errorf("%s is required (maximum %d characters)", f.name, f.max)
 		}
 	}
-	if t.Concurrency < 1 || t.Concurrency > 4 || t.MaxRounds < 1 || t.MaxRounds > 4096 || t.RemainingSeconds < 1 || t.RemainingSeconds > 7*24*3600 {
-		return fmt.Errorf("invalid concurrency, planning-round or time budget")
+	if t.Concurrency < 1 || t.Concurrency > 4 {
+		return fmt.Errorf("invalid concurrency")
 	}
 	return nil
 }
@@ -142,10 +146,10 @@ func Active(status string) bool {
 }
 
 // ApplyProposal only adds work or retires unstarted branches. It cannot rewrite
-// observations, active work, user criteria, or the lifetime budget.
+// observations, active work, user criteria, or user intent.
 func ApplyProposal(t *Task, p Proposal) error {
-	if len(p.Steps) > 8 || len(t.Steps)+len(p.Steps) > 2048 {
-		return fmt.Errorf("plan exceeds the step limit")
+	if len(p.Steps) > 8 {
+		return fmt.Errorf("one planning update may add at most eight steps")
 	}
 	if len(p.Strategy) > 12000 || len(p.Summary) > 12000 || len(p.Question) > 4000 {
 		return fmt.Errorf("plan text is too large")
@@ -164,7 +168,7 @@ func ApplyProposal(t *Task, p Proposal) error {
 				return fmt.Errorf("duplicate step ID: %s", s.ID)
 			}
 		}
-		if strings.TrimSpace(s.Title) == "" || len(s.Title) > 600 || strings.TrimSpace(s.Instruction) == "" || len(s.Instruction) > 16000 || len(s.DependsOn) > 16 {
+		if strings.TrimSpace(s.Title) == "" || len(s.Title) > 600 || strings.TrimSpace(s.Instruction) == "" || len(s.Instruction) > 16000 || len(s.DependsOn) > 16 || len(s.Sources) > 16 {
 			return fmt.Errorf("invalid step: %s", s.ID)
 		}
 		key := strings.Join(strings.Fields(strings.ToLower(s.Instruction)), " ")
@@ -180,6 +184,9 @@ func ApplyProposal(t *Task, p Proposal) error {
 		s.ConversationID = ""
 		s.Conversations = nil
 		s.Attempts = 0
+		s.Evidence = nil
+		s.LastProgress = ""
+		s.StalledSegments = 0
 		all = append(all, s)
 	}
 	for _, id := range p.Retire {
@@ -266,14 +273,13 @@ type SessionMetrics struct {
 	ToolCount           int    `json:"tool_count"`
 }
 
-func (t *Task) SecondsLeft() int64 {
-	if t.Deadline == nil {
-		return t.RemainingSeconds
+// Continuous normalizes persisted pre-continuous tasks without starting them.
+func (t *Task) Continuous() {
+	t.Deadline = nil
+	t.TokenBudget = 0
+	t.MaxRounds = 0
+	t.RemainingSeconds = 0
+	if t.Status == "budget_exhausted" {
+		t.Status = "paused"
 	}
-	remaining := time.Until(*t.Deadline)
-	n := int64((remaining + time.Second - 1) / time.Second)
-	if remaining <= 0 {
-		return 0
-	}
-	return n
 }

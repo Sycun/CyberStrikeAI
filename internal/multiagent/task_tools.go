@@ -18,6 +18,7 @@ type PiRunOptions struct {
 	BeforeTool       func(context.Context, agentruntime.ToolCall) error
 	AfterTool        func(context.Context, agentruntime.ToolCall, agentruntime.ToolResult) error
 	Metrics          func(map[string]any)
+	Event            func(agentruntime.Event)
 	Bind             func(agentruntime.Control) func()
 }
 

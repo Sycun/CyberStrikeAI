@@ -1,9 +1,9 @@
 /* Independent assessment workspace. Batch task routes and controllers are untouched. */
 (function () {
     'use strict';
-    const S = { id: '', task: null, tab: 'overview', page: 0, more: false, busy: false, epoch: 0, timer: null, mounted: false, drawerEpoch: 0, events: [], receipts: [], receiptOffset: 0, receiptMore: false };
-    const labels = { status: '状态', updatedAt: '更新时间', loading: '正在读取测评…', contextUsage:'上下文 / 窗口', toolDefinitions:'工具定义', title: '深度测评', subtitle: '围绕一个目标持续探索，保存证据与进度，跨会话继续执行。', create: '新建测评', refresh: '刷新', search: '搜索测评名称', all: '全部状态', empty: '暂无测评，先创建一个目标。', select: '选择测评，查看探索进度与证据。', previous: '上一页', next: '下一页', name: '测评名称', objective: '目标', scope: '允许范围与排除项', criteria: '验收条件', model: '模型渠道', project: '关联项目', role: '角色', default: '系统默认', none: '不关联', hours: '任务窗口（小时）', tokens: 'Token 预算', rounds: '规划轮数上限', concurrency: '并行步骤', autoResume: '服务重启后自动恢复结果明确的步骤', windowNote: '从首次开始计算，暂停和服务停机也计入窗口。', save: '保存草稿', close: '关闭', start: '开始 / 继续', pause: '暂停', cancel: '停止', delete: '删除', report: '下载报告', overview: '概览', plan: '探索计划', evidence: '证据回执', activity: '运行记录', quality: '上下文与用量', guidance: '补充线索或调整方向', send: '提交方向', answer: '答复并继续', budget: '调整预算', retry: '恢复此步骤', conversation: '查看执行会话', unknown: '请先核对回执，确认上次操作结果及执行资源状态。', reconcile: '我已核对上次调用结果，允许从原会话继续', confirmStop: '停止后将保留已有结果，结束本次测评。', confirmDelete: '删除本条测评？关联执行会话仍保留。', remaining: '剩余窗口', deadline: '截止时间', strategy: '当前路线', summary: '当前结论 / 缺口', question: '待补充信息', dependencies: '前置步骤', segments: '执行分段', evidenceIDs: '证据引用', noSteps: '开始后由规划器逐步生成探索方向。', noRecords: '暂无记录', calls: '工具调用', compactions: '上下文压缩', activeTools: '当前可见工具', session: '会话', tokenNote: '包含 Pi 会话中的压缩用量。预算用于停止后续调度，在途请求可能超出预算。', recoveryNote: '结果不明的调用会暂停等待核对，已完成步骤不会自动重做。', saved: '已保存', updated: '已更新', retryNote: '恢复会保留原 Pi 会话及历史证据。', newHours: '从现在起的剩余窗口（小时）' };
-    const states = { draft: '草稿', running: '执行中', pending: '待执行', completed: '已完成', blocked: '受阻', failed: '失败', paused: '已暂停', pausing: '暂停中', cancelling: '停止中', cancelled: '已停止', recovering: '待恢复', waiting_retry: '等待模型恢复', waiting_input: '待答复', needs_review: '待核对', uncertain: '结果不明', budget_exhausted: '预算耗尽', interrupted: '已中断', cleanup_unconfirmed: '待确认资源停止', retired: '已撤下', reconciled: '已核对', yielded: '分段完成' };
+    const S = { id: '', task: null, tab: 'graph', graph: null, graphScope: '', graphOffset: 0, graphNode: null, nodeOffset: 0, nodeMore: false, nodeRequest: 0, stepOffset: 0, stepTotal: 0, stepMore: false, page: 0, more: false, busy: false, epoch: 0, timer: null, mounted: false, drawerEpoch: 0, events: [], receipts: [], receiptOffset: 0, receiptMore: false };
+    const labels = { graph: '探索图', continuous: '持续执行', mode: '运行模式', elapsed: '已运行', graphHint: '摘要用于续接；原始观察和执行回执可随时展开。', graphVisible: '当前页节点', graphFolded: '已折叠节点', graphHome: '全图概览', graphExpand: '展开关联节点', graphFit: '适应画布', graphSelect: '点击节点查看原始内容与来源。', graphMore: '继续读取原文', status: '状态', updatedAt: '更新时间', loading: '正在读取测评…', contextUsage:'上下文 / 窗口', toolDefinitions:'工具定义', title: '深度测评', subtitle: '围绕一个目标持续探索，保存证据与进度，跨会话继续执行。', create: '新建测评', refresh: '刷新', search: '搜索测评名称', all: '全部状态', empty: '暂无测评，先创建一个目标。', select: '选择测评，查看探索进度与证据。', previous: '上一页', next: '下一页', name: '测评名称', objective: '目标', scope: '允许范围与排除项', criteria: '验收条件', model: '模型渠道', project: '关联项目', role: '角色', default: '系统默认', none: '不关联', tokens: '累计 Token', rounds: '规划轮次', concurrency: '并行步骤', autoResume: '服务重启后自动恢复结果明确的步骤', save: '保存草稿', close: '关闭', start: '开始 / 继续', pause: '暂停', cancel: '停止', delete: '删除', report: '下载报告', overview: '概览', plan: '步骤清单', evidence: '证据回执', activity: '运行记录', quality: '上下文与用量', guidance: '补充线索或调整方向', send: '提交方向', answer: '答复并继续', retry: '恢复此步骤', conversation: '查看执行会话', unknown: '请先核对回执，确认上次操作结果及执行资源状态。', reconcile: '我已核对上次调用结果，允许从原会话继续', confirmStop: '停止后将保留已有结果，结束本次测评。', confirmDelete: '删除本条测评？关联执行会话仍保留。', strategy: '当前路线', summary: '当前结论 / 缺口', question: '待补充信息', dependencies: '前置步骤', segments: '执行分段', evidenceIDs: '证据引用', noSteps: '开始后由规划器逐步生成探索方向。', noRecords: '暂无记录', calls: '工具调用', compactions: '上下文压缩', activeTools: '当前可见工具', session: '会话', tokenNote: '累计用量包含 Pi 压缩，不作为任务自动结束条件。', recoveryNote: '结果不明的调用会暂停等待核对，已完成步骤不会自动重做。', saved: '已保存', updated: '已更新', retryNote: '恢复会保留原 Pi 会话及历史证据。' };
+    const states = { draft: '草稿', running: '执行中', pending: '待执行', completed: '已完成', blocked: '受阻', failed: '失败', paused: '已暂停', pausing: '暂停中', cancelling: '停止中', cancelled: '已停止', recovering: '待恢复', waiting_retry: '等待模型恢复', waiting_input: '待答复', needs_review: '待核对', uncertain: '结果不明', waiting_progress: '等待新进展', interrupted: '已中断', cleanup_unconfirmed: '待确认资源停止', retired: '已撤下', reconciled: '已核对', yielded: '分段完成' };
     const tr = (key, fallback) => { const v = typeof window.t === 'function' ? window.t('deepAssessments.' + key) : ''; return v && v !== 'deepAssessments.' + key ? v : fallback; };
     const L = key => tr(key, labels[key] || key);
     const status = key => tr('states.' + key, states[key] || key);
@@ -101,7 +101,8 @@
             if (window.location.hash.slice(1).split('?')[0] !== 'deep-assessments') { closeDrawer('da-form-drawer'); closeDrawer('da-inspector'); }
         });
         root.addEventListener('click', event => { const target = event.target.closest('[data-da-action]'); if (target) void action(target.dataset.daAction, target.dataset); });
-        root.addEventListener('submit', event => { event.preventDefault(); if (event.target.id === 'da-create-form') void saveCreate(event.target); if (event.target.id === 'da-guidance-form') void guidance(); if (event.target.id === 'da-budget-form') void saveBudget(event.target); });
+        root.addEventListener('submit', event => { event.preventDefault(); if (event.target.id === 'da-create-form') void saveCreate(event.target); if (event.target.id === 'da-guidance-form') void guidance();  });
+        root.addEventListener('change', event => { if (event.target.id === 'da-graph-select' && event.target.value) void selectGraphNode(event.target.value); });
         let searchTimer;
         $('da-search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { S.page = 0; void refresh(); }, 250); });
         $('da-filter').addEventListener('change', () => { S.page = 0; void refresh(); });
@@ -110,15 +111,19 @@
         const task = S.task;
         if (!task) { $('da-title').textContent = L('title'); $('da-controls').innerHTML = ''; $('da-tabs').innerHTML = ''; $('da-body').textContent = L(S.id ? 'loading' : 'select'); $('da-guidance-form').hidden = true; return; }
         $('da-title').innerHTML = `<h3>${esc(task.name)} ${badge(task.status)}</h3>`;
-        $('da-controls').innerHTML = `${can('write') && !terminal(task) ? (!active(task) ? button('start', L('start'), task.question || task.status === 'needs_review' ? 'disabled' : '') + button('budget', L('budget')) : button('pause', L('pause'), task.status !== 'running' ? 'disabled' : '')) + button('cancel', L('cancel')) : ''}${button('report', L('report'))}${can('delete') && !active(task) ? button('delete', L('delete')) : ''}`;
-        $('da-tabs').innerHTML = ['overview', 'plan', 'evidence', 'activity', 'quality'].map(tab => `<button type="button" role="tab" aria-selected="${S.tab === tab}" data-da-action="tab" data-tab="${tab}" class="${S.tab === tab ? 'active' : ''}">${esc(L(tab))}</button>`).join('');
+        $('da-controls').innerHTML = `${can('write') && !terminal(task) ? (!active(task) ? button('start', L('start'), task.question || task.status === 'needs_review' ? 'disabled' : '') : button('pause', L('pause'), task.status !== 'running' ? 'disabled' : '')) + button('cancel', L('cancel')) : ''}${button('report', L('report'))}${can('delete') && !active(task) ? button('delete', L('delete')) : ''}`;
+        $('da-tabs').innerHTML = ['overview', 'graph', 'plan', 'evidence', 'activity', 'quality'].map(tab => `<button type="button" role="tab" aria-selected="${S.tab === tab}" data-da-action="tab" data-tab="${tab}" class="${S.tab === tab ? 'active' : ''}">${esc(L(tab))}</button>`).join('');
         const body = $('da-body'), scroller = $('da-inspector').querySelector('.da-detail-scroll'), scroll = scroller.scrollTop;
         const opened = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.step));
+        if (S.tab !== 'graph') window.DeepAssessmentGraph?.destroy();
         if (S.tab === 'overview') {
-            const seconds = task.deadline ? Math.max(0, (Date.parse(task.deadline) - Date.now()) / 1000) : task.remaining_seconds;
-            body.innerHTML = `<div class="da-stats"><div><small>${esc(L('remaining'))}</small><strong>${(seconds / 3600).toFixed(1)} h</strong></div><div><small>${esc(L('tokens'))}</small><strong>${Number(task.tokens_used || 0).toLocaleString()} / ${Number(task.token_budget || 0).toLocaleString()}</strong></div><div><small>${esc(L('rounds'))}</small><strong>${task.rounds || 0} / ${task.max_rounds}</strong></div></div>${task.deadline ? `<p>${esc(L('deadline'))}：${esc(new Date(task.deadline).toLocaleString())}</p>` : ''}${['objective', 'scope', 'criteria', 'strategy', 'summary', 'question'].filter(k => task[k]).map(k => `<section class="da-section"><h4>${esc(L(k))}</h4><pre>${esc(task[k])}</pre></section>`).join('')}<p class="da-muted">${esc(L('recoveryNote'))}</p>`;
+            const seconds = (task.active_seconds || 0) + (active(task) && task.run_started_at ? Math.max(0, (Date.now() - Date.parse(task.run_started_at)) / 1000) : 0);
+            body.innerHTML = `<div class="da-stats"><div><small>${esc(L('mode'))}</small><strong>${esc(L('continuous'))}</strong><small>${esc(L('elapsed'))} ${(seconds / 3600).toFixed(1)} h</small></div><div><small>${esc(L('tokens'))}</small><strong>${Number(task.tokens_used || 0).toLocaleString()}</strong></div><div><small>${esc(L('rounds'))}</small><strong>${task.rounds || 0}</strong></div></div>${['objective', 'scope', 'criteria', 'strategy', 'summary', 'question'].filter(k => task[k]).map(k => `<section class="da-section"><h4>${esc(L(k))}</h4><pre>${esc(task[k])}</pre></section>`).join('')}<p class="da-muted">${esc(L('recoveryNote'))}</p>`;
+        } else if (S.tab === 'graph') {
+            renderGraph(body);
         } else if (S.tab === 'plan') {
             body.innerHTML = (task.steps || []).map(step => `<details class="da-step" data-step="${esc(step.id)}" ${opened.has(step.id) ? 'open' : ''}><summary>${badge(step.status)} <strong>${esc(step.title)}</strong><small>${esc(step.id)}</small></summary><pre>${esc(step.instruction)}</pre><p>${esc(L('dependencies'))}: ${esc((step.depends_on || []).join(', ') || '—')} · ${esc(L('segments'))}: ${step.attempts || 0}</p><pre>${esc(step.summary)}</pre><p>${esc(L('evidenceIDs'))}: ${esc((step.evidence || []).join(', ') || '—')}</p><div class="da-controls">${step.conversation_id ? button('conversation', L('conversation'), `data-conversation="${esc(step.conversation_id)}"`) : ''}${!active(task) && can('write') && ['failed', 'blocked', 'interrupted', 'uncertain', 'cleanup_unconfirmed'].includes(step.status) ? button('retry', L('retry'), `data-step="${esc(step.id)}"`) : ''}</div></details>`).join('') || `<p>${esc(L('noSteps'))}</p>`;
+            body.innerHTML += `<div class="da-controls">${S.stepOffset ? button('step-previous', L('previous')) : ''}<span>${(task.steps || []).length} / ${S.stepTotal}</span>${S.stepMore ? button('step-next', L('next')) : ''}</div>`;
         } else if (S.tab === 'evidence') {
             body.innerHTML = S.receipts.map(row => `<details class="da-step" data-step="${esc(row.id)}" ${opened.has(row.id) ? 'open' : ''}><summary>${badge(row.status)} ${esc(row.tool)} · ${esc(row.step_id)}</summary><code>${esc(row.execution_id || row.id)}</code><pre>${esc(row.arguments)}</pre><pre>${esc(row.result)}</pre></details>`).join('') || `<p>${esc(L('noRecords'))}</p>`;
             body.innerHTML += `<div class="da-controls">${S.receiptOffset > 0 ? button('previous-receipts', L('previous')) : ''}${S.receiptMore ? button('more-receipts', L('next')) : ''}</div>`;
@@ -137,27 +142,59 @@
         const epoch = ++S.epoch, id = $('da-inspector').open ? S.id : '';
         try {
             const query = new URLSearchParams({ q: $('da-search').value, status: $('da-filter').value, limit: '20', offset: String(S.page * 20) });
-            const [list, detail] = await Promise.all([json('?' + query), id ? json('/' + encodeURIComponent(id)) : null]);
+            const [list, detail] = await Promise.all([json('?' + query), id ? json('/' + encodeURIComponent(id) + '?step_limit=50&step_offset=' + S.stepOffset) : null]);
             if (epoch !== S.epoch || S.busy) return;
             S.more = list.has_more;
             const listScroll = $('da-list').scrollTop;
-            $('da-list').innerHTML = (list.tasks || []).map(task => `<button type="button" class="da-list-item ${task.id === S.id ? 'selected' : ''}" data-da-action="select" data-id="${esc(task.id)}" aria-haspopup="dialog"><strong>${esc(task.name)}</strong><span>${badge(task.status)}</span><span class="da-row-rounds"><small>${esc(L('rounds'))}</small>${task.rounds || 0} / ${task.max_rounds}</span><span class="da-row-tokens"><small>${esc(L('tokens'))}</small>${Number(task.tokens_used || 0).toLocaleString()} / ${Number(task.token_budget || 0).toLocaleString()}</span><time>${esc(new Date(task.updated_at).toLocaleString())}</time></button>`).join('') || `<p class="da-muted da-empty">${esc(L('empty'))}</p>`;
+            $('da-list').innerHTML = (list.tasks || []).map(task => `<button type="button" class="da-list-item ${task.id === S.id ? 'selected' : ''}" data-da-action="select" data-id="${esc(task.id)}" aria-haspopup="dialog"><strong>${esc(task.name)}</strong><span>${badge(task.status)}</span><span class="da-row-rounds"><small>${esc(L('rounds'))}</small>${task.rounds || 0}</span><span class="da-row-tokens"><small>${esc(L('tokens'))}</small>${Number(task.tokens_used || 0).toLocaleString()}</span><time>${esc(new Date(task.updated_at).toLocaleString())}</time></button>`).join('') || `<p class="da-muted da-empty">${esc(L('empty'))}</p>`;
             $('da-list').scrollTop = listScroll;
             $('da-page').textContent = String(S.page + 1);
             $('deep-assessments-root').querySelector('[data-da-action="previous"]').disabled = S.page === 0;
             $('deep-assessments-root').querySelector('[data-da-action="next"]').disabled = !S.more;
             if (detail && (!S.task || detail.task.revision >= S.task.revision)) S.task = detail.task;
+            if (detail) { S.stepTotal = detail.step_total ?? detail.task.steps?.length ?? 0; S.stepMore = !!detail.step_has_more; }
+            if (id && S.tab === 'graph') { const data = await json('/' + encodeURIComponent(id) + '/graph?' + new URLSearchParams({ scope: S.graphScope, offset: S.graphOffset, limit: 80 })); if (epoch !== S.epoch) return; S.graph = data; }
             if (id && S.tab === 'activity') { const data = await json('/' + encodeURIComponent(id) + '/events?after=' + (S.events.at(-1)?.id || 0)); if (epoch !== S.epoch) return; S.events.push(...data.events); S.events = S.events.slice(-500); }
             if (id && S.tab === 'evidence') { const data = await json('/' + encodeURIComponent(id) + '/receipts?offset=' + S.receiptOffset); if (epoch !== S.epoch) return; S.receipts = data.receipts; S.receiptMore = data.has_more; }
             renderTask();
         } catch (error) { if (epoch === S.epoch) notice(error.message, true); }
     }
+    const graphKind = kind => tr('graphKinds.' + kind, { goal: '目标', step: '探索步骤', observation: '观察', receipt: '执行回执', memory: 'Pi 摘要', digest: '历史归档', guidance: '人工线索' }[kind] || kind);
+    function renderGraph(body) {
+        if (!body.querySelector('#da-graph-canvas')) {
+            window.DeepAssessmentGraph?.destroy();
+            body.innerHTML = `<div class="da-graph-toolbar">${button('graph-home', L('graphHome'))}${button('graph-fit', L('graphFit'))}${button('graph-in', '+', 'aria-label="Zoom in"')}${button('graph-out', '−', 'aria-label="Zoom out"')}<span id="da-graph-meta"></span></div><p class="da-muted">${esc(L('graphHint'))}</p><div class="da-graph-legend">${['goal','step','observation','receipt','memory','digest','guidance'].map(k => `<span class="da-kind-${k}">${esc(graphKind(k))}</span>`).join('')}</div><select id="da-graph-select" class="form-control" aria-label="${esc(L('graphSelect'))}"></select><div class="da-graph-workspace"><div id="da-graph-canvas" role="img" aria-label="${esc(L('graph'))}"></div><section id="da-graph-node" aria-live="polite"></section></div><div id="da-graph-pages" class="da-controls"></div>`;
+        }
+        if (!S.graph) { $('da-graph-meta').textContent = L('loading'); return; }
+        $('da-graph-meta').textContent = `${L('graphVisible')} ${Math.max(0, S.graph.nodes.length - 1)} / ${S.graph.total} · ${L('graphFolded')} ${S.graph.folded}`;
+        $('da-graph-select').innerHTML = `<option value="">${esc(L('graphSelect'))}</option>` + S.graph.nodes.map(n => `<option value="${esc(n.id)}" ${S.graphNode?.id === n.id ? 'selected' : ''}>${esc(graphKind(n.kind) + ' · ' + n.title)}</option>`).join('');
+        const task = S.id;
+        window.DeepAssessmentGraph?.render($('da-graph-canvas'), S.graph, task + '/' + S.graphScope + '/' + S.graphOffset, node => { if (S.id === task) void selectGraphNode(node); }, graphKind);
+        $('da-graph-pages').innerHTML = `${S.graphOffset ? button('graph-previous', L('previous')) : ''}${S.graph.has_more ? button('graph-next', L('next')) : ''}`;
+        renderGraphNode();
+    }
+    const graphState = state => tr('graphStates.' + state, { summary: '压缩摘要', note: '观察记录', user: '用户提供', folded: '已折叠' }[state] || status(state));
+    function renderGraphNode() {
+        const panel = $('da-graph-node'); if (!panel) return;
+        const n = S.graphNode;
+        panel.innerHTML = n ? `<small>${esc(graphKind(n.kind))} · ${esc(graphState(n.state))}</small><h4>${esc(n.title)}</h4><code>${esc(n.id)}</code><pre>${esc(n.body)}</pre><details><summary>${esc(L('evidenceIDs'))}</summary><pre>${esc(JSON.stringify(n.source || {}, null, 2))}</pre></details><div class="da-controls">${['step','digest'].includes(n.kind) ? button('graph-expand', L('graphExpand'), `data-node="${esc(n.id)}"`) : ''}${S.nodeMore ? button('graph-more', L('graphMore')) : ''}</div>` : `<p class="da-muted">${esc(L('graphSelect'))}</p>`;
+    }
+    async function selectGraphNode(node, append = false) {
+        const task = S.id, request = ++S.nodeRequest;
+        try {
+            const data = await json('/' + encodeURIComponent(task) + '/graph/node?' + new URLSearchParams({ node_id: node, offset: append ? S.nodeOffset : 0 }));
+            if (request !== S.nodeRequest || S.id !== task || S.tab !== 'graph') return;
+            if (append && S.graphNode?.id === node) data.node.body = S.graphNode.body + data.node.body;
+            S.graphNode = data.node; window.DeepAssessmentGraph?.select(node); if ($('da-graph-select')) $('da-graph-select').value = node; S.nodeOffset = data.next_offset; S.nodeMore = data.has_more;
+            renderGraphNode();
+        } catch (error) { if (request === S.nodeRequest && S.id === task) notice(error.message, true); }
+    }
     async function mutate(action, values = {}) {
         if (S.busy || !S.task || !can('write')) return false;
         S.busy = true; ++S.epoch; renderTask();
         try {
-            const data = await json('/' + encodeURIComponent(S.id) + '/control/' + action, { method: 'POST', body: JSON.stringify({ revision: S.task.revision, ...values }) });
-            S.task = data.task; notice(data.start_error || L('updated'), !!data.start_error); return !data.start_error;
+            const data = await json('/' + encodeURIComponent(S.id) + '/control/' + action + '?step_limit=50&step_offset=' + S.stepOffset, { method: 'POST', body: JSON.stringify({ revision: S.task.revision, ...values }) });
+            S.task = data.task; S.stepTotal = data.step_total ?? data.task.steps?.length ?? 0; S.stepMore = !!data.step_has_more; notice(data.start_error || L('updated'), !!data.start_error); return !data.start_error;
         } catch (error) { notice(error.message, true); return false; }
         finally { S.busy = false; renderTask(); void refresh(); }
     }
@@ -174,19 +211,18 @@
         const epoch = ++S.drawerEpoch;
         const opts = await json('/options');
         if (epoch !== S.drawerEpoch || !$('page-deep-assessments')?.classList.contains('active')) return;
-        showForm(L('create'), `<form id="da-create-form" class="da-drawer-form"><div class="da-form-body">${field('name', L('name'), '', 'text', 'maxlength="200" required')}<label>${esc(L('objective'))}<textarea class="form-control" name="objective" rows="3" maxlength="16000" required></textarea></label><label>${esc(L('scope'))}<textarea class="form-control" name="scope" rows="3" maxlength="16000" required></textarea></label><label>${esc(L('criteria'))}<textarea class="form-control" name="criteria" rows="2" maxlength="8000"></textarea></label><div class="da-form-grid">${choices('model', L('model'), opts.models || [], L('default'))}${choices('role', L('role'), opts.roles || [], L('default'))}${choices('project_id', L('project'), opts.projects || [], L('none'))}${field('hours', L('hours'), 48, 'number', 'min="0.1" max="168" step="0.1" required')}${field('token_budget', L('tokens'), 2000000, 'number', 'min="1" max="100000000" required')}${field('max_rounds', L('rounds'), 512, 'number', 'min="1" max="4096" required')}${field('concurrency', L('concurrency'), 2, 'number', 'min="1" max="4" required')}</div><label class="da-check"><input type="checkbox" name="auto_resume" checked>${esc(L('autoResume'))}</label><p class="da-muted">${esc(L('windowNote'))} ${esc(L('recoveryNote'))}</p></div><footer class="da-drawer-footer"><button type="submit" class="btn-primary">${esc(L('save'))}</button>${button('close', L('close'))}</footer></form>`);
+        showForm(L('create'), `<form id="da-create-form" class="da-drawer-form"><div class="da-form-body">${field('name', L('name'), '', 'text', 'maxlength="200" required')}<label>${esc(L('objective'))}<textarea class="form-control" name="objective" rows="3" maxlength="16000" required></textarea></label><label>${esc(L('scope'))}<textarea class="form-control" name="scope" rows="3" maxlength="16000" required></textarea></label><label>${esc(L('criteria'))}<textarea class="form-control" name="criteria" rows="2" maxlength="8000"></textarea></label><div class="da-form-grid">${choices('model', L('model'), opts.models || [], L('default'))}${choices('role', L('role'), opts.roles || [], L('default'))}${choices('project_id', L('project'), opts.projects || [], L('none'))}${field('concurrency', L('concurrency'), 2, 'number', 'min="1" max="4" required')}</div><label class="da-check"><input type="checkbox" name="auto_resume" checked>${esc(L('autoResume'))}</label><p class="da-muted">${esc(L('recoveryNote'))}</p></div><footer class="da-drawer-footer"><button type="submit" class="btn-primary">${esc(L('save'))}</button>${button('close', L('close'))}</footer></form>`);
     }
     async function saveCreate(form) {
         if (S.busy || !can('write')) return;
-        const values = Object.fromEntries(new FormData(form)); values.remaining_seconds = Math.round(Number(values.hours) * 3600); delete values.hours;
-        for (const key of ['token_budget', 'max_rounds', 'concurrency']) values[key] = Number(values[key]); values.auto_resume = form.elements.auto_resume.checked;
+        const values = Object.fromEntries(new FormData(form));
+        values.concurrency = Number(values.concurrency); values.auto_resume = form.elements.auto_resume.checked;
         S.busy = true; ++S.epoch; form.querySelector('button[type="submit"]').disabled = true;
-        try { const data = await json('', { method: 'POST', body: JSON.stringify(values) }); S.id = data.task.id; S.task = data.task; S.tab = 'overview'; S.events = []; S.receipts = []; S.receiptOffset = 0; closeDrawer('da-form-drawer'); renderTask(); if ($('page-deep-assessments')?.classList.contains('active')) openDrawer('da-inspector'); notice(L('saved')); }
+        try { const data = await json('', { method: 'POST', body: JSON.stringify(values) }); S.id = data.task.id; S.task = data.task; S.tab = 'graph'; S.stepOffset = 0; S.stepMore = false; S.stepTotal = 0; S.graph = null; S.graphScope = ''; S.graphOffset = 0; S.graphNode = null; S.events = []; S.receipts = []; S.receiptOffset = 0; closeDrawer('da-form-drawer'); renderTask(); if ($('page-deep-assessments')?.classList.contains('active')) openDrawer('da-inspector'); notice(L('saved')); }
         catch (error) { notice(error.message, true); }
         finally { S.busy = false; form.querySelector('button[type="submit"]').disabled = false; await refresh(); }
     }
     async function guidance() { const value = $('da-guidance').value.trim(); if (!value) return; if (await mutate(S.task.question ? 'answer' : 'guidance', { message: value })) { if ($('da-guidance').value.trim() === value) $('da-guidance').value = ''; } }
-    async function saveBudget(form) { const values = Object.fromEntries(new FormData(form)); if (await mutate('budget', { remaining_seconds: Math.round(Number(values.hours) * 3600), max_rounds: Number(values.max_rounds), token_budget: Number(values.token_budget) })) closeDrawer('da-form-drawer'); }
     async function action(name, data = {}) {
         if (S.busy) return;
         try {
@@ -195,12 +231,19 @@
             if (name === 'create') return await create();
             if (name === 'refresh') return await refresh();
             if (name === 'previous' || name === 'next') { S.page += name === 'previous' ? -1 : 1; S.page = Math.max(0, S.page); return await refresh(); }
-            if (name === 'select') { ++S.drawerEpoch; if (S.id !== data.id) { S.id = data.id; S.task = null; S.events = []; S.receipts = []; S.receiptOffset = 0; $('da-guidance').value = ''; $('da-inspector').querySelector('.da-detail-scroll').scrollTop = 0; } renderTask(); openDrawer('da-inspector'); return await refresh(); }
+            if (name === 'select') { ++S.drawerEpoch; if (S.id !== data.id) { S.id = data.id; S.task = null; S.tab = 'graph'; S.stepOffset = 0; S.stepMore = false; S.stepTotal = 0; S.graph = null; S.graphScope = ''; S.graphOffset = 0; S.graphNode = null; ++S.nodeRequest; S.events = []; S.receipts = []; S.receiptOffset = 0; $('da-guidance').value = ''; $('da-inspector').querySelector('.da-detail-scroll').scrollTop = 0; } renderTask(); openDrawer('da-inspector'); return await refresh(); }
             if (name === 'tab') { S.tab = data.tab; $('da-inspector').querySelector('.da-detail-scroll').scrollTop = 0; return await refresh(); }
+            if (name === 'step-next' || name === 'step-previous') { S.stepOffset = Math.max(0, S.stepOffset + (name === 'step-next' ? 50 : -50)); return await refresh(); }
+            if (name === 'graph-fit') return window.DeepAssessmentGraph?.fit();
+            if (name === 'graph-in') return window.DeepAssessmentGraph?.zoomIn();
+            if (name === 'graph-out') return window.DeepAssessmentGraph?.zoomOut();
+            if (name === 'graph-home' || name === 'graph-expand') { S.graphScope = name === 'graph-home' ? '' : data.node; S.graphOffset = 0; S.graphNode = null; ++S.nodeRequest; return await refresh(); }
+            if (name === 'graph-next' || name === 'graph-previous') { S.graphOffset = Math.max(0, S.graphOffset + (name === 'graph-next' ? 80 : -80)); return await refresh(); }
+            if (name === 'graph-more' && S.graphNode) return await selectGraphNode(S.graphNode.id, true);
             if (name === 'start' || name === 'pause') return await mutate(name);
             if (name === 'cancel') { if (window.confirm(L('confirmStop'))) return await mutate('cancel'); return; }
             if (name === 'conversation') { closeDrawer('da-form-drawer'); closeDrawer('da-inspector'); if (typeof window.switchPage === 'function') window.switchPage('chat'); if (typeof window.loadConversation === 'function') await window.loadConversation(data.conversation); return; }
-            if (name === 'budget') return showForm(L('budget'), `<form id="da-budget-form" class="da-drawer-form"><div class="da-form-body">${field('hours', L('newHours'), 48, 'number', 'min="0.1" max="168" step="0.1" required')}${field('max_rounds', L('rounds'), Math.max(S.task.max_rounds, S.task.rounds + 1), 'number', 'min="1" max="4096" required')}${field('token_budget', L('tokens'), Math.max(S.task.token_budget, S.task.tokens_used + 1), 'number', 'min="1" max="100000000" required')}</div><footer class="da-drawer-footer"><button type="submit" class="btn-primary">${esc(L('save'))}</button>${button('close', L('close'))}</footer></form>`);
+
             if (name === 'retry') { const step = S.task.steps.find(s => s.id === data.step); const uncertain = ['uncertain', 'cleanup_unconfirmed'].includes(step?.status); if (uncertain && !window.confirm(L('unknown') + '\n\n' + L('reconcile'))) return; return await mutate('retry', { step_id: data.step, reconciled: uncertain, cleanup_confirmed: uncertain }); }
             if (name === 'report') { const response = await api('/' + encodeURIComponent(S.id) + '/report'); const url = URL.createObjectURL(await response.blob()); const a = document.createElement('a'); a.href = url; a.download = 'assessment-' + S.id + '.md'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); return; }
             if (name === 'delete' && can('delete') && window.confirm(L('confirmDelete'))) { S.busy = true; ++S.epoch; try { await api('/' + encodeURIComponent(S.id), { method: 'DELETE' }); S.id = ''; S.task = null; closeDrawer('da-inspector'); } finally { S.busy = false; } return await refresh(); }

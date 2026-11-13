@@ -269,29 +269,22 @@ func TestFailedBranchIsReplacedAndReviewGapDrivesMoreWork(t *testing.T) {
 	}
 }
 
-func TestEmptyPlanQuestionAndRoundBudgetAreNotSuccess(t *testing.T) {
-	for _, scenario := range []string{"empty", "question", "budget"} {
-		t.Run(scenario, func(t *testing.T) {
-			s, task := fixture(t)
-			if scenario == "budget" {
-				task.MaxRounds = 1
-				s.Change(task.ID, "", "", "", func(t *Task) error { t.MaxRounds = 1; return nil })
-				task, _ = s.Get(task.ID)
+func TestEmptyPlanAndMissingInputWaitWithoutClaimingSuccess(t *testing.T) {
+	for _, question := range []bool{false, true} {
+		s, task := fixture(t)
+		runtime := fakeRuntime{plan: func(context.Context, *Task) (Proposal, error) {
+			if question {
+				return Proposal{Question: "Which local input file?"}, nil
 			}
-			runtime := fakeRuntime{plan: func(context.Context, *Task) (Proposal, error) {
-				if scenario == "question" {
-					return Proposal{Question: "Which local input file?"}, nil
-				}
-				if scenario == "budget" {
-					return Proposal{Steps: []Step{{ID: "a", Title: "a", Instruction: "one step"}}}, nil
-				}
-				return Proposal{}, nil
-			}, run: successful, review: func(context.Context, *Task) (Verdict, error) { return Verdict{Missing: "more evidence needed"}, nil }}
-			e := NewEngine(s, runtime)
-			start(t, e, task)
-			expected := map[string]string{"empty": "blocked", "question": "waiting_input", "budget": "budget_exhausted"}[scenario]
-			await(t, s, task.ID, func(t *Task) bool { return t.Status == expected })
-		})
+			return Proposal{}, nil
+		}, run: successful}
+		e := NewEngine(s, runtime)
+		start(t, e, task)
+		expected := "waiting_progress"
+		if question {
+			expected = "waiting_input"
+		}
+		await(t, s, task.ID, func(v *Task) bool { return v.Status == expected })
 	}
 }
 
@@ -317,22 +310,39 @@ func TestProposalValidationAndAcceptance(t *testing.T) {
 	}
 }
 
-func TestTimeBudgetStopsWithoutSuccess(t *testing.T) {
+func TestContinuousTaskIgnoresLegacyBudgetsAndHasNoDeadline(t *testing.T) {
 	s, task := fixture(t)
-	s.Change(task.ID, "", "", "", func(t *Task) error { t.RemainingSeconds = 1; return nil })
+	if _, err := s.DB.Exec(`UPDATE deep_assessments SET payload=json_set(payload,'$.max_rounds',1,'$.rounds',9000,'$.token_budget',1,'$.tokens_used',9000000,'$.remaining_seconds',1,'$.deadline','2001-01-01T00:00:00Z') WHERE id=?`, task.ID); err != nil {
+		t.Fatal(err)
+	}
 	task, _ = s.Get(task.ID)
+	started := make(chan bool, 1)
 	runtime := fakeRuntime{plan: func(context.Context, *Task) (Proposal, error) {
-		return Proposal{Steps: []Step{{ID: "s", Title: "wait", Instruction: "bounded wait"}}}, nil
+		return Proposal{Steps: []Step{{ID: "s", Title: "work", Instruction: "long fixture"}}}, nil
 	}, run: func(ctx context.Context, _ *Task, _ Step, _ func(string, string) error) (Outcome, error) {
+		_, deadline := ctx.Deadline()
+		started <- deadline
 		<-ctx.Done()
 		return Outcome{}, ctx.Err()
 	}}
 	e := NewEngine(s, runtime)
 	start(t, e, task)
-	done := await(t, s, task.ID, func(t *Task) bool { return t.Status == "budget_exhausted" && t.RunStartedAt == nil })
-	if done.Step("s").Status != "pending" {
-		t.Fatal(done.Steps)
+	select {
+	case deadline := <-started:
+		if deadline {
+			t.Fatal("task still has a lifetime deadline")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("legacy budget prevented execution")
 	}
+	current, _ := s.Get(task.ID)
+	if current.Rounds < 9001 || current.Status != "running" {
+		t.Fatal(current)
+	}
+	if err := e.Stop(task.ID, current.Revision, false); err != nil {
+		t.Fatal(err)
+	}
+	await(t, s, task.ID, func(v *Task) bool { return v.Status == "paused" && v.RunStartedAt == nil })
 }
 func TestStartDoesNotExecuteWhenEventCommitFails(t *testing.T) {
 	s, task := fixture(t)

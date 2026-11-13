@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"cyberstrike-ai/internal/agentruntime"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/deepassessment"
@@ -59,6 +60,8 @@ func assessmentRouter(h *AgentHandler, user string) *gin.Engine {
 	r.GET("/api/deep-assessments/:id", h.GetDeepAssessment)
 	r.GET("/api/deep-assessments/:id/events", h.DeepAssessmentEvents)
 	r.GET("/api/deep-assessments/:id/receipts", h.DeepAssessmentReceipts)
+	r.GET("/api/deep-assessments/:id/graph", h.DeepAssessmentGraph)
+	r.GET("/api/deep-assessments/:id/graph/node", h.DeepAssessmentNode)
 	r.GET("/api/deep-assessments/:id/report", h.DeepAssessmentReport)
 	r.POST("/api/deep-assessments/:id/control/:action", h.ControlDeepAssessment)
 	r.DELETE("/api/deep-assessments/:id", h.DeleteDeepAssessment)
@@ -72,7 +75,7 @@ func TestDeepAssessmentAccessRevisionAndOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	foreign := assessmentRouter(h, other.ID)
-	for _, path := range []string{"/api/deep-assessments/task", "/api/deep-assessments/task/events", "/api/deep-assessments/task/report", "/api/deep-assessments/task/receipts"} {
+	for _, path := range []string{"/api/deep-assessments/task", "/api/deep-assessments/task/events", "/api/deep-assessments/task/report", "/api/deep-assessments/task/receipts", "/api/deep-assessments/task/graph", "/api/deep-assessments/task/graph/node?node_id=goal"} {
 		w := httptest.NewRecorder()
 		foreign.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
 		if w.Code != 403 {
@@ -224,7 +227,7 @@ func TestDeepAssessmentCreateOnlySavesDraftAndRejectsOversizedBody(t *testing.T)
 		Task deepassessment.Task `json:"task"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &saved)
-	if !saved.Task.AutoResume || saved.Task.RemainingSeconds != 48*3600 || saved.Task.TokenBudget != 2000000 || saved.Task.Rounds != 0 || !h.db.UserCanAccessResource(task.OwnerID, database.RBACScopeAssigned, "deep_assessment", saved.Task.ID) {
+	if !saved.Task.AutoResume || saved.Task.RemainingSeconds != 0 || saved.Task.TokenBudget != 0 || saved.Task.MaxRounds != 0 || saved.Task.Rounds != 0 || !h.db.UserCanAccessResource(task.OwnerID, database.RBACScopeAssigned, "deep_assessment", saved.Task.ID) {
 		t.Fatal("draft executed or creator lost access")
 	}
 	w = httptest.NewRecorder()
@@ -274,5 +277,42 @@ func TestDeepAssessmentJSONRepairCannotRetainPartialFields(t *testing.T) {
 	}
 	if p.Strategy != "" {
 		t.Fatal("partially decoded state escaped")
+	}
+}
+
+func TestDeepAssessmentLegacyBudgetInputDoesNotCreateLimits(t *testing.T) {
+	h, task := deepAssessmentFixture(t)
+	router := assessmentRouter(h, task.OwnerID)
+	body := `{"name":"continuous","objective":"read fixtures","scope":"local","criteria":"verified evidence","remaining_seconds":1,"token_budget":1,"max_rounds":1}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/deep-assessments", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != 201 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	for _, field := range []string{`"remaining_seconds"`, `"token_budget"`, `"max_rounds"`, `"deadline"`} {
+		if strings.Contains(w.Body.String(), field) {
+			t.Fatal("cap exposed", field, w.Body.String())
+		}
+	}
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest("POST", "/api/deep-assessments/task/control/budget", strings.NewReader(`{"revision":0,"remaining_seconds":1,"max_rounds":1,"token_budget":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	if w.Code != 410 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+}
+
+func TestDeepAssessmentNativeCompactionFeedsGraphMemory(t *testing.T) {
+	h, task := deepAssessmentFixture(t)
+	event := agentruntime.Event{Type: "compaction_end", Data: json.RawMessage(`{"sessionFile":"fixture-native-session","sessionEntryId":"entry-1","result":{"summary":"original Pi continuation context"}}`)}
+	if err := h.deepAssessmentRuntime.piSummary(task.ID, "planner", event); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.deepAssessmentRuntime.memory(task.ID, map[string]any{"query": "continuation"})
+	if err != nil || !strings.Contains(result.Content, "original Pi continuation context") || !strings.Contains(result.Content, "pi_compaction") {
+		t.Fatal(result, err)
 	}
 }

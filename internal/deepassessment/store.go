@@ -19,6 +19,7 @@ type Store struct {
 }
 
 func (s *Store) Create(t *Task) error {
+	t.Continuous()
 	if err := t.Validate(); err != nil {
 		return err
 	}
@@ -37,6 +38,9 @@ func (s *Store) Create(t *Task) error {
 	if _, err = tx.Exec(`INSERT INTO rbac_resource_assignments(id,user_id,resource_type,resource_id,created_at) VALUES(?,?,?,?,?)`, uuid.NewString(), t.OwnerID, "deep_assessment", t.ID, t.CreatedAt); err != nil {
 		return err
 	}
+	if err = syncGraph(tx, t, "", "", "", 0); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -47,6 +51,7 @@ func (s *Store) Get(id string) (*Task, error) {
 	}
 	var t Task
 	err := json.Unmarshal([]byte(b), &t)
+	t.Continuous()
 	return &t, err
 }
 
@@ -67,9 +72,11 @@ func (s *Store) Change(id, step, kind, message string, fn func(*Task) error) err
 	if err = json.Unmarshal([]byte(b), &t); err != nil {
 		return err
 	}
+	t.Continuous()
 	if err = fn(&t); err != nil {
 		return err
 	}
+	t.Continuous()
 	t.Revision++
 	t.UpdatedAt = time.Now().UTC()
 	out, err := json.Marshal(t)
@@ -80,7 +87,15 @@ func (s *Store) Change(id, step, kind, message string, fn func(*Task) error) err
 		return err
 	}
 	if kind != "" {
-		if _, err = tx.Exec(`INSERT INTO deep_assessment_events(task_id,step_id,kind,message,created_at) VALUES(?,?,?,?,?)`, id, step, kind, Clip(message, 16000), t.UpdatedAt); err != nil {
+		event, insertErr := tx.Exec(`INSERT INTO deep_assessment_events(task_id,step_id,kind,message,created_at) VALUES(?,?,?,?,?)`, id, step, kind, Clip(message, 16000), t.UpdatedAt)
+		if insertErr != nil {
+			return insertErr
+		}
+		eventID, insertErr := event.LastInsertId()
+		if insertErr != nil {
+			return insertErr
+		}
+		if err = syncGraph(tx, &t, step, kind, message, eventID); err != nil {
 			return err
 		}
 	}
@@ -88,7 +103,7 @@ func (s *Store) Change(id, step, kind, message string, fn func(*Task) error) err
 }
 
 func (s *Store) List(user, scope, status, query string, limit, offset int) ([]*Task, error) {
-	q := `SELECT json_remove(payload,'$.steps','$.guidance','$.scope','$.criteria','$.objective','$.strategy','$.question') FROM deep_assessments t WHERE 1=1`
+	q := `SELECT json_remove(payload,'$.steps','$.guidance','$.scope','$.criteria','$.objective','$.strategy','$.question','$.metrics') FROM deep_assessments t WHERE 1=1`
 	args := []any{}
 	if scope != database.RBACScopeAll {
 		assignment := `EXISTS(SELECT 1 FROM rbac_resource_assignments r WHERE r.user_id=? AND r.resource_type='deep_assessment' AND r.resource_id=t.id)`
@@ -125,6 +140,7 @@ func (s *Store) List(user, scope, status, query string, limit, offset int) ([]*T
 		if err = json.Unmarshal([]byte(b), &t); err != nil {
 			return nil, err
 		}
+		t.Continuous()
 		out = append(out, &t)
 	}
 	return out, rows.Err()
@@ -177,7 +193,7 @@ func (s *Store) Delete(id string) error {
 // Recover prepares safe segments for automatic continuation. A call with no
 // committed receipt remains uncertain and is never automatically replayed.
 func (s *Store) Recover() error {
-	rows, err := s.DB.Query(`SELECT id FROM deep_assessments WHERE status IN ('running','pausing','cancelling','recovering','waiting_retry')`)
+	rows, err := s.DB.Query(`SELECT id FROM deep_assessments WHERE status IN ('running','pausing','cancelling','recovering','waiting_retry','waiting_progress')`)
 	if err != nil {
 		return err
 	}
@@ -221,10 +237,6 @@ func (s *Store) Recover() error {
 				t.Summary = "存在执行结果不明的工具调用，请核对回执后继续。"
 				return nil
 			}
-			if t.SecondsLeft() == 0 {
-				t.Status = "budget_exhausted"
-				return nil
-			}
 			if t.AutoResume && (prior != "pausing" || t.RestartPending) {
 				t.Status = "recovering"
 			}
@@ -236,13 +248,19 @@ func (s *Store) Recover() error {
 	return nil
 }
 func accountTime(t *Task) {
-	if t.Deadline != nil {
-		t.RemainingSeconds = t.SecondsLeft()
-	} else if t.RunStartedAt != nil {
-		t.RemainingSeconds -= int64(time.Since(*t.RunStartedAt).Seconds())
-		if t.RemainingSeconds < 0 {
-			t.RemainingSeconds = 0
+	if t.RunStartedAt != nil {
+		elapsed := int64(time.Since(*t.RunStartedAt).Seconds())
+		if elapsed > 0 {
+			t.ActiveSeconds += elapsed
 		}
 	}
 	t.RunStartedAt = nil
+}
+
+// Upgrade old saved budgets to continuous tasks without starting paused work.
+func (s *Store) MigrateContinuous() error {
+	_, err := s.DB.Exec(`UPDATE deep_assessments SET status=CASE WHEN status='budget_exhausted' THEN 'paused' ELSE status END,
+ payload=json_set(json_remove(payload,'$.deadline','$.token_budget','$.max_rounds','$.remaining_seconds'),'$.status',CASE WHEN status='budget_exhausted' THEN 'paused' ELSE status END)
+ WHERE json_type(payload,'$.deadline') IS NOT NULL OR json_type(payload,'$.token_budget') IS NOT NULL OR json_type(payload,'$.max_rounds') IS NOT NULL OR json_type(payload,'$.remaining_seconds') IS NOT NULL OR status='budget_exhausted'`)
+	return err
 }
