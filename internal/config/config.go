@@ -731,7 +731,8 @@ type OpenAIConfig struct {
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	// ContextWindow 是模型原生上下文窗口（token）；0 表示未知。用于校验/压缩 max_total_tokens。
 	ContextWindow int `yaml:"context_window,omitempty" json:"context_window,omitempty"`
-	// ContextProfile selects auto (DeepSeek input savings), economy, custom or local.
+	// ContextProfile selects auto, economy, custom or local; local_auto records
+	// a local backend identified through the model metadata probe.
 	ContextProfile string `yaml:"context_profile,omitempty" json:"context_profile,omitempty"`
 	// Reasoning 控制 Agent ChatModel 的 thinking / reasoning_effort / output_config 等（Agent 单/多代理路径生效）。
 	Reasoning OpenAIReasoningConfig `yaml:"reasoning,omitempty" json:"reasoning,omitempty"`
@@ -1678,7 +1679,7 @@ func ValidateContextSettings(prefix string, window int, profile string) error {
 	}
 	if raw := strings.TrimSpace(profile); raw != "" &&
 		!strings.EqualFold(raw, "auto") && NormalizeContextProfile(raw) == "" {
-		return fmt.Errorf("%s.context_profile 只支持 auto、economy、custom 或 local", prefix)
+		return fmt.Errorf("%s.context_profile 只支持 auto、economy、custom、local 或 local_auto", prefix)
 	}
 	return nil
 }

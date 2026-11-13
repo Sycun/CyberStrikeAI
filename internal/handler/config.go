@@ -1341,11 +1341,22 @@ func addModelContextToResponse(resp gin.H, info modelmeta.ContextInfo, maxTotalT
 		resp["context_runtime_unknown"] = true
 	}
 	profile := config.NormalizeContextProfile(contextProfile)
+	if profile == "" || profile == "local_auto" {
+		if info.IsLocalBackend() {
+			profile = "local_auto"
+		} else if info.Source != "" {
+			profile = ""
+		}
+	}
+	resp["context_profile"] = profile
 	oa := config.OpenAIConfig{
 		ContextWindow:       info.ContextWindow,
 		ContextProfile:      profile,
 		MaxTotalTokens:      maxTotalTokens,
 		MaxCompletionTokens: maxCompletionTokens,
+	}
+	if profile == "local_auto" && info.RuntimeUnknown {
+		oa.ContextWindow = 0
 	}
 	if info.ContextWindow > 0 || profile != "" {
 		resp["effective_max_total_tokens"] = oa.EffectiveMaxTotalTokens()
@@ -1454,8 +1465,12 @@ func (h *ConfigHandler) TestOpenAI(c *gin.Context) {
 		}
 	}
 
-	// 构造一个最小的 chat completion 请求；本地档位使用更通用的 max_tokens。
-	maxTokensField := (config.OpenAIConfig{ContextProfile: req.ContextProfile}).OutputLimitField()
+	// Identify local servers before the completion so the first connection
+	// test already uses the output-limit field supported by that backend.
+	metadata := gin.H{}
+	addModelContextToResponse(metadata, probeModelContext(c.Request.Context(), req.Provider, baseURL, req.APIKey, req.Model, resolvedHeaders), req.MaxTotalTokens, req.MaxCompletionTokens, req.ContextProfile)
+	detectedProfile, _ := metadata["context_profile"].(string)
+	maxTokensField := (config.OpenAIConfig{ContextProfile: detectedProfile}).OutputLimitField()
 	payload := map[string]interface{}{
 		"model": req.Model,
 		"messages": []map[string]string{
@@ -1528,13 +1543,10 @@ func (h *ConfigHandler) TestOpenAI(c *gin.Context) {
 		return
 	}
 
-	resp := gin.H{
-		"success":    true,
-		"model":      chatResp.Model,
-		"latency_ms": latency.Milliseconds(),
-	}
-	addModelContextToResponse(resp, probeModelContext(c.Request.Context(), req.Provider, baseURL, req.APIKey, req.Model, resolvedHeaders), req.MaxTotalTokens, req.MaxCompletionTokens, req.ContextProfile)
-	c.JSON(http.StatusOK, resp)
+	metadata["success"] = true
+	metadata["model"] = chatResp.Model
+	metadata["latency_ms"] = latency.Milliseconds()
+	c.JSON(http.StatusOK, metadata)
 }
 
 // TestTypeSafeRequest 测试 TypeSafe / Jev 连接。

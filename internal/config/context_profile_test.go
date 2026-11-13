@@ -314,10 +314,14 @@ func TestEconomyContextProfileSelectionAndLimits(t *testing.T) {
 	}{
 		{"official default", OpenAIConfig{BaseURL: "https://api.deepseek.com/v1"}, true},
 		{"gateway explicit profile", OpenAIConfig{Reasoning: OpenAIReasoningConfig{Profile: "deepseek_compat"}}, true},
-		{"model name alone", OpenAIConfig{Model: "deepseek-flash", BaseURL: "https://gateway.example/v1"}, false},
+		{"gateway model name", OpenAIConfig{Model: "deepseek-flash", BaseURL: "https://gateway.example/v1"}, true},
+		{"namespaced model", OpenAIConfig{Model: "deepseek-ai/DeepSeek-V4", Reasoning: OpenAIReasoningConfig{Profile: "openai_compat"}}, true},
+		{"other model", OpenAIConfig{Model: "gpt-example", BaseURL: "https://gateway.example/v1"}, false},
+		{"gateway custom opt out", OpenAIConfig{Model: "deepseek-flash", ContextProfile: "custom"}, false},
 		{"lookalike host", OpenAIConfig{BaseURL: "https://api.deepseek.com.example/v1"}, false},
 		{"custom opt out", OpenAIConfig{BaseURL: "https://api.deepseek.com", ContextProfile: "custom"}, false},
 		{"local opt in", OpenAIConfig{BaseURL: "https://api.deepseek.com", ContextProfile: "local"}, false},
+		{"detected local DeepSeek", OpenAIConfig{Model: "deepseek-flash", ContextProfile: "local_auto"}, false},
 		{"economy opt in", OpenAIConfig{ContextProfile: " ECONOMY "}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -345,7 +349,7 @@ func TestEconomyContextProfileSelectionAndLimits(t *testing.T) {
 	if again := EffectiveRuntimeForChannel(out, oa); !reflect.DeepEqual(out, again) {
 		t.Fatal("economy profile loosened tighter limits")
 	}
-	for _, profile := range []string{"auto", "economy", "custom", "local"} {
+	for _, profile := range []string{"auto", "economy", "custom", "local", "local_auto"} {
 		if err := ValidateContextSettings("channel", 0, profile); err != nil {
 			t.Fatal(err)
 		}
@@ -353,6 +357,18 @@ func TestEconomyContextProfileSelectionAndLimits(t *testing.T) {
 	oa.ContextProfile = "custom"
 	if got := EffectiveRuntimeForChannel(mw, oa); !reflect.DeepEqual(got, mw) {
 		t.Fatal("custom profile did not preserve runtime settings")
+	}
+}
+
+func TestDetectedLocalProfileUsesLocalBudgets(t *testing.T) {
+	manual := OpenAIConfig{ContextProfile: "local", ContextWindow: 65536, MaxCompletionTokens: 8192}
+	detected := manual
+	detected.ContextProfile = "local_auto"
+	if !detected.IsLocalContextProfile() || detected.EffectiveMaxTotalTokens() != manual.EffectiveMaxTotalTokens() || detected.OutputLimitField() != "max_tokens" {
+		t.Fatalf("detected backend lost local limits: %+v", detected)
+	}
+	if !reflect.DeepEqual(EffectiveRuntimeForChannel(AgentTuningConfig{}, detected), EffectiveRuntimeForChannel(AgentTuningConfig{}, manual)) {
+		t.Fatal("detected backend lost local runtime tuning")
 	}
 }
 

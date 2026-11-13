@@ -25,4 +25,4 @@
 
 官方接口自动缓存可复用的请求前缀。Pi 按名称固定 MCP 工具定义的顺序，以减少相同工具目录在请求之间的前缀变化。缓存命中以供应商返回的用量为准。[DeepSeek 上下文缓存](https://api-docs.deepseek.com/guides/kv_cache/)
 
-默认 `auto` 上下文档位会为官方 DeepSeek 地址及显式 DeepSeek 线路启用按需工具发现、JSON 回包精简与可回读的大结果预览。具体阈值和 `custom` 选项见[配置说明](configuration.md#deepseek-输入优化)。验证节省效果时，对照完整任务的输入、输出、缓存命中和调用次数，并检查任务产物与证据完整性。
+后台默认根据官方 DeepSeek 地址、DeepSeek 线路或模型名自动启用按需工具发现、JSON 回包精简与可回读的大结果预览。用户配置模型后即可使用。验证节省效果时，对照完整任务的输入、输出、缓存命中和调用次数，并检查任务产物与证据完整性。具体阈值见[配置说明](configuration.md#deepseek-输入优化)。

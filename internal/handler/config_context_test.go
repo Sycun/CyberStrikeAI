@@ -74,6 +74,33 @@ func TestAddModelContextToResponseAutoProfileKeepsNoPreviewWithoutWindow(t *test
 	}
 }
 
+func TestDetectedBackendAutomaticallySelectsLocalProfile(t *testing.T) {
+	for _, backend := range []string{modelmeta.BackendOllama, modelmeta.BackendLlamaCpp, modelmeta.BackendLMStudio, modelmeta.BackendOMLX, modelmeta.BackendVLLM} {
+		resp := gin.H{}
+		addModelContextToResponse(resp, modelmeta.ContextInfo{Backend: backend, ContextWindow: 65536}, 120000, 8192, "auto")
+		if resp["context_profile"] != "local_auto" || resp["effective_max_total_tokens"] != 39321 {
+			t.Fatalf("%s: %+v", backend, resp)
+		}
+	}
+	for _, profile := range []string{"custom", "economy", "local"} {
+		resp := gin.H{}
+		addModelContextToResponse(resp, modelmeta.ContextInfo{Backend: modelmeta.BackendOMLX, ContextWindow: 65536}, 120000, 8192, profile)
+		if resp["context_profile"] != profile {
+			t.Fatalf("explicit profile changed: %+v", resp)
+		}
+	}
+	resp := gin.H{}
+	addModelContextToResponse(resp, modelmeta.ContextInfo{Backend: modelmeta.BackendOpenAICompatible, ContextWindow: 131072, Source: "openai_models_context_length"}, 120000, 8192, "local_auto")
+	if resp["context_profile"] != "" {
+		t.Fatalf("generic gateway was treated as local: %+v", resp)
+	}
+	resp = gin.H{}
+	addModelContextToResponse(resp, modelmeta.ContextInfo{Backend: modelmeta.BackendOllama, ContextWindow: 262144, RuntimeUnknown: true}, 120000, 8192, "auto")
+	if resp["effective_max_total_tokens"] != 19660 {
+		t.Fatalf("architecture limit treated as runtime limit: %+v", resp)
+	}
+}
+
 func TestAddModelContextToResponseDedupesWarnings(t *testing.T) {
 	t.Parallel()
 	resp := gin.H{}

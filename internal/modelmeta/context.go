@@ -17,6 +17,8 @@ const (
 	BackendOllama           = "ollama"
 	BackendLlamaCpp         = "llamacpp"
 	BackendLMStudio         = "lmstudio"
+	BackendOMLX             = "omlx"
+	BackendVLLM             = "vllm"
 	BackendOpenAICompatible = "openai_compatible"
 
 	WarningOllamaV1IgnoresNumCtx = "ollama_v1_ignores_num_ctx"
@@ -36,6 +38,16 @@ type ContextInfo struct {
 	RuntimeSlots   int      `json:"context_slots,omitempty"`
 	RuntimeUnknown bool     `json:"context_runtime_unknown,omitempty"`
 	Warnings       []string `json:"context_warnings,omitempty"`
+}
+
+// IsLocalBackend requires a recognizable inference-server response.
+func (info ContextInfo) IsLocalBackend() bool {
+	switch info.Backend {
+	case BackendOllama, BackendLlamaCpp, BackendLMStudio, BackendOMLX, BackendVLLM:
+		return true
+	default:
+		return false
+	}
 }
 
 // DetectContext probes the endpoint in local-backend-first order and returns the
@@ -113,7 +125,7 @@ func detectOllama(ctx context.Context, client *http.Client, root, base, model, a
 	var version struct {
 		Version string `json:"version"`
 	}
-	if status, err := probeJSON(ctx, client, http.MethodGet, root+"/api/version", apiKey, nil, &version); err != nil || status != http.StatusOK {
+	if status, err := probeJSON(ctx, client, http.MethodGet, root+"/api/version", apiKey, nil, &version); err != nil || status != http.StatusOK || strings.TrimSpace(version.Version) == "" {
 		return ContextInfo{}, false
 	}
 
@@ -238,6 +250,9 @@ func detectLlamaCpp(ctx context.Context, client *http.Client, root, model, apiKe
 	if n <= 0 {
 		n = props.NCtx
 	}
+	if n <= 0 && props.TotalSlots <= 0 {
+		return ContextInfo{}, false
+	}
 	info := ContextInfo{Backend: BackendLlamaCpp, Loaded: true}
 	if props.TotalSlots > 0 {
 		info.RuntimeSlots = props.TotalSlots
@@ -289,8 +304,8 @@ func detectLMStudio(ctx context.Context, client *http.Client, root, model, apiKe
 			models = list.Models
 		}
 		chosen := pickLMModel(models, model)
-		if chosen == nil {
-			return ContextInfo{Backend: BackendLMStudio, Warnings: []string{WarningContextUnknown}}, true
+		if chosen == nil || (chosen.Type == "" && chosen.State == "" && chosen.LoadedContextLength <= 0 && len(chosen.LoadedInstances) == 0) {
+			continue
 		}
 		info := ContextInfo{Backend: BackendLMStudio}
 		if chosen.LoadedContextLength > 0 {
@@ -342,6 +357,7 @@ func detectOpenAICompatible(ctx context.Context, client *http.Client, base, mode
 	var list struct {
 		Data []struct {
 			ID               string          `json:"id"`
+			OwnedBy          string          `json:"owned_by"`
 			MaxModelLen      int             `json:"max_model_len"`
 			ContextLength    json.RawMessage `json:"context_length"`
 			MaxContextLength int             `json:"max_context_length"`
@@ -364,6 +380,11 @@ func detectOpenAICompatible(ctx context.Context, client *http.Client, base, mode
 	}
 	if chosen >= 0 {
 		m := list.Data[chosen]
+		// A compatible model list alone does not identify a local runtime.
+		switch strings.ToLower(strings.TrimSpace(m.OwnedBy)) {
+		case BackendOMLX, BackendVLLM:
+			info.Backend = strings.ToLower(strings.TrimSpace(m.OwnedBy))
+		}
 		switch {
 		case m.MaxModelLen > 0:
 			info.ContextWindow = m.MaxModelLen
@@ -375,13 +396,42 @@ func detectOpenAICompatible(ctx context.Context, client *http.Client, base, mode
 			info.ContextWindow = m.MaxContextLength
 			info.Source = "openai_models_max_context_length"
 		}
+		if info.Backend == BackendOMLX {
+			if runtime, ok := detectOMLXRuntime(ctx, client, base, m.ID, apiKey); ok {
+				return runtime
+			}
+			if info.ContextWindow > 0 {
+				info.Source = strings.Replace(info.Source, "openai_", "omlx_", 1)
+			}
+		}
 		if info.ContextWindow > 0 {
-			info.Loaded = true
+			info.Loaded = info.Backend != BackendOMLX
 			return info
 		}
 	}
 	info.Warnings = append(info.Warnings, WarningContextUnknown)
 	return info
+}
+
+func detectOMLXRuntime(ctx context.Context, client *http.Client, base, model, apiKey string) (ContextInfo, bool) {
+	var status struct {
+		Models []struct {
+			ID               string `json:"id"`
+			Alias            string `json:"model_alias"`
+			MaxContextWindow int    `json:"max_context_window"`
+			Loaded           bool   `json:"loaded"`
+		} `json:"models"`
+	}
+	code, err := probeJSON(ctx, client, http.MethodGet, strings.TrimRight(base, "/")+"/models/status", apiKey, nil, &status)
+	if err != nil || code != http.StatusOK {
+		return ContextInfo{}, false
+	}
+	for _, m := range status.Models {
+		if (modelMatches(m.ID, model) || modelMatches(m.Alias, model)) && m.MaxContextWindow > 0 {
+			return ContextInfo{Backend: BackendOMLX, ContextWindow: m.MaxContextWindow, Source: "omlx_models_status", Loaded: m.Loaded}, true
+		}
+	}
+	return ContextInfo{}, false
 }
 
 func probeJSON(ctx context.Context, client *http.Client, method, target, apiKey string, body interface{}, out interface{}) (int, error) {

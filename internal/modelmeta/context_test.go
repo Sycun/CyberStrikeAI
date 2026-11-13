@@ -201,6 +201,57 @@ func TestDetectContextVLLMModels(t *testing.T) {
 	}
 }
 
+func TestDetectContextOMLXAndVLLMIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, owner, backend, source string
+		status, window               int
+	}{
+		{"omlx runtime alias", "omlx", BackendOMLX, "omlx_models_status", 200, 32768},
+		{"omlx inference key", "omlx", BackendOMLX, "omlx_models_max_model_len", 403, 262144},
+		{"vllm", "vllm", BackendVLLM, "openai_models_max_model_len", 404, 262144},
+		{"gateway", "gateway", BackendOpenAICompatible, "openai_models_max_model_len", 404, 262144},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			statusCalls := 0
+			mux := http.NewServeMux()
+			mux.HandleFunc("/edge/v1/models", func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer fixture" {
+					t.Error("missing credential")
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "alias", "owned_by": tc.owner, "max_model_len": 262144}}})
+			})
+			mux.HandleFunc("/edge/v1/models/status", func(w http.ResponseWriter, r *http.Request) {
+				statusCalls++
+				if r.Method != http.MethodGet {
+					t.Error("probe must be read-only")
+				}
+				w.WriteHeader(tc.status)
+				_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]any{{"id": "mlx-community/model", "model_alias": "alias", "max_context_window": 32768, "loaded": true}}})
+			})
+			srv := httptest.NewServer(mux)
+			defer srv.Close()
+			info := DetectContext(context.Background(), srv.URL+"/edge/v1", "alias", "fixture", srv.Client())
+			if info.Backend != tc.backend || info.ContextWindow != tc.window || info.Source != tc.source {
+				t.Fatalf("unexpected metadata: %+v", info)
+			}
+			if (statusCalls > 0) != (tc.owner == "omlx") || info.IsLocalBackend() != (tc.owner != "gateway") {
+				t.Fatalf("backend identity mismatch: %+v, status probes=%d", info, statusCalls)
+			}
+		})
+	}
+}
+
+func TestGenericGatewaySuccessResponsesDoNotIdentifyLocalBackend(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"id": "generic", "context_length": 65536}}})
+	}))
+	defer srv.Close()
+	info := DetectContext(context.Background(), srv.URL+"/v1", "generic", "", srv.Client())
+	if info.IsLocalBackend() || info.Backend != BackendOpenAICompatible || info.ContextWindow != 65536 {
+		t.Fatalf("generic JSON success misidentified: %+v", info)
+	}
+}
+
 func TestDetectContextOpenAISingleModelFallback(t *testing.T) {
 	t.Parallel()
 	mux := http.NewServeMux()

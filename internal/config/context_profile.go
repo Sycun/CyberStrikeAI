@@ -26,7 +26,7 @@ const (
 // NormalizeContextProfile returns an explicit profile, or empty for auto.
 func NormalizeContextProfile(raw string) string {
 	switch profile := strings.ToLower(strings.TrimSpace(raw)); profile {
-	case "local", "economy", "custom":
+	case "local", "local_auto", "economy", "custom":
 		return profile
 	}
 	return ""
@@ -38,15 +38,19 @@ func (c OpenAIConfig) IsEconomyContextProfile() bool {
 	switch NormalizeContextProfile(c.ContextProfile) {
 	case "economy":
 		return true
-	case "custom", "local":
+	case "custom", "local", "local_auto":
 		return false
 	}
 	profile := c.Reasoning.ProfileEffective()
-	return c.IsDeepSeekOfficialEndpoint() || profile == "deepseek" || profile == "deepseek_compat"
+	// Model-name detection only selects input savings. The gateway's wire
+	// protocol and reasoning parameters still follow its provider profile.
+	return c.IsDeepSeekOfficialEndpoint() || profile == "deepseek" || profile == "deepseek_compat" ||
+		strings.Contains(strings.ToLower(c.Model), "deepseek")
 }
 
 func (c OpenAIConfig) IsLocalContextProfile() bool {
-	return NormalizeContextProfile(c.ContextProfile) == "local"
+	profile := NormalizeContextProfile(c.ContextProfile)
+	return profile == "local" || profile == "local_auto"
 }
 
 // TokenEstimateSafetyPercent 供 token 计数器使用：local 档位放大估算，auto 保持原值。
