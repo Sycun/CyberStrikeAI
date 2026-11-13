@@ -123,6 +123,8 @@ func permissionForRequest(method, fullPath string) string {
 			return "hitl:read"
 		}
 		return "hitl:write"
+	case strings.HasPrefix(path, "/deep-assessments"):
+		return crudPermission(method, "assessments")
 	case strings.HasPrefix(path, "/agent-loop"), strings.HasPrefix(path, "/batch-tasks"):
 		return crudPermission(method, "tasks")
 	case path == "/usage/tokens":
@@ -249,6 +251,8 @@ func resourceAllowed(c *gin.Context, db *database.DB) bool {
 		return db.UserCanAccessResource(session.UserID, session.Scope, "conversation", c.Param("conversationId"))
 	case strings.HasPrefix(path, "/webshell/connections/:id"):
 		return db.UserCanAccessResource(session.UserID, session.Scope, "webshell", c.Param("id"))
+	case strings.HasPrefix(path, "/deep-assessments/:id"):
+		return db.UserCanAccessResource(session.UserID, session.Scope, "deep_assessment", c.Param("id"))
 	case strings.HasPrefix(path, "/batch-tasks/:queueId"):
 		return db.UserCanAccessResource(session.UserID, session.Scope, "batch_task", c.Param("queueId"))
 	case strings.HasPrefix(path, "/vulnerabilities/:id"):

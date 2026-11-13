@@ -267,7 +267,8 @@
     "c2Payloads": "Payload",
     "c2Events": "Events",
     "c2Profiles": "Traffic profiles",
-    "platformRbac": "Platform Access"
+    "platformRbac": "Platform Access",
+    "deepAssessments": "Deep assessments"
   },
   "navGroups": {
     "workbench": "Workspace",
@@ -4974,7 +4975,8 @@
       "vulnerability": "Vulnerability",
       "webshell": "WebShell Connection",
       "batch_task": "Batch Task",
-      "c2_listener": "C2 Listener"
+      "c2_listener": "C2 Listener",
+      "deep_assessment": "Deep assessments"
     },
     "scopes": {
       "all": {
@@ -5080,7 +5082,8 @@
       "terminal": "Terminal",
       "vulnerability": "Vulnerabilities",
       "webshell": "WebShell",
-      "workflow": "Workflows"
+      "workflow": "Workflows",
+      "assessments": "Deep assessments"
     },
     "permissionDescriptions": {
       "auth": {
@@ -5197,6 +5200,11 @@
         "read": "View the execution monitor",
         "write": "Cancel monitored executions",
         "delete": "Delete execution-monitor records"
+      },
+      "assessments": {
+        "read": "View deep assessments",
+        "write": "Create and run deep assessments",
+        "delete": "Delete deep assessments"
       }
     }
   },
@@ -5248,5 +5256,99 @@
     "loadError": "Could not load proxy settings",
     "saveError": "Could not apply proxy settings",
     "invalidNumber": "Enter valid attempt and timing values"
+  },
+  "deepAssessments": {
+    "title": "Deep assessments",
+    "subtitle": "Explore a target over time, preserve evidence and resume across sessions.",
+    "create": "New assessment",
+    "refresh": "Refresh",
+    "search": "Search assessments",
+    "all": "All statuses",
+    "empty": "No assessments yet. Create an objective to begin.",
+    "select": "Select an assessment to inspect progress and evidence.",
+    "previous": "Previous",
+    "next": "Next",
+    "name": "Name",
+    "objective": "Objective",
+    "scope": "Allowed scope and exclusions",
+    "criteria": "Acceptance criteria",
+    "model": "Model channel",
+    "project": "Project",
+    "role": "Role",
+    "default": "System default",
+    "none": "None",
+    "hours": "Task window (hours)",
+    "tokens": "Token budget",
+    "rounds": "Planning round limit",
+    "concurrency": "Parallel steps",
+    "autoResume": "Automatically resume unambiguous work after a server restart",
+    "windowNote": "The window starts on first execution and includes pauses and downtime.",
+    "save": "Save",
+    "close": "Close",
+    "start": "Start / resume",
+    "pause": "Pause",
+    "cancel": "Stop",
+    "delete": "Delete",
+    "report": "Download report",
+    "overview": "Overview",
+    "plan": "Exploration plan",
+    "evidence": "Execution receipts",
+    "activity": "Activity",
+    "quality": "Context and usage",
+    "guidance": "Add evidence or adjust direction",
+    "send": "Submit guidance",
+    "answer": "Answer and resume",
+    "budget": "Adjust budget",
+    "retry": "Resume step",
+    "conversation": "Open execution conversation",
+    "unknown": "Review the previous execution receipts and confirm the outcome and resource cleanup.",
+    "reconcile": "I have checked the previous calls and allow continuation from this session.",
+    "confirmStop": "Stop this assessment and retain existing results?",
+    "confirmDelete": "Delete this assessment? Linked execution conversations will remain.",
+    "remaining": "Remaining window",
+    "deadline": "Deadline",
+    "strategy": "Current strategy",
+    "summary": "Current findings / gaps",
+    "question": "Information needed",
+    "dependencies": "Dependencies",
+    "segments": "Segments",
+    "evidenceIDs": "Evidence references",
+    "noSteps": "The planner creates exploration steps after execution starts.",
+    "noRecords": "No records yet",
+    "calls": "Tool calls",
+    "compactions": "Compactions",
+    "activeTools": "Visible tools",
+    "session": "Session",
+    "tokenNote": "Includes Pi compaction usage. The budget stops subsequent scheduling; in-flight requests may exceed it.",
+    "recoveryNote": "Uncertain calls wait for reconciliation. Completed steps are not automatically repeated.",
+    "saved": "Saved",
+    "updated": "Updated",
+    "retryNote": "Resuming retains the Pi session and evidence.",
+    "newHours": "Remaining window from now (hours)",
+    "states": {
+      "draft": "Draft",
+      "running": "Running",
+      "pending": "Pending",
+      "completed": "Completed",
+      "blocked": "Blocked",
+      "failed": "Failed",
+      "paused": "Paused",
+      "pausing": "Pausing",
+      "cancelling": "Stopping",
+      "cancelled": "Stopped",
+      "recovering": "Awaiting recovery",
+      "waiting_retry": "Waiting for model recovery",
+      "waiting_input": "Awaiting input",
+      "needs_review": "Needs reconciliation",
+      "uncertain": "Outcome unknown",
+      "budget_exhausted": "Budget exhausted",
+      "interrupted": "Interrupted",
+      "cleanup_unconfirmed": "Cleanup unconfirmed",
+      "retired": "Retired",
+      "reconciled": "Reconciled",
+      "yielded": "Segment saved"
+    },
+    "contextUsage": "Context / window",
+    "toolDefinitions": "Tool definitions"
   }
 }

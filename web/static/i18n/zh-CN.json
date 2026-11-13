@@ -267,7 +267,8 @@
     "c2Payloads": "载荷",
     "c2Events": "事件",
     "c2Profiles": "流量伪装",
-    "platformRbac": "平台权限"
+    "platformRbac": "平台权限",
+    "deepAssessments": "深度测评"
   },
   "navGroups": {
     "workbench": "工作台",
@@ -4962,7 +4963,8 @@
       "vulnerability": "漏洞",
       "webshell": "WebShell 连接",
       "batch_task": "批量任务",
-      "c2_listener": "C2 监听器"
+      "c2_listener": "C2 监听器",
+      "deep_assessment": "深度测评"
     },
     "scopes": {
       "all": {
@@ -5068,7 +5070,8 @@
       "terminal": "终端",
       "vulnerability": "漏洞",
       "webshell": "WebShell",
-      "workflow": "工作流"
+      "workflow": "工作流",
+      "assessments": "深度测评"
     },
     "permissionDescriptions": {
       "auth": {
@@ -5185,6 +5188,11 @@
         "read": "查看执行监控",
         "write": "取消监控中的执行",
         "delete": "删除执行监控记录"
+      },
+      "assessments": {
+        "read": "查看深度测评",
+        "write": "创建和执行深度测评",
+        "delete": "删除深度测评"
       }
     }
   },
@@ -5236,5 +5244,99 @@
     "loadError": "加载代理设置失败",
     "saveError": "应用代理设置失败",
     "invalidNumber": "请填写有效的代理次数和时间参数"
+  },
+  "deepAssessments": {
+    "title": "深度测评",
+    "subtitle": "围绕一个目标持续探索，保存证据与进度，跨会话继续执行。",
+    "create": "新建测评",
+    "refresh": "刷新",
+    "search": "搜索测评名称",
+    "all": "全部状态",
+    "empty": "暂无测评，先创建一个目标。",
+    "select": "选择测评，查看探索进度与证据。",
+    "previous": "上一页",
+    "next": "下一页",
+    "name": "测评名称",
+    "objective": "目标",
+    "scope": "允许范围与排除项",
+    "criteria": "验收条件",
+    "model": "模型渠道",
+    "project": "关联项目",
+    "role": "角色",
+    "default": "系统默认",
+    "none": "不关联",
+    "hours": "任务窗口（小时）",
+    "tokens": "Token 预算",
+    "rounds": "规划轮数上限",
+    "concurrency": "并行步骤",
+    "autoResume": "服务重启后自动恢复结果明确的步骤",
+    "windowNote": "从首次开始计算，暂停和服务停机也计入窗口。",
+    "save": "保存草稿",
+    "close": "关闭",
+    "start": "开始 / 继续",
+    "pause": "暂停",
+    "cancel": "停止",
+    "delete": "删除",
+    "report": "下载报告",
+    "overview": "概览",
+    "plan": "探索计划",
+    "evidence": "证据回执",
+    "activity": "运行记录",
+    "quality": "上下文与用量",
+    "guidance": "补充线索或调整方向",
+    "send": "提交方向",
+    "answer": "答复并继续",
+    "budget": "调整预算",
+    "retry": "恢复此步骤",
+    "conversation": "查看执行会话",
+    "unknown": "请先核对回执，确认上次操作结果及执行资源状态。",
+    "reconcile": "我已核对上次调用结果，允许从原会话继续",
+    "confirmStop": "停止后将保留已有结果，结束本次测评。",
+    "confirmDelete": "删除本条测评？关联执行会话仍保留。",
+    "remaining": "剩余窗口",
+    "deadline": "截止时间",
+    "strategy": "当前路线",
+    "summary": "当前结论 / 缺口",
+    "question": "待补充信息",
+    "dependencies": "前置步骤",
+    "segments": "执行分段",
+    "evidenceIDs": "证据引用",
+    "noSteps": "开始后由规划器逐步生成探索方向。",
+    "noRecords": "暂无记录",
+    "calls": "工具调用",
+    "compactions": "上下文压缩",
+    "activeTools": "当前可见工具",
+    "session": "会话",
+    "tokenNote": "包含 Pi 会话中的压缩用量。预算用于停止后续调度，在途请求可能超出预算。",
+    "recoveryNote": "结果不明的调用会暂停等待核对，已完成步骤不会自动重做。",
+    "saved": "已保存",
+    "updated": "已更新",
+    "retryNote": "恢复会保留原 Pi 会话及历史证据。",
+    "newHours": "从现在起的剩余窗口（小时）",
+    "states": {
+      "draft": "草稿",
+      "running": "执行中",
+      "pending": "待执行",
+      "completed": "已完成",
+      "blocked": "受阻",
+      "failed": "失败",
+      "paused": "已暂停",
+      "pausing": "暂停中",
+      "cancelling": "停止中",
+      "cancelled": "已停止",
+      "recovering": "待恢复",
+      "waiting_retry": "等待模型恢复",
+      "waiting_input": "待答复",
+      "needs_review": "待核对",
+      "uncertain": "结果不明",
+      "budget_exhausted": "预算耗尽",
+      "interrupted": "已中断",
+      "cleanup_unconfirmed": "待确认资源停止",
+      "retired": "已撤下",
+      "reconciled": "已核对",
+      "yielded": "分段完成"
+    },
+    "contextUsage": "上下文 / 窗口",
+    "toolDefinitions": "工具定义"
   }
 }

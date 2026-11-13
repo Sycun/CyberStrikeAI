@@ -902,3 +902,22 @@ CREATE UNIQUE INDEX uq_workflow_package_imports_inspection_success ON workflow_p
 CREATE TABLE pi_session_roots (
     path TEXT PRIMARY KEY
 );
+
+-- Independent deep-assessment state; legacy assessment/long-task tables are untouched.
+CREATE TABLE IF NOT EXISTS deep_assessments (
+ id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '',
+ name TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL, updated_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deep_assessments_status ON deep_assessments(status,updated_at);
+CREATE TABLE IF NOT EXISTS deep_assessment_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ step_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, message TEXT NOT NULL, created_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deep_assessment_events_task ON deep_assessment_events(task_id,id);
+CREATE TABLE IF NOT EXISTS deep_assessment_calls (
+ id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ step_id TEXT NOT NULL, tool TEXT NOT NULL, arguments TEXT NOT NULL, status TEXT NOT NULL,
+ session_entry_id TEXT NOT NULL DEFAULT '', provider_id TEXT NOT NULL DEFAULT '',
+ execution_id TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '', updated_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deep_assessment_calls_task ON deep_assessment_calls(task_id,step_id,status);

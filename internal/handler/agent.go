@@ -21,6 +21,7 @@ import (
 	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/deepassessment"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/multiagent"
 	"cyberstrike-ai/internal/openai"
@@ -182,17 +183,19 @@ func discardPlanningIfEchoesToolResult(respPlan *responsePlanAgg, toolData inter
 
 // AgentHandler Agent处理器
 type AgentHandler struct {
-	asyncWorkers     sync.WaitGroup
-	asyncSubmitMu    sync.Mutex
-	agent            *agent.Agent
-	db               *database.DB
-	logger           *zap.Logger
-	tasks            *AgentTaskManager
-	taskEventBus     *TaskEventBus // 镜像 SSE 事件，供刷新后订阅同一运行中任务
-	batchTaskManager *BatchTaskManager
-	hitlManager      *HITLManager
-	config           *config.Config // 配置引用，用于获取角色信息
-	knowledgeManager interface {    // 知识库管理器接口
+	asyncWorkers          sync.WaitGroup
+	asyncSubmitMu         sync.Mutex
+	agent                 *agent.Agent
+	db                    *database.DB
+	logger                *zap.Logger
+	deepAssessments       *deepassessment.Engine
+	deepAssessmentRuntime *deepAssessmentRuntime
+	tasks                 *AgentTaskManager
+	taskEventBus          *TaskEventBus // 镜像 SSE 事件，供刷新后订阅同一运行中任务
+	batchTaskManager      *BatchTaskManager
+	hitlManager           *HITLManager
+	config                *config.Config // 配置引用，用于获取角色信息
+	knowledgeManager      interface {    // 知识库管理器接口
 		LogRetrieval(conversationID, messageID, query, riskType string, retrievedItems []string) error
 	}
 	agentsMarkdownDir string // 多代理：Markdown 子 Agent 目录（绝对路径，空则不从磁盘合并）

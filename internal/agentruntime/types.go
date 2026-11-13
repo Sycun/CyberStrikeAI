@@ -25,12 +25,32 @@ type Model struct {
 }
 
 type Tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
+	Name             string          `json:"name"`
+	Description      string          `json:"description"`
+	Parameters       map[string]any  `json:"parameters"`
+	OutputSchema     map[string]any  `json:"outputSchema,omitempty"`
+	Annotations      map[string]bool `json:"annotations,omitempty"`
+	Exposure         string          `json:"exposure,omitempty"`
+	Namespace        string          `json:"namespace,omitempty"`
+	PromptSnippet    string          `json:"promptSnippet,omitempty"`
+	PromptGuidelines []string        `json:"promptGuidelines,omitempty"`
+	ExecutionMode    string          `json:"executionMode,omitempty"`
+}
+
+// NativeWorkflow opts a background assessment into Pi's native lifecycle hooks.
+// Other callers keep their existing execution policy.
+type NativeWorkflow struct {
+	Receipts       []NativeReceipt `json:"receipts,omitempty"`
+	ResumeRequired bool            `json:"resumeRequired,omitempty"`
+	Context        string          `json:"context,omitempty"`
+	CompletionTool string          `json:"completionTool"`
+	CheckpointTool string          `json:"checkpointTool,omitempty"`
+	SegmentSeconds int             `json:"segmentSeconds,omitempty"`
+	SkillPaths     []string        `json:"skillPaths,omitempty"`
 }
 
 type Request struct {
+	NativeWorkflow     *NativeWorkflow `json:"nativeWorkflow,omitempty"`
 	GenerateOnly       bool            `json:"generateOnly,omitempty"`
 	RunID              string          `json:"runId"`
 	ConversationID     string          `json:"conversationId"`
@@ -56,17 +76,19 @@ type Event struct {
 }
 
 type ToolCall struct {
-	ID         string         `json:"id"`
-	ProviderID string         `json:"providerId,omitempty"`
-	Name       string         `json:"name"`
-	Arguments  map[string]any `json:"arguments"`
+	SessionEntryID string         `json:"sessionEntryId,omitempty"`
+	ID             string         `json:"id"`
+	ProviderID     string         `json:"providerId,omitempty"`
+	Name           string         `json:"name"`
+	Arguments      map[string]any `json:"arguments"`
 }
 
 type ToolResult struct {
-	Content     string `json:"content"`
-	IsError     bool   `json:"isError,omitempty"`
-	ExecutionID string `json:"executionId,omitempty"`
-	Terminate   bool   `json:"terminate,omitempty"`
+	Content           string         `json:"content"`
+	IsError           bool           `json:"isError,omitempty"`
+	ExecutionID       string         `json:"executionId,omitempty"`
+	Terminate         bool           `json:"terminate,omitempty"`
+	StructuredContent map[string]any `json:"structuredContent,omitempty"`
 }
 
 type Result struct {
@@ -83,4 +105,15 @@ type ToolExecutor func(context.Context, ToolCall) (ToolResult, error)
 type Control struct {
 	Steer  func(string) error
 	Cancel func() error
+}
+
+// NativeReceipt associates a durable result with its exact Pi assistant entry.
+// Provider tool-call IDs alone are not unique across a multi-day session.
+type NativeReceipt struct {
+	SessionEntryID string `json:"sessionEntryId"`
+	ProviderID     string `json:"providerId"`
+	Name           string `json:"name"`
+	Content        string `json:"content"`
+	ExecutionID    string `json:"executionId,omitempty"`
+	IsError        bool   `json:"isError"`
 }

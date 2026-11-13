@@ -113,7 +113,7 @@ function initRouter() {
         // 一键更新已并进系统设置页的分区菜单：#system-update 这条老深链落到设置页的那一区。
         const settingsSection = pageId === 'system-update' ? 'update' : pageId === 'settings' && new URLSearchParams(hashParts.slice(1).join('?')).get('section') === 'token-usage' ? 'token-usage' : '';
         if (settingsSection) pageId = 'settings';
-        if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'workflows', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'tasks', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
+        if (pageId && ['dashboard', 'chat', 'hitl', 'tool-guard', 'asset-overview', 'asset-library', 'info-collect', 'projects', 'vulnerabilities', 'webshell', 'chat-files', 'mcp-monitor', 'mcp-management', 'knowledge-management', 'knowledge-retrieval-logs', 'roles-management', 'platform-rbac', 'workflows', 'skills-monitor', 'skills-management', 'agents-management', 'settings', 'tasks', 'deep-assessments', 'c2-listeners', 'c2-sessions', 'c2-tasks', 'c2-payloads', 'c2-events', 'c2-profiles'].includes(pageId)) {
             switchPage(pageId);
             if (settingsSection && typeof switchSettingsSection === 'function') {
                 switchSettingsSection(settingsSection);
@@ -450,6 +450,9 @@ async function initPage(pageId) {
             break;
         case 'asset-library':
             if (typeof loadAssets === 'function') loadAssets();
+            break;
+        case 'deep-assessments':
+            if (window.DeepAssessments) window.DeepAssessments.init();
             break;
         case 'tasks':
             // 初始化任务管理页面

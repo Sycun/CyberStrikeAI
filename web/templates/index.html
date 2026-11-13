@@ -50,6 +50,7 @@
     <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-aligned-overview">
     <link rel="stylesheet" href="/static/css/vulnerability-list.css?v=20261113-compact-rows">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
+    <link rel="stylesheet" href="/static/css/deep-assessments.css?v=20261114">
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -294,6 +295,12 @@
                                 <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                             </svg>
                             <span data-i18n="nav.tasks">任务管理</span>
+                        </div>
+                    </div>
+                    <div class="nav-item" data-page="deep-assessments">
+                        <div class="nav-item-content" data-title="深度测评" onclick="switchPage('deep-assessments')" data-i18n="nav.deepAssessments" data-i18n-attr="data-title" data-i18n-skip-text="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6M10 6v8M6 10h8"/></svg>
+                            <span data-i18n="nav.deepAssessments">深度测评</span>
                         </div>
                     </div>
                     <div class="nav-item" data-page="workflows">
@@ -2977,6 +2984,7 @@
 
                 <!-- 任务管理页面 -->
 
+                <div id="page-deep-assessments" class="page"><div id="deep-assessments-root"></div></div>
                 <div id="page-tasks" class="page">
                     <div class="page-header">
                         <h2 data-i18n="tasks.title">任务管理</h2>
@@ -5398,6 +5406,7 @@
                                                                 <option value="conversation" data-i18n="rbac.resourceTypes.conversation">对话</option>
                                                                 <option value="project" data-i18n="rbac.resourceTypes.project">项目</option>
                                                                 <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
+                                                                <option value="deep_assessment" data-i18n="rbac.resourceTypes.deep_assessment">深度测评</option>
                                                                 <option value="vulnerability" data-i18n="rbac.resourceTypes.vulnerability">漏洞</option>
                                                                 <option value="asset" data-i18n="rbac.resourceTypes.asset">资产</option>
                                                                 <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
@@ -5427,6 +5436,7 @@
                                                                     <option value="conversation" data-i18n="rbac.resourceTypes.conversation">对话</option>
                                                                     <option value="project" data-i18n="rbac.resourceTypes.project">项目</option>
                                                                     <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
+                                                                <option value="deep_assessment" data-i18n="rbac.resourceTypes.deep_assessment">深度测评</option>
                                                                     <option value="vulnerability" data-i18n="rbac.resourceTypes.vulnerability">漏洞</option>
                                                                     <option value="asset" data-i18n="rbac.resourceTypes.asset">资产</option>
                                                                     <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
@@ -5472,6 +5482,7 @@
                                                                 <option value="asset" data-i18n="rbac.resourceTypes.asset">资产</option>
                                                                 <option value="webshell" data-i18n="rbac.resourceTypes.webshell">WebShell 连接</option>
                                                                 <option value="batch_task" data-i18n="rbac.resourceTypes.batch_task">批量任务</option>
+                                                                <option value="deep_assessment" data-i18n="rbac.resourceTypes.deep_assessment">深度测评</option>
                                                                 <option value="c2_listener" data-i18n="rbac.resourceTypes.c2_listener">C2 监听器</option>
                                                             </select>
                                                         </label>
@@ -7129,6 +7140,7 @@
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>
     <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
+    <script src="/static/js/deep-assessments.js?v=20261114"></script>
     <script src="/static/js/tasks.js?v=20261114-batch-restore"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>

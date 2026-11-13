@@ -475,6 +475,9 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	registerWebshellTools(mcpServer, db, webshellHandler, log.Logger)
 	registerWebshellManagementTools(mcpServer, db, webshellHandler, log.Logger)
 	configHandler := handler.NewConfigHandler(configPath, cfg, mcpServer, executor, agent, attackChainHandler, externalMCPMgr, log.Logger)
+	if err := agentHandler.InitDeepAssessments(configHandler.RuntimeConfigSnapshot); err != nil {
+		return nil, fmt.Errorf("initialize deep assessments: %w", err)
+	}
 	configHandler.SetDB(db)
 	configHandler.SetToolGuard(toolGuard)
 	configHandler.SetAudit(auditSvc)
@@ -662,6 +665,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 		updateHandler,
 	)
 
+	agentHandler.StartDeepAssessmentRecovery()
 	return app, nil
 
 }
@@ -1106,6 +1110,16 @@ func setupRoutes(
 		protected.PUT("/assets/:id", assetHandler.Update)
 		protected.DELETE("/assets/:id", assetHandler.Delete)
 
+		// Deep assessments have independent APIs, state, permissions and UI.
+		protected.GET("/deep-assessments/options", agentHandler.DeepAssessmentOptions)
+		protected.GET("/deep-assessments", agentHandler.ListDeepAssessments)
+		protected.POST("/deep-assessments", agentHandler.CreateDeepAssessment)
+		protected.GET("/deep-assessments/:id", agentHandler.GetDeepAssessment)
+		protected.GET("/deep-assessments/:id/events", agentHandler.DeepAssessmentEvents)
+		protected.GET("/deep-assessments/:id/receipts", agentHandler.DeepAssessmentReceipts)
+		protected.GET("/deep-assessments/:id/report", agentHandler.DeepAssessmentReport)
+		protected.POST("/deep-assessments/:id/control/:action", agentHandler.ControlDeepAssessment)
+		protected.DELETE("/deep-assessments/:id", agentHandler.DeleteDeepAssessment)
 		// 批量任务管理
 		protected.POST("/batch-tasks", agentHandler.CreateBatchQueue)
 		protected.GET("/batch-tasks", agentHandler.ListBatchQueues)

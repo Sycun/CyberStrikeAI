@@ -1,0 +1,29 @@
+name: Deep assessments
+on:
+  push:
+    paths: ['internal/deepassessment/**', 'internal/handler/deep_assessment*', 'internal/multiagent/**', 'internal/agentruntime/**', 'runtime/pi/**', 'web/static/js/deep-assessments.js', 'web/static/css/deep-assessments.css', 'web/templates/index.html', 'scripts/deep-assessments-browser.test.cjs', '.github/workflows/deep-assessments.yml']
+  pull_request:
+    paths: ['internal/deepassessment/**', 'internal/handler/deep_assessment*', 'internal/multiagent/**', 'internal/agentruntime/**', 'runtime/pi/**', 'web/static/js/deep-assessments.js', 'web/static/css/deep-assessments.css', 'web/templates/index.html', 'scripts/deep-assessments-browser.test.cjs', '.github/workflows/deep-assessments.yml']
+permissions:
+  contents: read
+jobs:
+  isolated-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: npm ci --ignore-scripts && npm run build && npm test
+        working-directory: runtime/pi
+      - run: go test -race ./internal/deepassessment ./internal/handler -run 'TestDeepAssessment|TestRecovery|TestSafeRestart|TestSegment|TestPiUsage'
+      - name: Browser fixture dependencies
+        run: |
+          npm install --prefix "$RUNNER_TEMP/assessment-ui-deps" --no-save --ignore-scripts --package-lock=false playwright@1.65.0
+          "$RUNNER_TEMP/assessment-ui-deps/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Independent assessment and unchanged batch UI
+        run: NODE_PATH="$RUNNER_TEMP/assessment-ui-deps/node_modules" node --test scripts/deep-assessments-browser.test.cjs scripts/batch-tasks-browser.test.cjs
