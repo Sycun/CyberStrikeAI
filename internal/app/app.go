@@ -1110,7 +1110,8 @@ func setupRoutes(
 		protected.PUT("/assets/:id", assetHandler.Update)
 		protected.DELETE("/assets/:id", assetHandler.Delete)
 
-		// 任务管理：目标任务与批量队列
+		// 统一任务列表，兼容两种既有执行方式
+		protected.GET("/tasks", agentHandler.ListManagedTasks)
 		protected.GET("/long-tasks/options", agentHandler.LongTaskOptions)
 		protected.GET("/long-tasks", agentHandler.ListLongTasks)
 		protected.POST("/long-tasks", agentHandler.CreateLongTask)

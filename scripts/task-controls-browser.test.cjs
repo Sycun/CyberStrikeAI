@@ -73,8 +73,8 @@ test('goal paging, filters, refresh toggle, modal close and execution links work
     await page.locator('#task-new-goal').click(); await page.locator('#lt-modal').waitFor(); await page.locator('#lt-modal [data-close]').last().click(); await page.waitForFunction(() => !document.getElementById('lt-modal'));
     await page.locator('#task-new-goal').click(); await page.locator('#lt-modal').waitFor(); await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('lt-modal'));
     assert.equal(state.requests.filter(r => r.method === 'POST').length, 0);
-    await page.locator('#tasks-auto-refresh').check(); const count = state.requests.filter(r => r.path === '/api/long-tasks').length;
-    await page.waitForTimeout(4200); assert.ok(state.requests.filter(r => r.path === '/api/long-tasks').length > count);
+    await page.locator('#tasks-auto-refresh').check(); const count = state.requests.filter(r => r.path === '/api/tasks').length;
+    await page.waitForTimeout(4200); assert.ok(state.requests.filter(r => r.path === '/api/tasks').length > count);
     await page.locator('#tasks-auto-refresh').uncheck(); await refresh(); const stopped = state.requests.length;
     await page.waitForTimeout(4200); assert.equal(state.requests.length, stopped);
     await select('a'); await page.locator('.lt-step a').click(); await page.waitForFunction(() => window.visitedConversation === 'conversation-a');
@@ -112,14 +112,14 @@ test('creation failures keep form input, and budget/execution permissions match 
 
 test('batch queue controls: create, close, metadata, add/edit/delete steps, single run, start/pause/resume/rerun/delete', async t => {
     const { page, state } = await fixture(t);
-    await page.locator('[data-task-tab=batch]').click(); await page.locator('#task-new-batch').click();
+    await page.evaluate(() => showBatchImportModal());
     await page.locator('#batch-import-modal').waitFor({ state: 'visible' });
     await page.locator('#batch-queue-title').fill('New batch'); await page.locator('#batch-tasks-input').fill('Read local A\nRead local B');
     await page.locator('[onclick="createBatchQueue()"]').click();
     await page.locator('[data-bq-detail-for="new-queue"]').waitFor();
     assert.equal(state.queues.get('new-queue').executeNow, false);
-    await page.locator('#batch-queue-detail-modal .modal-close').click();
-    await page.locator('.batch-queue-item[data-queue-id=q1]').click(); await page.locator('[data-bq-detail-for=q1]').waitFor();
+    await page.locator('[data-lt-action=select][data-id=a][data-mode=goal]').click();
+    await page.locator('.lt-card[data-id=q1][data-mode=list]').click(); await page.locator('[data-bq-detail-for=q1]').waitFor();
     await page.locator('#bq-title-val .bq-inline-editable').click(); await page.locator('#bq-edit-title').fill('Renamed queue'); await page.locator('#bq-edit-title').press('Enter');
     await page.waitForFunction(() => document.getElementById('bq-title-val').textContent === 'Renamed queue'); assert.equal(state.queues.get('q1').title, 'Renamed queue');
     await page.locator('#bq-concurrency-val .bq-inline-editable').click(); await page.locator('#bq-edit-concurrency').fill('2'); await page.locator('#bq-edit-concurrency').press('Enter');
@@ -136,14 +136,14 @@ test('batch queue controls: create, close, metadata, add/edit/delete steps, sing
     state.queues.get('q1').status = 'completed'; await page.evaluate(() => showBatchQueueDetail('q1')); await page.locator('#batch-queue-rerun-btn').click(); await page.locator('#batch-queue-pause-btn').waitFor({ state: 'visible' });
     await page.locator('#batch-queue-pause-btn').click(); await page.locator('#batch-queue-delete-btn').waitFor({ state: 'visible' }); await page.locator('#batch-queue-delete-btn').click();
     await page.locator('#batch-queue-detail-modal').waitFor({ state: 'hidden' }); assert.equal(state.queues.has('q1'), false);
-    await page.locator('.batch-queue-item[data-queue-id=new-queue] .batch-queue-icon-btn--danger').click(); await page.locator('.batch-queue-item[data-queue-id=new-queue]').waitFor({ state: 'detached' });
+    await page.locator('.lt-card[data-id=new-queue][data-mode=list]').click(); await page.locator('[data-bq-detail-for=new-queue]').waitFor(); await page.locator('#batch-queue-delete-btn').click(); await page.locator('.lt-card[data-id=new-queue][data-mode=list]').waitFor({ state: 'detached' });
     assert.deepEqual(state.pageErrors, []);
 });
 
 test('batch create and add-step clicks cannot submit twice on a slow connection', async t => {
     const { page, state } = await fixture(t);
     state.hook = async req => { if (req.method === 'POST' && (req.path === '/api/batch-tasks' || req.path.endsWith('/tasks'))) await new Promise(resolve => setTimeout(resolve, 300)); };
-    await page.locator('[data-task-tab=batch]').click(); await page.locator('#task-new-batch').click();
+    await page.evaluate(() => showBatchImportModal());
     await page.locator('#batch-tasks-input').fill('One local task'); await page.locator('[onclick="createBatchQueue()"]').dblclick();
     await page.locator('[data-bq-detail-for="new-queue"]').waitFor();
     assert.equal(state.requests.filter(r => r.method === 'POST' && r.path === '/api/batch-tasks').length, 1);
@@ -155,15 +155,99 @@ test('batch create and add-step clicks cannot submit twice on a slow connection'
 test('late batch detail and creation lookups do not take over a newer selection or page', async t => {
     const { page, state } = await fixture(t);
     state.queues.set('q2', { ...state.queues.get('q1'), id: 'q2', title: 'Other queue' });
-    await page.locator('[data-task-tab=batch]').click(); await page.evaluate(() => refreshBatchQueues());
+    await page.evaluate(() => refreshBatchQueues());
     let release; const gate = new Promise(resolve => { release = resolve; });
     state.hook = async req => { if (req.path === '/api/batch-tasks/q1' && req.method === 'GET') await gate; };
-    await page.locator('.batch-queue-item[data-queue-id=q1]').click(); await page.locator('#batch-queue-detail-modal .modal-close').click();
-    await page.locator('.batch-queue-item[data-queue-id=q2]').click(); await page.locator('[data-bq-detail-for=q2]').waitFor();
+    await page.locator('.lt-card[data-id=q1][data-mode=list]').click(); await page.locator('[data-lt-action=select][data-id=a][data-mode=goal]').click();
+    await page.locator('.lt-card[data-id=q2][data-mode=list]').click(); await page.locator('[data-bq-detail-for=q2]').waitFor();
     release(); await page.waitForTimeout(150); assert.equal(await page.locator('[data-bq-detail-for=q2]').count(), 1);
-    await page.locator('#batch-queue-detail-modal .modal-close').click();
+    await page.locator('[data-lt-action=select][data-id=a][data-mode=goal]').click();
     const createGate = new Promise(resolve => { release = resolve; });
     state.hook = async req => { if (req.path === '/api/projects') await createGate; };
-    await page.locator('#task-new-batch').click(); await page.evaluate(() => switchPage('dashboard')); release(); await page.waitForTimeout(150);
+    await page.evaluate(() => { void showBatchImportModal(); }); await page.evaluate(() => switchPage('dashboard')); release(); await page.waitForTimeout(150);
     assert.equal(await page.locator('#batch-import-modal').isVisible(), false);
+});
+
+test('one task list and one creation form support objectives, checklists and schedules', async t => {
+    const { page, state } = await fixture(t);
+    assert.equal(await page.locator('[data-task-tab]').count(), 0);
+    assert.equal(await page.locator('#task-new-batch').count(), 0);
+    assert.equal(await page.locator('#lt-list [data-mode=goal]').count(), 2);
+    assert.equal(await page.locator('#lt-list [data-mode=list]').count(), 1);
+    await page.locator('#lt-mode-filter').selectOption('list');
+    await page.waitForFunction(() => document.querySelectorAll('.lt-card').length === 1);
+    await page.locator('.lt-card[data-mode=list][data-id=q1]').click();
+    await page.locator('#lt-batch-detail [data-bq-detail-for=q1]').waitFor();
+    assert.equal(await page.locator('#batch-queue-detail-modal').evaluate(node => node.classList.contains('modal')), false);
+    await page.screenshot({path:'/tmp/csai-unified-task-list-preview.png'});
+    assert.equal(await page.locator('#lt-detail').isVisible(),false);
+    await page.locator('#task-new-goal').click();
+    await page.locator('#lt-modal [name=execution_mode][value=list]').check();
+    await page.locator('#lt-modal [name=name]').fill('Unified checklist');
+    await page.locator('#lt-modal [name=tasks_text]').fill('Read local A\nRead local B');
+    await page.locator('#lt-modal [name=schedule_mode]').selectOption('cron');
+    await page.locator('#lt-modal [name=cron_expr]').fill('0 2 * * *');
+    assert.equal(await page.locator('#lt-modal [name=objective]').isDisabled(), true);
+    assert.match(await page.locator('.lt-dialog-note').textContent(), /自动执行/);
+    await page.locator('#lt-modal [type=submit]').click();
+    await page.locator('#lt-batch-detail [data-bq-detail-for=new-queue]').waitFor();
+    assert.equal(state.queues.get('new-queue').scheduleMode, 'cron');
+    assert.equal(state.queues.get('new-queue').cronExpr, '0 2 * * *');
+    assert.equal(state.queues.get('new-queue').executeNow, false);
+    assert.equal(state.queues.get('new-queue').tasks.length, 2);
+    assert.equal(await page.locator('#lt-list [data-mode=list]').count(), 2);
+    await page.locator('#task-new-goal').click();
+    await page.locator('#lt-modal [name=name]').fill('Unified objective');
+    await page.locator('#lt-modal [name=objective]').fill('Summarize the local report');
+    await page.locator('#lt-modal [name=scope]').fill('Supplied local evidence only');
+    await page.locator('#lt-modal [name=criteria]').fill('Every conclusion has evidence');
+    assert.equal(await page.locator('#lt-modal [name=tasks_text]').isDisabled(), true);
+    await page.locator('#lt-modal [type=submit]').click();
+    await page.waitForFunction(() => document.getElementById('lt-name').textContent === 'Unified objective');
+    assert.equal(state.requests.filter(request => request.path.endsWith('/control/start')).length, 0);
+    assert.deepEqual(state.pageErrors, []);
+});
+
+test('creation and budget dialogs stay centered with visible actions on desktop and narrow screens', async t => {
+    const { page, state, select } = await fixture(t);
+    for (const theme of ['light', 'dark']) {
+        await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), theme);
+        for (const size of [{width:1440,height:900},{width:1280,height:720},{width:390,height:844},{width:640,height:400}]) {
+            await page.setViewportSize(size);
+            await page.locator('#task-new-goal').click(); await page.locator('#lt-modal').waitFor();
+            const layout = await page.evaluate(() => {
+                const rect = element => { const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,right:r.right}; };
+                return {dialog:rect(document.getElementById('lt-modal')),footer:rect(document.querySelector('.lt-dialog-footer')),submit:rect(document.querySelector('#lt-modal [type=submit]')),body:rect(document.querySelector('.lt-dialog-body')),scrollWidth:document.querySelector('.lt-dialog-body').scrollWidth};
+            });
+            assert.ok(Math.abs(layout.dialog.x+layout.dialog.width/2-size.width/2)<2, JSON.stringify(layout));
+            assert.ok(Math.abs(layout.dialog.y+layout.dialog.height/2-size.height/2)<2, JSON.stringify(layout));
+            assert.ok(layout.dialog.y>=10 && layout.dialog.bottom<=size.height-10, JSON.stringify(layout));
+            assert.ok(layout.submit.bottom<=size.height-10 && layout.submit.y>=0, JSON.stringify(layout));
+            assert.ok(layout.scrollWidth<=layout.body.width+1, 'dialog body must not overflow horizontally');
+            await page.evaluate(() => {const body=document.querySelector('.lt-dialog-body');body.scrollTop=body.scrollHeight;});
+            const footer = await page.locator('.lt-dialog-footer').boundingBox(); assert.ok(Math.abs(footer.y-layout.footer.y)<2, 'footer must remain fixed while fields scroll');
+            await page.evaluate(() => {document.querySelector('.lt-dialog-body').scrollTop=0;});
+            if(size.width===1440 || size.width===390) await page.screenshot({path:`/tmp/csai-unified-task-dialog-${theme}-${size.width}.png`});
+            if(theme==='light' && size.width===1440) await page.locator('#lt-modal').screenshot({path:'/tmp/csai-unified-task-dialog-preview.png'});
+            await page.locator('#lt-modal .lt-dialog-close').click();
+        }
+    }
+    await page.setViewportSize({width:1280,height:720}); await select('a'); await page.locator('[data-lt-action=budget]').click();
+    const box=await page.locator('#lt-modal').boundingBox(); assert.ok(Math.abs(box.x+box.width/2-640)<2 && box.width<=550);
+    await page.locator('#lt-modal [data-close]').last().click(); assert.deepEqual(state.pageErrors, []);
+});
+
+
+test('the unified empty state stays usable and checklist details fit narrow screens', async t => {
+    const { page,state,refresh }=await fixture(t);
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('.lt-card[data-mode=list][data-id=q1]').click();await page.locator('[data-bq-detail-for=q1]').waitFor();
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));
+    await page.locator('#batch-queue-start-btn').scrollIntoViewIfNeeded();
+    const button=await page.locator('#batch-queue-start-btn').boundingBox();assert.ok(button.x>=0 && button.x+button.width<=390);
+    await page.screenshot({path:'/tmp/csai-unified-task-list-mobile.png'});
+    await page.evaluate(()=>{onTaskQueueDeleted('q1');closeBatchQueueDetailModal();});state.tasks.clear();state.queues.clear();await refresh();
+    await page.locator('#lt-empty-state').waitFor();assert.equal(await page.locator('#lt-board').isVisible(),false);
+    await page.locator('#lt-empty-state [data-lt-action=new]').click();await page.locator('#lt-modal').waitFor();
+    await page.keyboard.press('Escape');assert.deepEqual(state.pageErrors,[]);
 });

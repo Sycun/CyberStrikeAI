@@ -24,6 +24,7 @@ func addLongTaskSpec(spec map[string]interface{}) {
 		return op
 	}
 	id := map[string]interface{}{"name": "id", "in": "path", "required": true, "schema": stringSchema}
+	paths["/api/tasks"] = map[string]interface{}{"get": operation("统一任务列表：按 mode、status、q 筛选后统一分页", nil, nil)}
 	paths["/api/long-tasks"] = map[string]interface{}{"get": operation("分页查询目标任务；支持 status、q、limit、offset", nil, nil), "post": operation("创建目标任务草稿，不自动执行", create, nil)}
 	paths["/api/long-tasks"].(map[string]interface{})["post"].(map[string]interface{})["responses"].(map[string]interface{})["201"] = map[string]interface{}{"description": "草稿已保存"}
 	paths["/api/long-tasks/options"] = map[string]interface{}{"get": operation("查询可用项目、角色与模型渠道", nil, nil)}

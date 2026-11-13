@@ -123,7 +123,7 @@ func permissionForRequest(method, fullPath string) string {
 			return "hitl:read"
 		}
 		return "hitl:write"
-	case strings.HasPrefix(path, "/agent-loop"), strings.HasPrefix(path, "/batch-tasks"), strings.HasPrefix(path, "/long-tasks"):
+	case path == "/tasks", strings.HasPrefix(path, "/agent-loop"), strings.HasPrefix(path, "/batch-tasks"), strings.HasPrefix(path, "/long-tasks"):
 		return crudPermission(method, "tasks")
 	case path == "/usage/tokens":
 		return "dashboard:read"

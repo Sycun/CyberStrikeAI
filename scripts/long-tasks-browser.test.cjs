@@ -33,6 +33,7 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
         if (req.url === '/api/auth/validate') { res.setHeader('Content-Type','application/json'); return res.end('{}'); }
         if (req.url === '/favicon.ico') { res.statusCode=204; return res.end(); }
         if (req.url.startsWith('/api/batch-tasks')) { res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({queues:[],total:0,total_pages:1})); }
+        if (req.url.startsWith('/api/tasks?')) { authenticated.push(req.headers.authorization); res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({tasks:[{...task,mode:'goal'}],has_more:false})); }
         if (req.url.startsWith('/api/long-tasks')) {
             authenticated.push(req.headers.authorization);
             if (req.headers.authorization !== 'Bearer fixture-token') { res.statusCode = 401; return res.end('{}'); }
@@ -67,7 +68,7 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
         await page.waitForFunction(() => document.getElementById('long-task-workspace').dataset.initialized === 'true');
         await page.evaluate(() => applyRBACToUI(document.getElementById('page-tasks')));
         assert.equal(await page.locator('#task-new-goal').isVisible(), true);
-        assert.equal(await page.locator('#task-new-batch').isVisible(), false);
+        assert.equal(await page.locator('#task-new-batch').count(), 0);
         await page.locator('[data-lt-action=select]').click();
         await page.locator('#lt-name').waitFor();
         await page.waitForFunction(() => document.getElementById('lt-name').textContent.includes('本地材料'));
@@ -105,15 +106,10 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
         await page.locator('#lt-modal [type=submit]').click();
         await page.waitForFunction(() => !document.getElementById('lt-modal'));
         assert.equal(actions.filter(a => a === 'start').length, 1, 'creating a draft must not execute');
-        await page.locator('[data-task-tab=batch]').click();
-        assert.equal(await page.locator('#long-task-workspace').isVisible(), false);
-        assert.equal(await page.locator('#task-batch-workspace').isVisible(), true);
-        await page.evaluate(() => applyRBACToUI(document.getElementById('page-tasks')));
-        assert.equal(await page.locator('#task-new-goal').isVisible(), false);
-        assert.equal(await page.locator('#task-new-batch').isVisible(), true);
+        assert.equal(await page.locator('[data-task-tab]').count(), 0, 'task management has one shared list');
         await page.evaluate(() => { saveAuth('fixture-token',new Date(Date.now()+3600000),{permissions:['tasks:read'],scope:'own'}); applyRBACToUI(); });
-        await page.locator('[data-task-tab=goals]').click();
-        assert.equal(await page.locator('#task-new-goal').isVisible(), false, 'tab switches must preserve denied write permission');
+        await page.locator('#lt-mode-filter').selectOption('goal');
+        assert.equal(await page.locator('#task-new-goal').isVisible(), false, 'filters must preserve denied write permission');
         await page.evaluate(() => cleanupTasksPage());
         assert.equal(authenticated.every(a => a === 'Bearer fixture-token'), true);
         assert.ok(actions.includes('create') && actions.includes('report') && actions.includes('pause'));

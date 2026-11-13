@@ -11,7 +11,7 @@
 
 CyberStrikeAI is a cybersecurity agent workbench built with **Go + Pi**. Describe the outcome you want: the agent interprets your intent, plans steps, calls tools, and records evidence. It reports progress as it works, asks for missing information or decisions, and continues from the saved state after you answer.
 
-This repository is maintained by **Sycun**, building on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) with the upstream history, license, and copyright notices preserved. The current version is ready for team trials. Start the new workflow from **Task Management → Goal tasks**.
+This repository is maintained by **Sycun**, building on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) with the upstream history, license, and copyright notices preserved. The current version is ready for team trials. Start the new workflow from **Task Management → New task**.
 
 [Quick start](#quick-start) · [Delegate your first task](#delegation) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Documentation](#documentation) · [Feedback](#contributing)
 
@@ -76,11 +76,11 @@ A deployment needs the runtime source and a matching Pi worker bundle, or a fres
 
 <a id="delegation"></a>
 
-## Goal tasks
+## Task management
 
-Open **Task Management → Goal tasks**, describe the objective, scope and acceptance criteria, save a draft, then start it. The coordinator schedules dependent steps through the existing Pi Agent and revises the plan as results arrive.
+Open **Task Management → New task** and choose autonomous planning or checklist execution. Objectives drive adaptive plans; supplied checklists support manual or Cron execution. Both appear in one searchable task list.
 
-Inspect execution conversations, checkpoints and activity; pause/resume, supply guidance, answer questions, retry failed steps and adjust time or planning-round budgets. Completed work is retained. Blocked, interrupted and budget-exhausted tasks are distinct from successful completion. Existing batch queues remain in the same page.
+Inspect execution conversations, checkpoints and activity; pause/resume, supply guidance, answer questions, retry failed steps and adjust time or planning-round budgets. Completed work is retained. Blocked, interrupted and budget-exhausted tasks are distinct from successful completion. Existing queues, schedules and execution records remain available in the shared list.
 
 See [task management, source research and validation boundaries](docs/zh-CN/long-running-tasks.md).
 

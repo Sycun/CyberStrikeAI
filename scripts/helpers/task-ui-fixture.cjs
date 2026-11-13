@@ -40,6 +40,13 @@ async function fixture(t) {
             if (state.hook) { const intercepted = await state.hook(request); if (intercepted) return send(intercepted.status || 200, intercepted.body); }
             if (url.pathname === '/api/projects') return send(200, { projects: [] });
             if (url.pathname === '/api/long-tasks/options') return send(200, { projects: [], roles: [], models: [] });
+            if (url.pathname === '/api/tasks') {
+                const rows = [...state.tasks.values()].map(task => ({ ...task, mode: 'goal', completed_steps: task.steps.filter(step => step.status === 'completed').length, total_steps: task.steps.length }));
+                for (const q of state.queues.values()) rows.push({ id:q.id, mode:'list', name:q.title, status:q.status, summary:q.lastRunError || '', updated_at:q.createdAt, schedule_mode:q.scheduleMode, next_run_at:q.nextRunAt, completed_steps:q.tasks.filter(step => step.status==='completed').length, total_steps:q.tasks.length });
+                const filtered=rows.filter(task => (!url.searchParams.get('mode') || task.mode===url.searchParams.get('mode')) && (!url.searchParams.get('status') || task.status===url.searchParams.get('status')) && (!url.searchParams.get('q') || task.name.includes(url.searchParams.get('q'))));
+                const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||30);
+                return send(200,{tasks:filtered.slice(offset,offset+limit),has_more:filtered.length>offset+limit});
+            }
             if (url.pathname === '/api/long-tasks') {
                 if (req.method === 'POST') { const task = { ...goal('new-' + state.tasks.size), ...body }; state.tasks.set(task.id, task); return send(201, { task }); }
                 const tasks = [...state.tasks.values()].filter(task => (!url.searchParams.get('status') || task.status === url.searchParams.get('status')) && (!url.searchParams.get('q') || task.name.includes(url.searchParams.get('q'))));
@@ -96,7 +103,7 @@ async function fixture(t) {
     await page.goto(`http://127.0.0.1:${server.address().port}/#tasks`);
     await page.locator('[data-lt-action=select][data-id=a]').waitFor();
     await page.locator('#tasks-auto-refresh').uncheck();
-    const select = async id => { await page.locator(`[data-lt-action=select][data-id="${id}"]`).click(); await page.waitForFunction(id => document.getElementById('lt-name').textContent === '目标 ' + id, id); };
+    const select = async id => { await page.locator(`[data-lt-action=select][data-mode=goal][data-id="${id}"]`).click(); await page.waitForFunction(id => document.getElementById('lt-name').textContent === '目标 ' + id, id); };
     const refresh = () => page.evaluate(() => refreshTaskWorkspace());
     return { page, state, select, refresh };
 }
