@@ -48,6 +48,7 @@ type App struct {
 	shutdownOnce       sync.Once
 	assessmentEngine   *assessment.Engine
 	config             *config.Config
+	configDir          string
 	logger             *logger.Logger
 	router             *gin.Engine
 	mcpServer          *mcp.Server
@@ -519,6 +520,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	// 创建 App 实例（部分字段稍后填充）
 	app := &App{
 		config:             cfg,
+		configDir:          configDir,
 		logger:             log,
 		router:             router,
 		mcpServer:          mcpServer,
@@ -742,7 +744,7 @@ func (a *App) RunWithContext(ctx context.Context) error {
 
 	// 启动主服务器（可选 HTTPS + HTTP/2，见 config server.tls_*）
 	addr := fmt.Sprintf("%s:%d", a.config.Server.Host, a.config.Server.Port)
-	tlsMode, tlsConf, certFile, keyFile, tlsErr := prepareMainServerTLS(&a.config.Server)
+	tlsMode, tlsConf, certFile, keyFile, tlsErr := prepareMainServerTLS(&a.config.Server, a.configDir)
 	if tlsErr != nil {
 		return tlsErr
 	}
@@ -761,8 +763,8 @@ func (a *App) RunWithContext(ctx context.Context) error {
 				zap.String("address", addr),
 				zap.String("cert", certFile),
 			)
-		case mainTLSInMemorySelfSigned:
-			a.logger.Debug("启动 HTTPS 主服务（内存自签证书，仅测试；已启用 HTTP/2 协商）",
+		case mainTLSAutoSelfSigned:
+			a.logger.Debug("启动 HTTPS 主服务（自动自签证书，仅测试；已启用 HTTP/2 协商）",
 				zap.String("address", addr),
 			)
 		}
@@ -812,7 +814,7 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		err = srv.ListenAndServe()
 	case tlsMode == mainTLSFromFiles:
 		err = srv.ListenAndServeTLS(certFile, keyFile)
-	case tlsMode == mainTLSInMemorySelfSigned:
+	case tlsMode == mainTLSAutoSelfSigned:
 		var ln net.Listener
 		ln, err = tls.Listen("tcp", addr, srv.TLSConfig)
 		if err == nil {
