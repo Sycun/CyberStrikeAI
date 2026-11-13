@@ -19,8 +19,9 @@
         state.tab = tab;
         el('long-task-workspace').hidden = tab !== 'goals';
         el('task-batch-workspace').hidden = tab !== 'batch';
-        el('task-new-goal').hidden = tab !== 'goals';
-        el('task-new-batch').hidden = tab !== 'batch';
+        // Page mode and RBAC own separate visibility rules. Permission refreshes
+        // must not reveal the other mode's button, or tab switches reveal denied controls.
+        el('page-tasks').dataset.taskMode = tab;
         document.querySelectorAll('[data-task-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.taskTab === tab)));
         if (tab === 'goals') refresh();
     }

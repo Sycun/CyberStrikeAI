@@ -50,7 +50,7 @@
     <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-aligned-overview">
     <link rel="stylesheet" href="/static/css/vulnerability-list.css?v=20261113-compact-rows">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
-    <link rel="stylesheet" href="/static/css/long-tasks.css">
+    <link rel="stylesheet" href="/static/css/long-tasks.css?v=20261113-goal-tasks">
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -2978,12 +2978,12 @@
 
                 <!-- 任务管理页面 -->
 
-                <div id="page-tasks" class="page">
+                <div id="page-tasks" class="page" data-task-mode="goals">
                     <div class="page-header">
                         <h2 data-i18n="tasks.title">任务管理</h2>
                         <div class="page-header-actions">
                             <button id="task-new-goal" class="btn-primary" data-require-permission="tasks:write" data-i18n="longTasks.new">新建目标任务</button>
-                            <button id="task-new-batch" hidden class="btn-primary" data-require-permission="tasks:write" onclick="showBatchImportModal()" data-i18n="longTasks.newBatch">新建批量队列</button>
+                            <button id="task-new-batch" class="btn-primary" data-require-permission="tasks:write" onclick="showBatchImportModal()" data-i18n="longTasks.newBatch">新建批量队列</button>
                             <label class="auto-refresh-toggle">
                                 <input type="checkbox" id="tasks-auto-refresh" checked onchange="toggleTasksAutoRefresh(this.checked)">
                                 <span data-i18n="tasks.autoRefresh">自动刷新</span>
@@ -7174,7 +7174,8 @@
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>
     <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
-    <script src="/static/js/tasks.js?v=20261103-personal-integration"></script>
+    <script src="/static/js/tasks.js?v=20261113-goal-tasks"></script>
+    <script src="/static/js/long-tasks.js?v=20261113-goal-tasks"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>
     <script src="/static/js/update.js?v={{.Version}}-update-status"></script>

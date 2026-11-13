@@ -61,3 +61,6 @@
 #page-tasks .btn-primary { color:var(--bg-primary,#fff); background:var(--accent-color,#2563eb); }
 #task-new-goal[hidden],#task-new-batch[hidden] { display:none !important; }
 .lt-status-cleanup_unconfirmed { background:#fee2e2; color:#b91c1c; }
+
+#page-tasks[data-task-mode="goals"] #task-new-batch,
+#page-tasks[data-task-mode="batch"] #task-new-goal { display:none !important; }

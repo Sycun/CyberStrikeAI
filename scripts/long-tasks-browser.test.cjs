@@ -13,17 +13,26 @@ const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 test('goal task page: authenticated controls, stable polling, XSS, report and responsive layout', async () => {
     const template = read('web/templates/index.html');
     const pageHTML = template.slice(template.indexOf('<div id="page-tasks"'), template.indexOf('<!-- C2 监听器管理页面 -->')).replace('class="page"','class="page active"');
+    // Load exactly the entrypoint's scripts in their original order. Do not inject
+    // long-tasks.js independently: that hid a missing production script tag.
+    const scriptTags = [...template.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/g)]
+        .filter(match => /^\/static\/js\/(router|auth|tasks|long-tasks)\.js(?:\?|$)/.test(match[1]))
+        .map(match => match[0]).join('');
+    const styleTags = [...template.matchAll(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*>/g)]
+        .filter(match => /^\/static\/css\/(style|mobile|long-tasks)\.css(?:\?|$)/.test(match[1]))
+        .map(match => match[0]).join('');
     const locale = JSON.parse(read('web/static/i18n/zh-CN.json'));
     const task = { id: 'fixture', name: '本地材料整理 <img src=x onerror="window.bad=1">', status: 'draft', revision: 0, objective: 'Produce a verified report', scope: 'Local fixture only', criteria: 'Evidence and gaps', strategy: '', summary: '', steps: [], guidance: [], question: '', rounds: 0, max_rounds: 40, remaining_seconds: 3600, updated_at: new Date().toISOString() };
     const authenticated = [], actions = [];
-        const server = http.createServer(async (req, res) => {
-        if (req.url.startsWith('/static/')) { const file = path.join(root, 'web', req.url); res.setHeader('Content-Type', file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8'); return res.end(fs.readFileSync(file)); }
+    const server = http.createServer(async (req, res) => {
+        if (req.url.startsWith('/static/')) { const file = path.join(root, 'web', new URL(req.url, 'http://fixture').pathname); res.setHeader('Content-Type', file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8'); return res.end(fs.readFileSync(file)); }
         if (req.url === '/') {
             res.setHeader('Content-Type', 'text/html; charset=utf-8');
-            const html = `<!doctype html><html data-theme="light"><head><meta charset="UTF-8"><link rel="stylesheet" href="/static/css/style.css"><link rel="stylesheet" href="/static/css/mobile.css"><link rel="stylesheet" href="/static/css/long-tasks.css"><style>.page-content{padding:16px}*{box-sizing:border-box}</style></head><body><div class="container"><main class="main-layout"><section class="content-area">${pageHTML}</section></main></div><script>window.t=(key,opts={})=>{let v=key.split('.').reduce((o,k)=>o&&o[k],${JSON.stringify(locale).replaceAll("<", "\\u003c")});return String(v||key).replace(/{{(\\w+)}}/g,(_,k)=>String(opts[k]??''))};window.closeAppModal=()=>{};window.openAppModal=()=>{};window.initializeChatUI=()=>{};window.refreshAppData=async()=>{};window.refreshBatchQueues=()=>{};window.toggleTasksAutoRefresh=()=>{};</script><script src="/static/js/auth.js"></script><script>document.removeEventListener('DOMContentLoaded', initializeApp);saveAuth('fixture-token',new Date(Date.now()+3600000),{permissions:['tasks:read','tasks:write','tasks:delete'],scope:'own'});</script><script src="/static/js/long-tasks.js"></script><script>initLongTasks();</script></body></html>`; return res.end(html);
+            const html = `<!doctype html><html data-theme="light"><head><meta charset="UTF-8">${styleTags}<style>.page-content{padding:16px}*{box-sizing:border-box}</style></head><body><div class="container"><main class="main-layout"><section class="content-area">${pageHTML}</section></main></div><script>window.t=(key,opts={})=>{let v=key.split('.').reduce((o,k)=>o&&o[k],${JSON.stringify(locale).replaceAll("<", "\\u003c")});return String(v||key).replace(/{{(\\w+)}}/g,(_,k)=>String(opts[k]??''))};window.closeAppModal=()=>{};window.openAppModal=()=>{};window.initializeChatUI=()=>{};window.refreshAppData=async()=>{};</script>${scriptTags}<script>document.removeEventListener('DOMContentLoaded', initializeApp);saveAuth('fixture-token',new Date(Date.now()+3600000),{permissions:['tasks:read','tasks:write','tasks:delete'],scope:'own'});</script></body></html>`; return res.end(html);
         }
         if (req.url === '/api/auth/validate') { res.setHeader('Content-Type','application/json'); return res.end('{}'); }
         if (req.url === '/favicon.ico') { res.statusCode=204; return res.end(); }
+        if (req.url.startsWith('/api/batch-tasks')) { res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({queues:[],total:0,total_pages:1})); }
         if (req.url.startsWith('/api/long-tasks')) {
             authenticated.push(req.headers.authorization);
             if (req.headers.authorization !== 'Bearer fixture-token') { res.statusCode = 401; return res.end('{}'); }
@@ -54,7 +63,11 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
         const errors = []; page.on('pageerror', e => { errors.push(e.message); process.stderr.write('PAGE: ' + e.stack + '\n'); });
         page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') process.stderr.write('CONSOLE: ' + m.text() + '\n'); });
         page.setDefaultTimeout(10000);
-        await page.goto('http://127.0.0.1:' + server.address().port);
+        await page.goto('http://127.0.0.1:' + server.address().port + '/#tasks');
+        await page.waitForFunction(() => document.getElementById('long-task-workspace').dataset.initialized === 'true');
+        await page.evaluate(() => applyRBACToUI(document.getElementById('page-tasks')));
+        assert.equal(await page.locator('#task-new-goal').isVisible(), true);
+        assert.equal(await page.locator('#task-new-batch').isVisible(), false);
         await page.locator('[data-lt-action=select]').click();
         await page.locator('#lt-name').waitFor();
         await page.waitForFunction(() => document.getElementById('lt-name').textContent.includes('本地材料'));
@@ -95,7 +108,13 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
         await page.locator('[data-task-tab=batch]').click();
         assert.equal(await page.locator('#long-task-workspace').isVisible(), false);
         assert.equal(await page.locator('#task-batch-workspace').isVisible(), true);
-        await page.evaluate(() => cleanupLongTasks());
+        await page.evaluate(() => applyRBACToUI(document.getElementById('page-tasks')));
+        assert.equal(await page.locator('#task-new-goal').isVisible(), false);
+        assert.equal(await page.locator('#task-new-batch').isVisible(), true);
+        await page.evaluate(() => { saveAuth('fixture-token',new Date(Date.now()+3600000),{permissions:['tasks:read'],scope:'own'}); applyRBACToUI(); });
+        await page.locator('[data-task-tab=goals]').click();
+        assert.equal(await page.locator('#task-new-goal').isVisible(), false, 'tab switches must preserve denied write permission');
+        await page.evaluate(() => cleanupTasksPage());
         assert.equal(authenticated.every(a => a === 'Bearer fixture-token'), true);
         assert.ok(actions.includes('create') && actions.includes('report') && actions.includes('pause'));
         assert.deepEqual(errors, []);
