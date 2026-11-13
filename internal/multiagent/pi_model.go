@@ -44,9 +44,11 @@ func piModelConfig(oa config.OpenAIConfig, intent *reasoning.ClientIntent, conve
 		compat["maxTokensField"] = "max_tokens"
 		compat["supportsStore"] = false
 	}
-	if oa.Reasoning.ProfileEffective() == "deepseek_compat" || (oa.Reasoning.ProfileEffective() == "auto" && oa.IsDeepSeekEndpointOrModel()) {
+	profile := oa.Reasoning.ProfileEffective()
+	if api == "openai-completions" && (profile == "deepseek" || profile == "deepseek_compat" || (profile == "auto" && oa.IsDeepSeekEndpointOrModel())) {
 		compat["thinkingFormat"] = "deepseek"
 		compat["requiresReasoningContentOnAssistantMessages"] = true
+		compat["maxTokensField"] = "max_tokens"
 	}
 	return agentruntime.Model{Provider: provider, API: api, ID: oa.Model, BaseURL: base, APIKey: oa.APIKey, Headers: headers, ContextWindow: window, InputBudget: budget, MaxTokens: oa.MaxCompletionTokensEffective(), Thinking: thinking, ExtraFields: extra, Compat: compat}
 }

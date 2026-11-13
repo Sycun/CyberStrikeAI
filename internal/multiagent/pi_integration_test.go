@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -164,6 +165,83 @@ func piReply(w http.ResponseWriter, tool, id string, args map[string]any, text s
 		fmt.Fprintf(w, "data: %s\n\n", b)
 	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+func TestPiDeepSeekOutputBudgetAndUsage(t *testing.T) {
+	for _, tc := range []struct {
+		profile, mode, thinking, effort string
+		reasoning                       int
+	}{
+		{profile: "deepseek", mode: "auto", thinking: "enabled", effort: "low", reasoning: 6},
+		{profile: "deepseek_compat", mode: "off", thinking: "disabled"},
+	} {
+		t.Run(tc.profile, func(t *testing.T) {
+			cfg := piTestConfig(t)
+			cfg.OpenAI.Model = "deepseek-flash"
+			cfg.OpenAI.Reasoning = config.OpenAIReasoningConfig{Profile: tc.profile, Mode: tc.mode, Effort: "low"}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body struct {
+					MaxTokens           int    `json:"max_tokens"`
+					MaxCompletionTokens *int   `json:"max_completion_tokens"`
+					Effort              string `json:"reasoning_effort"`
+					Thinking            struct {
+						Type string `json:"type"`
+					} `json:"thinking"`
+					StreamOptions struct {
+						IncludeUsage bool `json:"include_usage"`
+					} `json:"stream_options"`
+					Tools []struct {
+						Function struct {
+							Name string `json:"name"`
+						} `json:"function"`
+					} `json:"tools"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+					http.Error(w, "invalid fixture request", http.StatusBadRequest)
+					return
+				}
+				if body.MaxTokens != 1024 || body.MaxCompletionTokens != nil || !body.StreamOptions.IncludeUsage {
+					t.Errorf("unexpected budget or usage options: %+v", body)
+				}
+				if body.Thinking.Type != tc.thinking || body.Effort != tc.effort {
+					t.Errorf("unexpected thinking options: %+v", body)
+				}
+				var names []string
+				for _, tool := range body.Tools {
+					names = append(names, tool.Function.Name)
+				}
+				if !slices.Equal(names, []string{"echo", "secret"}) {
+					t.Errorf("unexpected tool catalog: %v", names)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, `data: {"id":"fixture","object":"chat.completion.chunk","model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`+"\n\n")
+				fmt.Fprintf(w, `data: {"id":"fixture","object":"chat.completion.chunk","model":"deepseek-flash","choices":[],"usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":75,"prompt_cache_miss_tokens":25,"completion_tokens":20,"completion_tokens_details":{"reasoning_tokens":%d},"total_tokens":120}}`+"\n\n", tc.reasoning)
+				fmt.Fprint(w, "data: [DONE]\n\n")
+			}))
+			defer server.Close()
+			cfg.OpenAI.BaseURL = server.URL + "/v1"
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			var usage map[string]any
+			result, err := RunSingleAgent(ctx, cfg, &cfg.MultiAgent, piTestAgent(cfg, nil), nil, zap.NewNop(), "", "", "Say ok", nil, nil, func(kind, _ string, data interface{}) {
+				if kind == "agent_usage_summary" {
+					usage = data.(map[string]any)
+				}
+			}, nil, "")
+			if err != nil || result == nil || result.Response != "ok" || result.RuntimeStatus != "completed" {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+			for field, want := range map[string]int{
+				"modelCalls": 1, "promptTokens": 100, "completionTokens": 20,
+				"cachedTokens": 75, "cacheWriteTokens": 0, "reasoningTokens": tc.reasoning, "totalTokens": 120,
+			} {
+				if usage[field] != want {
+					t.Errorf("%s=%v, want %d (usage=%v)", field, usage[field], want, usage)
+				}
+			}
+		})
+	}
 }
 
 func TestPiBackgroundGenerationReturnsProposalWithoutExecutingTools(t *testing.T) {
