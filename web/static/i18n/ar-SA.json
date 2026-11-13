@@ -2769,6 +2769,8 @@
     "loading": "جارٍ التحميل...",
     "loadListFailed": "فشل التحميل",
     "noRecords": "لا توجد سجلات ثغرات",
+    "unknownHost": "مضيف غير معروف",
+    "hostPageCount": "{{count}} في هذه الصفحة",
     "batchExport": "تصدير جماعي",
     "batchDelete": "حذف جماعي",
     "batchDeleteNoResults": "لا توجد ثغرات تطابق عوامل التصفية الحالية لحذفها",

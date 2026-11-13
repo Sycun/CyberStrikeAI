@@ -2925,6 +2925,8 @@
     "loading": "Загрузка...",
     "loadListFailed": "Не удалось загрузить",
     "noRecords": "Нет записей об уязвимостях",
+    "unknownHost": "Неизвестный хост",
+    "hostPageCount": "На этой странице: {{count}}",
     "batchExport": "Пакетный экспорт",
     "batchDelete": "Пакетное удаление",
     "batchDeleteNoResults": "Нет уязвимостей по текущим фильтрам для удаления",

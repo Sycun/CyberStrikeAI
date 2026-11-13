@@ -2900,6 +2900,8 @@
     "loading": "加载中...",
     "loadListFailed": "加载失败",
     "noRecords": "暂无漏洞记录",
+    "unknownHost": "未识别到主机",
+    "hostPageCount": "本页 {{count}} 条",
     "batchExport": "批量导出",
     "batchDelete": "批量删除",
     "batchDeleteNoResults": "当前筛选条件下没有可删除的漏洞",

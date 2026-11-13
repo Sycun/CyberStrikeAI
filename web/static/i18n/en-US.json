@@ -2912,6 +2912,8 @@
     "loading": "Loading...",
     "loadListFailed": "Failed to load",
     "noRecords": "No vulnerability records",
+    "unknownHost": "Unknown host",
+    "hostPageCount": "{{count}} on this page",
     "batchExport": "Batch export",
     "batchDelete": "Batch delete",
     "batchDeleteNoResults": "No vulnerabilities match the current filters to delete",

@@ -27456,6 +27456,42 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     margin-bottom: 0;
 }
 
+.vulnerability-host-group {
+    min-width: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.vulnerability-host-group > summary {
+    padding: 12px 16px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.vulnerability-host-group > summary:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+    border-radius: 8px;
+}
+
+.vulnerability-host-name {
+    margin-inline-start: 6px;
+    font-weight: 600;
+}
+
+.vulnerability-host-count {
+    margin-inline-start: 8px;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}
+
+.vulnerability-host-cards {
+    display: grid;
+    gap: 10px;
+    padding: 0 12px 12px;
+}
+
 .vulnerability-card {
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
