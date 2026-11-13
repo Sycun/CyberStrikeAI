@@ -1878,6 +1878,7 @@ function syncProcessDetailsLatestFollowAfterManualReturn(timeline) {
     processDetailsLatestFollowStates.forEach(function (state) {
         if (!state || state.timeline !== timeline) return;
         state.detached = false;
+        timeline.classList.add('is-following-latest');
         state.hasPendingNewBelow = false;
         state.userScrollIntentUntil = 0;
         state.lastScrollTop = timeline.scrollTop;
@@ -2124,6 +2125,7 @@ function stopProcessDetailsLatestFollow(assistantMessageId) {
     const state = processDetailsLatestFollowStates.get(key);
     if (!state) return false;
     state.stopped = true;
+    state.timeline.classList.remove('has-latest-follow', 'is-following-latest');
     if (state.rafId) cancelAnimationFrame(state.rafId);
     if (state.timeoutId) clearTimeout(state.timeoutId);
     if (state.observer) state.observer.disconnect();
@@ -2155,16 +2157,22 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
     const timeline = explicitTimeline || (container && container.querySelector('.progress-timeline'));
     if (!container || !timeline) return false;
 
+    const persistent = !!opts.persistent;
+    const previousState = processDetailsLatestFollowStates.get(key);
+    // 最新页恢复接入补流时保留原状态，避免把正在阅读历史的用户拉到底部。
+    if (previousState && previousState.timeline === timeline && persistent) {
+        clearTimeout(previousState.timeoutId);
+        previousState.timeoutId = 0;
+        return true;
+    }
     stopProcessDetailsLatestFollow(key);
     ensureProcessDetailsReturnLatestControl(timeline);
-    const persistent = !!opts.persistent;
     const durationMs = Number.isFinite(Number(opts.durationMs))
         ? Math.max(250, Number(opts.durationMs))
         : PROCESS_DETAILS_RESTORE_FOLLOW_MS;
     const state = {
         stopped: false,
         detached: false,
-        persistent: persistent,
         timeline: timeline,
         hasPendingNewBelow: false,
         lastScrollTop: timeline.scrollTop,
@@ -2178,9 +2186,11 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
         cleanup: []
     };
     processDetailsLatestFollowStates.set(key, state);
+    timeline.classList.add('has-latest-follow', 'is-following-latest');
 
     const detachForUserNavigation = function () {
         state.detached = true;
+        timeline.classList.remove('is-following-latest');
         if (state.rafId) {
             cancelAnimationFrame(state.rafId);
             state.rafId = 0;
@@ -2192,7 +2202,12 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
         if (Math.abs(event.deltaY) > 1) {
             state.userScrollIntentUntil = Date.now() + 1200;
         }
-        if (event.deltaY < -1) detachForUserNavigation();
+        if (event.deltaY < -1 && timeline.scrollTop > PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX) {
+            detachForUserNavigation();
+        } else if (event.deltaY > 1 && state.detached &&
+            processDetailsDistanceFromLatest(timeline) <= PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX) {
+            syncProcessDetailsLatestFollowAfterManualReturn(timeline);
+        }
     };
     const onPointerDown = function (event) {
         if (!event) return;
@@ -2202,11 +2217,12 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
         }
     };
     const onKeyDown = function (event) {
-        if (!event) return;
+        if (!event || event.defaultPrevented) return;
         if (['ArrowUp', 'PageUp', 'Home', 'ArrowDown', 'PageDown', 'End', ' '].includes(event.key)) {
             state.userScrollIntentUntil = Date.now() + 1200;
         }
-        if (event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home') {
+        if ((event.key === 'ArrowUp' || event.key === 'PageUp' || event.key === 'Home' ||
+            (event.key === ' ' && event.shiftKey)) && timeline.scrollTop > PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX) {
             detachForUserNavigation();
         }
     };
@@ -2219,7 +2235,8 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
         if (!event || !event.touches || event.touches.length !== 1) return;
         const nextY = event.touches[0].clientY;
         state.userScrollIntentUntil = Date.now() + 1200;
-        if (state.touchLastY != null && nextY > state.touchLastY + 4) {
+        if (state.touchLastY != null && nextY > state.touchLastY + 4 &&
+            timeline.scrollTop > PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX) {
             detachForUserNavigation();
         }
         state.touchLastY = nextY;
@@ -2248,6 +2265,7 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
             distance <= PROCESS_DETAILS_FOLLOW_RESUME_THRESHOLD_PX
         ) {
             state.detached = false;
+            timeline.classList.add('is-following-latest');
             state.hasPendingNewBelow = false;
             scheduleFollowLatest();
         }
@@ -2285,11 +2303,6 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
         state.lastScrollTop = timeline.scrollTop;
         state.lastScrollRange = Math.max(0, timeline.scrollHeight - timeline.clientHeight);
         updateProcessDetailsReturnLatestControl(timeline);
-        // 内层迭代区与外层对话区分别粘底；用户上滑内层后，本状态会暂停两者的自动跟随。
-        if (window.CyberStrikeChatScroll &&
-            typeof window.CyberStrikeChatScroll.scrollIfPinned === 'function') {
-            window.CyberStrikeChatScroll.scrollIfPinned(true);
-        }
     };
     const scheduleFollowLatest = function () {
         if (state.stopped || state.rafId) return;
@@ -2305,7 +2318,13 @@ function startProcessDetailsLatestFollow(assistantMessageId, options) {
     state.observer = new MutationObserver(scheduleFollowLatest);
     state.observer.observe(timeline, { childList: true, subtree: true, characterData: true });
     if (typeof ResizeObserver === 'function') {
-        state.resizeObserver = new ResizeObserver(scheduleFollowLatest);
+        state.resizeObserver = new ResizeObserver(function () {
+            scheduleFollowLatest();
+            // 展开、收起和尺寸过渡会改变外层对话高度，且可能没有新增 DOM。
+            if (timeline.closest('#chat-messages')) {
+                window.CyberStrikeChatScroll?.scrollIfPinned(true);
+            }
+        });
         state.resizeObserver.observe(timeline);
     }
     scheduleFollowLatest();

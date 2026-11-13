@@ -387,6 +387,7 @@
 
     function setScrollFollowing() {
         scrollMode = 'following';
+        getChatMessagesEl()?.classList.add('is-following-latest');
         detachLockUntil = 0;
         userScrollIntentUntil = 0;
         hasPendingNewBelow = false;
@@ -401,8 +402,10 @@
 
     function setScrollDetached() {
         scrollMode = 'detached';
+        getChatMessagesEl()?.classList.remove('is-following-latest');
         detachLockUntil = Date.now() + DETACH_LOCK_MS;
         cancelAnimationFrame(scrollFollowRaf);
+        scrollFollowRaf = 0;
         scrollSettleGeneration += 1;
         conversationRestoreGeneration += 1;
         if (isStreamActive()) {
@@ -468,8 +471,11 @@
             markPendingNewBelow();
             return;
         }
-        cancelAnimationFrame(scrollFollowRaf);
-        scrollFollowRaf = requestAnimationFrame(scrollChatToBottomInstant);
+        if (scrollFollowRaf) return;
+        scrollFollowRaf = requestAnimationFrame(function () {
+            scrollFollowRaf = 0;
+            scrollChatToBottomInstant();
+        });
     }
 
     /**
@@ -551,6 +557,7 @@
 
     function forceScrollChatToBottom() {
         cancelAnimationFrame(scrollFollowRaf);
+        scrollFollowRaf = 0;
         setScrollFollowing();
         scrollChatToBottomInstant();
         updateTurnRailState();
@@ -665,14 +672,25 @@
         updateTurnRailState();
     }
 
+    function nestedTimelineCanScroll(target, direction) {
+        const timeline = target?.closest?.('.progress-timeline.expanded');
+        if (!timeline || scrollRange(timeline) <= CHAT_SCROLL_FOLLOW_RESUME_THRESHOLD_PX) return false;
+        return direction < 0
+            ? timeline.scrollTop > CHAT_SCROLL_FOLLOW_RESUME_THRESHOLD_PX
+            : distanceFromBottom(timeline) > CHAT_SCROLL_FOLLOW_RESUME_THRESHOLD_PX;
+    }
+
     function bindChatScrollListeners() {
         if (listenersBound) return;
         const el = getChatMessagesEl();
         if (!el) return;
         listenersBound = true;
+        el.classList.toggle('is-following-latest', scrollMode === 'following');
         rememberScrollPosition(el);
 
         el.addEventListener('wheel', function (e) {
+            // 只有内层到达边界后，滚轮才会传给外层对话区。
+            if (nestedTimelineCanScroll(e.target, e.deltaY)) return;
             if (Math.abs(e.deltaY) > 1) {
                 userScrollIntentUntil = Date.now() + 1200;
             }
@@ -691,22 +709,25 @@
 
         el.addEventListener('keydown', function (e) {
             const scrollKeys = ['ArrowUp', 'PageUp', 'Home', 'ArrowDown', 'PageDown', 'End', ' '];
-            if (scrollKeys.includes(e.key)) {
-                userScrollIntentUntil = Date.now() + 1200;
-            }
-            if (e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home' || (e.key === ' ' && e.shiftKey)) {
+            if (e.defaultPrevented || !scrollKeys.includes(e.key)) return;
+            const upwards = e.key === 'ArrowUp' || e.key === 'PageUp' || e.key === 'Home' || (e.key === ' ' && e.shiftKey);
+            if (nestedTimelineCanScroll(e.target, upwards ? -1 : 1)) return;
+            userScrollIntentUntil = Date.now() + 1200;
+            if (upwards) {
                 setScrollDetached();
             }
         });
 
         el.addEventListener('touchmove', function (e) {
             if (e.touches && e.touches.length === 1) {
+                const y = e.touches[0].clientY;
+                const delta = (el._csTouchLastY ?? y) - y;
+                el._csTouchLastY = y;
+                if (nestedTimelineCanScroll(e.target, delta)) return;
                 userScrollIntentUntil = Date.now() + 1200;
-                el._csTouchLastY = el._csTouchLastY != null ? el._csTouchLastY : e.touches[0].clientY;
-                if (e.touches[0].clientY > el._csTouchLastY + 4) {
+                if (delta < -4) {
                     setScrollDetached();
                 }
-                el._csTouchLastY = e.touches[0].clientY;
             }
         }, { passive: true });
         el.addEventListener('touchstart', function (e) {

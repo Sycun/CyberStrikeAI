@@ -283,7 +283,7 @@ test('刷新后迭代思考区独立跟随最新内容且允许用户上滑解�
     assert.match(returnLatestSource, /window\.ensureProcessDetailsReturnLatestControl = ensureProcessDetailsReturnLatestControl/);
     assert.match(startSource, /new MutationObserver\(scheduleFollowLatest\)/);
     assert.match(startSource, /characterData: true/);
-    assert.match(startSource, /new ResizeObserver\(scheduleFollowLatest\)/);
+    assert.match(startSource, /new ResizeObserver\(function \(\) \{\s*scheduleFollowLatest\(\)/);
     assert.match(startSource, /ensureProcessDetailsReturnLatestControl\(timeline\)/);
     assert.match(startSource, /markProcessDetailsReturnLatestPending\(timeline\)/);
     assert.match(startSource, /timeline\.scrollTo\(\{ top: timeline\.scrollHeight, behavior: 'instant' \}\)/);
