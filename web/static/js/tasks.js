@@ -792,6 +792,7 @@ function toggleTasksAutoRefresh(enabled) {
 
 // 初始化任务管理页面
 function initTasksPage() {
+    if (typeof initLongTasks === 'function') initLongTasks();
     initBatchQueuesFilterSelects();
     initBatchFormSelects();
     // 恢复自动刷新设置
@@ -811,6 +812,7 @@ function initTasksPage() {
 
 // 清理定时器（页面切换时调用）
 function cleanupTasksPage() {
+    if (typeof cleanupLongTasks === 'function') cleanupLongTasks();
     if (tasksState.refreshInterval) {
         clearInterval(tasksState.refreshInterval);
         tasksState.refreshInterval = null;

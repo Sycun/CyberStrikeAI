@@ -39,8 +39,8 @@ agent_runtime:
 - 工具较多时使用 Pi 原生 tool_search 按需加载，减少模型一次接收的工具定义。TaskCreate／Update／Get／List 和 write_todos 继续写入现有对话任务板。
 - MCP、文件和 Shell 工具回到 Go，经角色过滤、HITL 和现有执行监控处理。子代理工具集合受主代理集合约束。
 - Deep 使用任务委派；Supervisor 提供专家委派和 exit；Plan-Execute 使用计划记录与执行子代理。最终文本仍需通过既有证据验收。
-- 深度评估工作台调用 Pi 的单次模型生成，返回动作建议和用量，工具执行仍由持久任务引擎控制。不会开启第二个自动工具循环。
-- Pi 原生重试及虚拟模型路由承接聊天备用渠道。深度评估仍由自身的持久预算和重试策略控制。认证／配置错误不能用无界“继续”消除。
+目标任务在「任务管理」中调度现有 Pi Agent 的完整步骤，持久保存计划与结果，独立验收后才标记完成。参见[目标任务](long-running-tasks.md)。
+目标任务在「任务管理」中调度现有 Pi Agent 的完整步骤，持久保存计划与结果，独立验收后才标记完成。参见[目标任务](long-running-tasks.md)。
 - 上下文窗口和输出上限沿用渠道设置，包括 local profile；输入预算用于 Pi 压缩阈值。压缩后的模型上下文和完整会话记录分别保留。
 
 ## 数据与兼容
@@ -64,7 +64,7 @@ npm ci --ignore-scripts
 npm run build
 npm test
 cd ../..
-go test -race ./internal/agentruntime ./internal/multiagent ./internal/assessment ./internal/workflow ./internal/knowledge
+go test -race ./internal/agentruntime ./internal/multiagent ./internal/taskflow ./internal/workflow ./internal/knowledge
 go test ./...
 node --test web/static/js/*.test.cjs
 ```

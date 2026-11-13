@@ -44,13 +44,13 @@
     <link rel="stylesheet" href="/static/css/tool-guard.css?v=20260907-7">
     <link rel="stylesheet" href="/static/css/chat-plan-progress.css?v=20260813-4">
     <link rel="stylesheet" href="/static/css/c2.css">
-    <link rel="stylesheet" href="/static/css/assessments.css">
     <link rel="stylesheet" href="/static/vendor/xterm.css">
     <!-- 移动端样式层：全部规则限定在 767.98px 以下，桌面端零影响 -->
     <link rel="stylesheet" href="/static/css/mobile.css?v=20261015-project-table-3">
     <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-aligned-overview">
     <link rel="stylesheet" href="/static/css/vulnerability-list.css?v=20261113-compact-rows">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
+    <link rel="stylesheet" href="/static/css/long-tasks.css">
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -236,12 +236,6 @@
                                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                             </svg>
                             <span data-i18n="nav.chat">对话</span>
-                        </div>
-                    </div>
-                    <div class="nav-item" data-page="assessments" data-require-permission="assessment:read">
-                        <div class="nav-item-content" data-title="深度测评" onclick="switchPage('assessments')" data-i18n="nav.assessments" data-i18n-attr="data-title" data-i18n-skip-text="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M12 8v4M12 12l-7 4M12 12l7 4"/></svg>
-                            <span data-i18n="nav.assessments">深度测评</span>
                         </div>
                     </div>
                     <div class="nav-item nav-item-has-submenu" data-page="security" data-require-permission-any="hitl:read config:read">
@@ -2983,21 +2977,64 @@
                 </div>
 
                 <!-- 任务管理页面 -->
-                <div id="page-assessments" class="page"><div id="assessment-workbench"></div></div>
 
                 <div id="page-tasks" class="page">
                     <div class="page-header">
                         <h2 data-i18n="tasks.title">任务管理</h2>
                         <div class="page-header-actions">
-                            <button class="btn-primary" data-require-permission="tasks:write" onclick="showBatchImportModal()" data-i18n="tasks.newTask">新建任务</button>
+                            <button id="task-new-goal" class="btn-primary" data-require-permission="tasks:write" data-i18n="longTasks.new">新建目标任务</button>
+                            <button id="task-new-batch" hidden class="btn-primary" data-require-permission="tasks:write" onclick="showBatchImportModal()" data-i18n="longTasks.newBatch">新建批量队列</button>
                             <label class="auto-refresh-toggle">
                                 <input type="checkbox" id="tasks-auto-refresh" checked onchange="toggleTasksAutoRefresh(this.checked)">
                                 <span data-i18n="tasks.autoRefresh">自动刷新</span>
                             </label>
-                            <button class="btn-secondary" onclick="refreshBatchQueues()" data-i18n="common.refresh">刷新</button>
+                            <button class="btn-secondary" onclick="refreshTaskWorkspace()" data-i18n="common.refresh">刷新</button>
                         </div>
                     </div>
-                    <div class="page-content">
+                    <div class="task-mode-tabs" role="tablist" aria-label="任务类型">
+                        <button type="button" role="tab" aria-selected="true" data-task-tab="goals" data-i18n="longTasks.goals">目标任务</button>
+                        <button type="button" role="tab" aria-selected="false" data-task-tab="batch" data-i18n="longTasks.batch">批量队列</button>
+                    </div>
+                    <div class="page-content" id="long-task-workspace">
+                        <div id="lt-error" role="alert" hidden></div>
+                        <div class="lt-toolbar">
+                            <input id="lt-search" type="search" data-i18n="longTasks.search" data-i18n-attr="placeholder,aria-label" placeholder="搜索目标任务" aria-label="搜索目标任务">
+                            <select id="lt-filter" aria-label="任务状态">
+                                <option value="" data-i18n="longTasks.all">全部状态</option>
+                                <option value="draft" data-i18n="longTasks.status.draft">草稿</option>
+                                <option value="running" data-i18n="longTasks.status.running">执行中</option>
+                                <option value="paused" data-i18n="longTasks.status.paused">已暂停</option>
+                                <option value="waiting_input" data-i18n="longTasks.status.waiting_input">待答复</option>
+                                <option value="blocked" data-i18n="longTasks.status.blocked">受阻</option>
+                                <option value="budget_exhausted" data-i18n="longTasks.status.budget_exhausted">预算耗尽</option>
+                                <option value="completed" data-i18n="longTasks.status.completed">已完成</option>
+                                <option value="cancelled" data-i18n="longTasks.status.cancelled">已取消</option>
+                            </select>
+                        </div>
+                        <div class="lt-board">
+                            <aside class="lt-sidebar"><div id="lt-list"></div><div class="lt-pagination">
+                                <button id="lt-prev" class="btn-secondary" data-lt-action="previous" data-i18n="longTasks.previous">上一页</button><span id="lt-page">1</span><button id="lt-next" class="btn-secondary" data-lt-action="next" data-i18n="longTasks.next">下一页</button>
+                            </div></aside>
+                            <div id="lt-empty-detail" class="lt-empty" data-i18n="longTasks.choose">选择任务查看计划、进展和执行记录。</div>
+                            <section id="lt-detail" class="lt-detail" hidden>
+                                <header><h3 id="lt-name"></h3><div id="lt-state"></div></header>
+                                <p id="lt-progress"></p><div id="lt-actions" class="lt-actions"></div>
+                                <h4 data-i18n="longTasks.summary">当前进展</h4><p id="lt-summary"></p>
+                                <details><summary data-i18n="longTasks.contract">目标、范围与验收条件</summary>
+                                    <h4 data-i18n="longTasks.objective">目标</h4><p id="lt-objective"></p>
+                                    <h4 data-i18n="longTasks.scope">范围与约束</h4><p id="lt-scope"></p>
+                                    <h4 data-i18n="longTasks.criteria">验收条件</h4><p id="lt-criteria"></p>
+                                </details>
+                                <h4 data-i18n="longTasks.strategy">持续推进路线</h4><p id="lt-strategy"></p>
+                                <aside id="lt-question" hidden><strong data-i18n="longTasks.needsAnswer">需要你的答复</strong><p id="lt-question-text"></p></aside>
+                                <h4 data-i18n="longTasks.plan">执行计划与结果</h4><div id="lt-steps"></div>
+                                <form id="lt-guidance-form"><label id="lt-guidance-label" for="lt-guidance-input" data-i18n="longTasks.guidance">补充方向</label><textarea id="lt-guidance-input" rows="3" maxlength="8000" required></textarea><button id="lt-guidance-send" type="submit" class="btn-primary" data-i18n="longTasks.sendGuidance">提交补充</button></form>
+                                <details><summary data-i18n="longTasks.guidanceHistory">已提交的补充</summary><p id="lt-guidance-history"></p></details>
+                                <details open><summary data-i18n="longTasks.events">任务动态</summary><ol id="lt-events"></ol></details>
+                            </section>
+                        </div>
+                    </div>
+                    <div class="page-content" id="task-batch-workspace" hidden>
                         <!-- 批量任务队列列表 -->
                         <div class="batch-queues-section" id="batch-queues-section" style="display: none;">
                             <!-- 筛选控件 -->
@@ -7137,7 +7174,6 @@
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>
     <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
-    <script src="/static/js/assessments.js"></script>
     <script src="/static/js/tasks.js?v=20261103-personal-integration"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>

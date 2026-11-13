@@ -11,7 +11,7 @@
 
 CyberStrikeAI is a cybersecurity agent workbench built with **Go + Pi**. Describe the outcome you want: the agent interprets your intent, plans steps, calls tools, and records evidence. It reports progress as it works, asks for missing information or decisions, and continues from the saved state after you answer.
 
-This repository is maintained by **Sycun**, building on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) with the upstream history, license, and copyright notices preserved. The current version is ready for team trials. Start the new workflow from **Deep Assessment → Delegate work**.
+This repository is maintained by **Sycun**, building on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) with the upstream history, license, and copyright notices preserved. The current version is ready for team trials. Start the new workflow from **Task Management → Goal tasks**.
 
 [Quick start](#quick-start) · [Delegate your first task](#delegation) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Documentation](#documentation) · [Feedback](#contributing)
 
@@ -76,36 +76,13 @@ A deployment needs the runtime source and a matching Pi worker bundle, or a fres
 
 <a id="delegation"></a>
 
-## Delegate, execute, report, ask, and continue
+## Goal tasks
 
-Open **Deep Assessment → Delegate work**, select a project if needed, choose the available tools, model, and budget, then describe the desired outcome. For example, after listing readable local report files in the materials field:
+Open **Task Management → Goal tasks**, describe the objective, scope and acceptance criteria, save a draft, then start it. The coordinator schedules dependent steps through the existing Pi Agent and revises the plan as results arrive.
 
-> Organize this project's existing assessment materials into a report of verified results and evidence gaps. Read only the local files listed in the materials field; do not access new targets. Organize the report by module. At each milestone, tell me what is done and what remains. Ask me directly when a decision is needed.
+Inspect execution conversations, checkpoints and activity; pause/resume, supply guidance, answer questions, retry failed steps and adjust time or planning-round budgets. Completed work is retained. Blocked, interrupted and budget-exhausted tasks are distinct from successful completion. Existing batch queues remain in the same page.
 
-```mermaid
-flowchart LR
-    A[Describe the goal] --> B[Interpret intent]
-    B --> C[Plan and execute]
-    C --> D[Report progress]
-    D --> C
-    D --> E[Review and deliver]
-    B -->|Missing information| F[Ask the owner]
-    C -->|Decision needed| F
-    F --> G[Owner answers]
-    G -->|Intake clarification| B
-    G -->|Execution decision| C
-```
-
-- **Start with an incomplete description:** the agent creates an intake draft and asks specific questions when essential goals, scope, or acceptance criteria are unclear.
-- **Execute once the task is clear:** selected tools advance the work, with step state, results, and execution records saved.
-- **Inspect factual stage reports:** see completed work, remaining work, blockers, next actions, and supporting execution references.
-- **Keep independent work moving:** a step awaiting an answer does not stop existing independent steps. When no work remains runnable, execution resources are released.
-- **Resume after answering:** **Answer and continue** restores the original step context. Repeating an identical answer does not repeat execution.
-- **Keep questions and progress:** closing the page does not lose the task; pending questions and saved results remain available after a server restart.
-
-Owner questions and tool approvals are separate. The current entry points are the workbench and API. Automatic chat/robot routing, cross-project name resolution, external notifications, and ARTEX adapters remain future work.
-
-See [delegated work and owner questions](docs/en-US/task-delegation.md) for usage, recovery behavior, and API details.
+See [task management, source research and validation boundaries](docs/zh-CN/long-running-tasks.md).
 
 <a id="capabilities"></a>
 
@@ -114,7 +91,7 @@ See [delegated work and owner questions](docs/en-US/task-delegation.md) for usag
 | Capability | What it provides | Details |
 | --- | --- | --- |
 | Pi agents | Single-agent, Deep, Plan-Execute, and Supervisor modes | [Agents and roles](docs/en-US/agent-and-role-guide.md) |
-| Durable tasks | Planning, dependencies, bounded concurrency, budgets, pause/resume, and review | [Task delegation](docs/en-US/task-delegation.md) |
+| Durable tasks | Planning, dependencies, bounded concurrency, budgets, pause/resume, and review | [Task delegation](docs/zh-CN/long-running-tasks.md) |
 | Tools and skills | YAML recipes, MCP connections, role-specific tool sets, and on-demand skills | [Tools](tools/README_EN.md) · [Skills](skills/README.md) |
 | Visual workflows | Compose agent, tool, condition, and approval nodes | [Workflows](docs/en-US/workflow-graph.md) |
 | Knowledge and evidence | RAG retrieval, project facts, tool records, reports, and attack-chain analysis | [Knowledge base](docs/en-US/knowledge-base.md) |
@@ -136,7 +113,7 @@ Specialized operations also include [WebShell](docs/en-US/webshell.md) and [C2](
 | **SQLite and Pi sessions** | Business state and evidence in SQLite; model conversations and compaction records in Pi sessions |
 | **Web workbench** | Tasks, questions, stage reports, execution traces, and project materials |
 
-**Pi 1.5.2 is the only agent runtime.** The Eino execution engine and dependencies have been removed. Durable assessments use the Go task engine to control execution and Pi for individual model proposals. They share the runtime with chat agents while managing their own task lifecycle.
+**Pi 1.5.2 is the only agent runtime.** The Eino execution engine and dependencies have been removed. Goal-task coordination persists plans and schedules complete Pi Agent steps using the existing tool loop, projects and execution conversations.
 
 <a id="integrations"></a>
 
@@ -165,7 +142,7 @@ Specialized operations also include [WebShell](docs/en-US/webshell.md) and [C2](
 </tr>
 </table>
 
-These repository screenshots illustrate existing features. For the new task-delegation entry point and workflow, follow the [usage guide](docs/en-US/task-delegation.md).
+These repository screenshots illustrate existing features. For the new task-delegation entry point and workflow, follow the [usage guide](docs/zh-CN/long-running-tasks.md).
 
 </details>
 
@@ -195,7 +172,7 @@ This supports team trials. Complex long-running tasks, compatibility across mode
 | What you want to do | Start here |
 | --- | --- |
 | Deploy and configure models | [Deployment](docs/en-US/deployment.md) · [Configuration](docs/en-US/configuration.md) · [Troubleshooting](docs/en-US/troubleshooting.md) |
-| Delegate tasks | [Usage and API](docs/en-US/task-delegation.md) · [Design background, Chinese](docs/zh-CN/task-delegation-design.md) |
+| Delegate tasks | [Usage and API](docs/zh-CN/long-running-tasks.md) · [Design background, Chinese](docs/zh-CN/long-running-tasks.md) |
 | Customize agents and tools | [Pi runtime](docs/en-US/pi-runtime.md) · [Agents and roles](docs/en-US/agent-and-role-guide.md) · [Tool recipes](tools/README_EN.md) |
 | Integrate an application | [API reference](docs/en-US/api-reference.md) · [API examples](docs/en-US/api-recipes.md) · [MCP](docs/en-US/mcp-federation.md) |
 | Operate a team service | [Security hardening](docs/en-US/security-hardening.md) · [Runbooks](docs/en-US/runbooks.md) |

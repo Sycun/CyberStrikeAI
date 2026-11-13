@@ -26,6 +26,7 @@ import (
 	"cyberstrike-ai/internal/openai"
 	"cyberstrike-ai/internal/reasoning"
 	"cyberstrike-ai/internal/security"
+	"cyberstrike-ai/internal/taskflow"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -182,6 +183,8 @@ func discardPlanningIfEchoesToolResult(respPlan *responsePlanAgg, toolData inter
 
 // AgentHandler Agent处理器
 type AgentHandler struct {
+	longTasks        *taskflow.Engine
+	longTaskRuntime  *longTaskRuntime
 	asyncWorkers     sync.WaitGroup
 	asyncSubmitMu    sync.Mutex
 	agent            *agent.Agent

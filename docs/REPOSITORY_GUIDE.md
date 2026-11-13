@@ -18,7 +18,7 @@
 | 分支 | 当前定位 | 上游状态与后续处理 |
 | --- | --- | --- |
 | `main` | 个人维护默认分支 | 初始快照来自 `codex/deep-assessment`，后续日常改动以本分支为基线。 |
-| `codex/deep-assessment` | 深度测评功能与官方 PR 来源 | 功能已在个人主线；[上游 PR #383](https://github.com/AIPentest/CyberStrikeAI/pull/383) 待合并，保留来源分支。 |
+| `codex/deep-assessment` | 深度测评功能与官方 PR 来源 | [上游 PR #383](https://github.com/AIPentest/CyberStrikeAI/pull/383) 已于 2026-11-13 关闭；个人版已移除该模块，来源分支仅保留历史。 |
 | `codex/issue-365-word-reports` | 单条漏洞 Markdown / Word 下载的历史分支 | [上游 PR #378](https://github.com/AIPentest/CyberStrikeAI/pull/378) 已合并，分支尖端已包含在个人主线历史中；保留存档。 |
 | `codex/issue-357-proxy-pool` | 代理池功能开发分支 | 已整合进个人主线；[上游 PR #381](https://github.com/AIPentest/CyberStrikeAI/pull/381) 待合并，整理时存在合并冲突。个人版已完成兼容整合；官方 PR 的冲突另行处理。 |
 | `feat/local-model-context-profile` | 本地模型上下文优化分支 | 已整合进个人主线；[上游 PR #367](https://github.com/AIPentest/CyberStrikeAI/pull/367) 待合并，整理时存在合并冲突。个人版已完成兼容整合；官方 PR 的冲突另行处理。 |
@@ -28,11 +28,11 @@
 
 ## 本次个人版整合（2026-11-03）
 
-代理池与本地模型上下文分支已合入个人版 `main`，并保留各自提交历史。合并同时保留自定义请求头、深度测评与 Word 下载功能；上下文探测复用渠道鉴权头，禁止跟随重定向。此记录表示代码整合，真实模型与真实目标的运行验收仍单独记录。
+代理池与本地模型上下文分支已合入个人版 `main`，并保留各自提交历史。当时合并保留自定义请求头、深度测评与 Word 下载功能（深度测评已于 2026-11-13 移除）；上下文探测复用渠道鉴权头，禁止跟随重定向。此记录表示代码整合，真实模型与真实目标的运行验收仍单独记录。
 
 ## 验证与安装
 
-- 深度测评的使用、预算、审批、证据和恢复行为见 [DEEP_ASSESSMENTS.md](DEEP_ASSESSMENTS.md)，安全边界与回归入口见 [DEEP_ASSESSMENT_SECURITY_REVIEW.md](DEEP_ASSESSMENT_SECURITY_REVIEW.md)。
+- 目标任务、批量队列、调研取舍、恢复行为与验证边界见 [任务管理](zh-CN/long-running-tasks.md)。
 - 现有自动化与夹具验证不代表完成真实模型、真实目标的长时验收，也不构成漏洞发现率或成本优势的证明。
 - 安装个人维护版时使用本仓库 README 的克隆地址。官方仓库与个人仓库的更新来源应明确选择；采用个人仓库默认分支更新时，应先评估对应提交与运行数据迁移。
 - 仓库整理与默认分支调整不等于部署。已有安装的更新配置和运行状态由各自环境管理。

@@ -123,9 +123,7 @@ func permissionForRequest(method, fullPath string) string {
 			return "hitl:read"
 		}
 		return "hitl:write"
-	case strings.HasPrefix(path, "/assessments"):
-		return crudPermission(method, "assessment")
-	case strings.HasPrefix(path, "/agent-loop"), strings.HasPrefix(path, "/batch-tasks"):
+	case strings.HasPrefix(path, "/agent-loop"), strings.HasPrefix(path, "/batch-tasks"), strings.HasPrefix(path, "/long-tasks"):
 		return crudPermission(method, "tasks")
 	case path == "/usage/tokens":
 		return "dashboard:read"
@@ -239,8 +237,6 @@ func resourceAllowed(c *gin.Context, db *database.DB) bool {
 		// carry owners. A module write permission with assigned/own scope must
 		// not silently become a process-global administrative capability.
 		return session.Scope == database.RBACScopeAll
-	case strings.HasPrefix(path, "/assessments/:id"):
-		return db.UserCanAccessResource(session.UserID, session.Scope, "assessment", c.Param("id"))
 	case strings.HasPrefix(path, "/projects/:id"):
 		return db.UserCanAccessResource(session.UserID, session.Scope, "project", c.Param("id"))
 	case strings.HasPrefix(path, "/conversations/:id"):
@@ -253,6 +249,8 @@ func resourceAllowed(c *gin.Context, db *database.DB) bool {
 		return db.UserCanAccessResource(session.UserID, session.Scope, "conversation", c.Param("conversationId"))
 	case strings.HasPrefix(path, "/webshell/connections/:id"):
 		return db.UserCanAccessResource(session.UserID, session.Scope, "webshell", c.Param("id"))
+	case strings.HasPrefix(path, "/long-tasks/:id"):
+		return db.UserCanAccessResource(session.UserID, session.Scope, "long_task", c.Param("id"))
 	case strings.HasPrefix(path, "/batch-tasks/:queueId"):
 		return db.UserCanAccessResource(session.UserID, session.Scope, "batch_task", c.Param("queueId"))
 	case strings.HasPrefix(path, "/vulnerabilities/:id"):

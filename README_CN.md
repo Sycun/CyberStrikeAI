@@ -11,7 +11,7 @@
 
 CyberStrikeAI 是基于 **Go + Pi** 的网络安全智能体工作台。你描述希望完成的工作，智能体理解意图、规划步骤、调用工具并保存证据；执行中持续汇报进展，遇到缺失信息或需要你决定的问题时主动请示，得到答复后从原进度继续。
 
-本仓库由 **Sycun** 维护，基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 持续开发，保留上游历史、许可证与版权声明。当前版本适合团队内测，新功能入口为 **「深度测评 → 交代任务」**。
+本仓库由 **Sycun** 维护，基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 持续开发，保留上游历史、许可证与版权声明。当前版本适合团队内测，新功能入口为 **「任务管理 → 目标任务」**。
 
 [快速上手](#quick-start) · [体验任务闭环](#delegation) · [主要能力](#capabilities) · [架构](#architecture) · [文档](#documentation) · [反馈](#contributing)
 
@@ -76,36 +76,13 @@ go build -o cyberstrike-ai ./cmd/server
 
 <a id="delegation"></a>
 
-## 体验「交代工作 → 执行 → 汇报 → 请示 → 继续」
+## 目标任务
 
-进入 **深度测评 → 交代任务**，选择项目（可选）、允许使用的工具、模型与预算，然后描述期望的结果。例如，在材料栏列出可读取的本地报告文件后：
+进入 **任务管理 → 目标任务**，描述目标、范围与验收条件，保存草稿后手动启动。系统把工作拆成有依赖的步骤，用现有 Pi Agent 执行，再根据结果调整路线。
 
-> 帮我整理这个项目已有的测试材料，报告已验证的结果和证据缺口。只读取材料栏列出的本地文件，不访问新的目标。按模块组织报告，每完成一个阶段告诉我做了什么、还缺什么；需要我决定时直接问我。
+可以查看每一步的执行会话、阶段结果与任务动态，暂停/继续，补充方向，答复问题，重试失败步骤，或调整时间与规划轮数预算。已完成步骤保留；预算耗尽、受阻和中断分别显示，不当成任务完成。原有批量队列位于同页的「批量队列」页签。
 
-```mermaid
-flowchart LR
-    A[描述目标] --> B[理解意图]
-    B --> C[规划与执行]
-    C --> D[阶段汇报]
-    D --> C
-    D --> E[验收与交付]
-    B -->|信息不足| F[主动请示]
-    C -->|需要决定| F
-    F --> G[用户答复]
-    G -->|接单澄清| B
-    G -->|执行决策| C
-```
-
-- **描述不完整也能接单**：先形成任务理解草稿；关键目标、范围或验收条件不明确时，提出具体问题。
-- **明确后自主执行**：使用所选工具推进工作，保存步骤状态、工具结果和执行记录。
-- **阶段报告可核对**：展示已完成、未完成、阻碍和下一步，关联执行证据。
-- **等待只影响相关工作**：某一步需要答复时，已有的独立步骤仍可继续；没有可继续的工作后释放运行资源。
-- **答复后接着做**：点击「答复并继续」，恢复原步骤上下文；重复提交相同答复不会重复执行。
-- **问答与进度持久化**：关闭页面不丢失任务；服务重启后仍可查看待答问题和已保存的结果。
-
-普通请示与工具审批分开处理。当前闭环入口是工作台与 API；聊天和机器人自动分流、跨项目名称消歧、站外通知与 ARTEX 统一适配器属于后续工作。
-
-使用方式、恢复语义和 API 示例见[任务委派与主动请示](docs/zh-CN/task-delegation.md)。
+实现、GitHub 调研依据、API 和验证边界见[任务管理与长程能力](docs/zh-CN/long-running-tasks.md)。
 
 <a id="capabilities"></a>
 
@@ -114,7 +91,7 @@ flowchart LR
 | 能力 | 可以做什么 | 说明 |
 | --- | --- | --- |
 | Pi 智能体 | 单智能体、Deep、Plan-Execute、Supervisor 编排 | [智能体与角色](docs/zh-CN/agent-and-role-guide.md) |
-| 持久任务 | 规划、依赖步骤、有限并发、预算、暂停恢复与验收 | [任务委派](docs/zh-CN/task-delegation.md) |
+| 持久任务 | 规划、依赖步骤、有限并发、预算、暂停恢复与验收 | [任务委派](docs/zh-CN/long-running-tasks.md) |
 | 工具与 Skills | YAML 工具配方、MCP 接入、角色工具集合、按需加载技能 | [工具](tools/README.md) · [Skills](skills/README.md) |
 | 可视化工作流 | 组合智能体、工具、条件和人工审批节点 | [工作流](docs/zh-CN/workflow-graph.md) |
 | 知识与证据 | RAG 检索、项目事实、工具记录、报告和攻击链分析 | [知识库](docs/zh-CN/knowledge-base.md) |
@@ -136,7 +113,7 @@ flowchart LR
 | **SQLite 与 Pi 会话** | 分别保存业务状态与证据、模型会话与压缩记录 |
 | **Web 工作台** | 展示任务、问题、阶段报告、执行轨迹与项目资料 |
 
-当前仅使用 **Pi 1.5.2**，Eino 执行内核与依赖已移除。深度测评由 Go 持久任务引擎控制执行，Pi 提供单步模型提案；它与聊天智能体的自动工具循环共用运行时，但各自管理任务生命周期。
+当前仅使用 **Pi 1.5.2**，Eino 执行内核与依赖已移除。目标任务控制器持久保存计划并调度完整的 Pi Agent 步骤，沿用现有工具循环、项目与执行会话。
 
 <a id="integrations"></a>
 
@@ -165,7 +142,7 @@ flowchart LR
 </tr>
 </table>
 
-仓库中的界面截图用于展示已有功能；任务委派的新入口和操作流程以[使用说明](docs/zh-CN/task-delegation.md)为准。
+仓库中的界面截图用于展示已有功能；任务委派的新入口和操作流程以[使用说明](docs/zh-CN/long-running-tasks.md)为准。
 
 </details>
 
@@ -195,7 +172,7 @@ update:
 | 你想做什么 | 从这里开始 |
 | --- | --- |
 | 部署并配置模型 | [部署](docs/zh-CN/deployment.md) · [配置](docs/zh-CN/configuration.md) · [排错](docs/zh-CN/troubleshooting.md) |
-| 使用任务委派 | [操作与 API](docs/zh-CN/task-delegation.md) · [设计背景](docs/zh-CN/task-delegation-design.md) |
+| 使用任务委派 | [操作与 API](docs/zh-CN/long-running-tasks.md) · [设计背景](docs/zh-CN/long-running-tasks.md) |
 | 调整智能体和工具 | [Pi 运行时](docs/zh-CN/pi-runtime.md) · [智能体与角色](docs/zh-CN/agent-and-role-guide.md) · [工具配方](tools/README.md) |
 | 接入自己的应用 | [API 参考](docs/zh-CN/api-reference.md) · [API 示例](docs/zh-CN/api-recipes.md) · [MCP](docs/zh-CN/mcp-federation.md) |
 | 维护团队服务 | [安全加固](docs/zh-CN/security-hardening.md) · [运维手册](docs/zh-CN/runbooks.md) |

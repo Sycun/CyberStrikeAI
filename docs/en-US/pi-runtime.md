@@ -27,7 +27,7 @@ Deleting a conversation turn removes all of its persisted Pi mode/child sessions
 
 Pi's `SessionManager` opens `session.jsonl` directly for new conversations. Existing conversations keep using the file referenced by their `current-session` pointer, preserving saved evidence paths. If rolled back to an older worker, it rebuilds the context for new-format sessions from the history supplied by the host without loading their Pi compaction records.
 
-Chat agents, specialists and workflow Agent nodes use Pi. User steering goes through Pi's native queue. Durable assessments use a single Pi model proposal per step; their existing engine retains tool execution, approvals and budgets. Large catalogs can use native tool search. Conversation task boards remain compatible with the existing UI.
+Chat agents, specialists and workflow Agent nodes use Pi. User steering goes through Pi's native queue. Goal tasks in task management schedule complete Pi Agent steps and persist their plan and results. Completion requires a separate acceptance check. See [goal tasks](../zh-CN/long-running-tasks.md).
 
 Workflow now uses a native DAG and versioned JSON checkpoints. Old Eino Workflow binary checkpoints cannot be resumed by this version; finish those runs before upgrading, or export their material and start new Pi tasks. Knowledge retrieval and indexing use native domain types and HTTP embeddings. Old configuration keys are read as data migration only; saving emits the native skills/runtime keys. Legacy URL aliases call the same Pi handlers and cannot select a different engine.
 

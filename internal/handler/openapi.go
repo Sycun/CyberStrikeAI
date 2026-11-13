@@ -6612,7 +6612,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 		},
 	}
 
-	addAssessmentSpec(spec)
+	addLongTaskSpec(spec)
 	addAgentRunSpec(spec)
 	enrichSpecWithI18nKeys(spec)
 	c.JSON(http.StatusOK, spec)

@@ -10,6 +10,9 @@ import (
 
 // ShutdownTasks stops local work before shared MCP clients and databases close.
 func (h *AgentHandler) ShutdownTasks() {
+	if h != nil && h.longTasks != nil {
+		h.longTasks.Close()
+	}
 	if h != nil && h.tasks != nil {
 		h.asyncSubmitMu.Lock()
 		h.tasks.Shutdown()

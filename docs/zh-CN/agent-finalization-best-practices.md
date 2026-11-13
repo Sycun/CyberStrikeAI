@@ -16,8 +16,8 @@ Pi 的 `agent_settled` 表示本次模型运行不再自动继续。业务任务
 
 ## 长期任务
 
-单次 Agent 运行结束与长期目标完成是不同层次。深度评估工作台维护目标、步骤依赖、预算、证据及独立 Review；只有受支持的验收结果可以关闭任务，受阻方向和未完成项必须保留为 partial/blocked 等状态。
+目标任务在「任务管理」中调度现有 Pi Agent 的完整步骤，持久保存计划与结果，独立验收后才标记完成。参见[目标任务](long-running-tasks.md)。
 
-阶段汇报和待用户决定的问题不应被伪装成最终目标完成。计划中的自然语言接单与主动请示机制见 [任务委派设计](task-delegation-design.md)，其产品流程尚未上线。
+阶段汇报和待用户决定的问题不应被伪装成最终目标完成。计划中的自然语言接单与主动请示机制见 [任务委派设计](long-running-tasks.md)，实现与验证边界见文档。
 
-实现：`internal/agentfinalizer/decision.go`、`internal/multiagent/pi_runner.go`、`internal/assessment/review.go`。SDK 生命周期见 [Pi SDK](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/docs/sdk.md)。
+实现：`internal/agentfinalizer/decision.go`、`internal/multiagent/pi_runner.go`、`internal/taskflow/engine.go`。

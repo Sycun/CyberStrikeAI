@@ -898,8 +898,13 @@ CREATE UNIQUE INDEX uq_workflow_package_imports_actor_key ON workflow_package_im
 
 CREATE UNIQUE INDEX uq_workflow_package_imports_inspection_success ON workflow_package_imports(inspection_id) WHERE result IN ('created','overwritten','renamed','kept_existing','skipped_identical');
 
--- Assessment state is independent of conversations; deleting a chat never deletes a task.
-CREATE TABLE IF NOT EXISTS assessments (
+-- Retain roots across configuration changes so conversation deletion removes all copies.
+CREATE TABLE pi_session_roots (
+    path TEXT PRIMARY KEY
+);
+
+-- Durable objectives shown alongside batch queues in task management.
+CREATE TABLE long_tasks (
     id TEXT PRIMARY KEY,
     owner_user_id TEXT NOT NULL,
     project_id TEXT NOT NULL DEFAULT '',
@@ -908,18 +913,13 @@ CREATE TABLE IF NOT EXISTS assessments (
     payload TEXT NOT NULL,
     updated_at DATETIME NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_assessments_owner ON assessments(owner_user_id, updated_at);
-CREATE TABLE IF NOT EXISTS assessment_events (
+CREATE INDEX idx_long_tasks_owner ON long_tasks(owner_user_id, updated_at);
+CREATE TABLE long_task_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    assessment_id TEXT NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+    task_id TEXT NOT NULL REFERENCES long_tasks(id) ON DELETE CASCADE,
     step_id TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL,
     message TEXT NOT NULL,
-    data TEXT NOT NULL DEFAULT '{}',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_assessment_events_task ON assessment_events(assessment_id, id);
--- Retain roots across configuration changes so conversation deletion removes all copies.
-CREATE TABLE pi_session_roots (
-    path TEXT PRIMARY KEY
-);
+CREATE INDEX idx_long_task_events_task ON long_task_events(task_id, id);

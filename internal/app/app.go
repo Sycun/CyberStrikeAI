@@ -17,7 +17,6 @@ import (
 
 	"cyberstrike-ai/internal/agent"
 	"cyberstrike-ai/internal/agentruntime"
-	"cyberstrike-ai/internal/assessment"
 	"cyberstrike-ai/internal/audit"
 	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/c2"
@@ -46,7 +45,6 @@ import (
 // App 应用
 type App struct {
 	shutdownOnce       sync.Once
-	assessmentEngine   *assessment.Engine
 	config             *config.Config
 	configDir          string
 	logger             *logger.Logger
@@ -629,13 +627,8 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	updateHandler := handler.NewUpdateHandler(configDir, log.Logger, auditSvc,
 		app.updateRestart(configDir), updateActivation, configHandler.UpdateSource, configHandler.SetUpdateSource)
 
-	assessmentStore := &assessment.Store{DB: db}
-	if err := assessmentStore.Recover(); err != nil {
-		return nil, fmt.Errorf("recover assessments: %w", err)
-	}
-	app.assessmentEngine = assessment.NewEngine(assessmentStore, &assessment.CSAIRuntime{DB: db, Agent: agent, SkillsRoot: skillpackage.SkillsRootFromConfig(cfg.SkillsDir, configPath), ConfigSnapshot: configHandler.AssessmentConfigSnapshot, Logger: log.Logger}, log.Logger)
-	if err := app.assessmentEngine.ResumeAnsweredTasks(); err != nil {
-		log.Logger.Warn("Could not resume answered tasks", zap.Error(err))
+	if err := agentHandler.InitLongTasks(configHandler.RuntimeConfigSnapshot); err != nil {
+		return nil, fmt.Errorf("initialize long tasks: %w", err)
 	}
 
 	// 设置路由（使用 App 实例以便动态获取 handler）
@@ -835,9 +828,6 @@ func (a *App) Shutdown() {
 }
 
 func (a *App) shutdown() {
-	if a.assessmentEngine != nil {
-		a.assessmentEngine.Close()
-	}
 	if a.agentHandler != nil {
 		a.agentHandler.ShutdownTasks()
 	}
@@ -1033,20 +1023,6 @@ func setupRoutes(
 		}
 	}))
 	{
-		assessmentHandler := &handler.AssessmentHandler{Engine: app.assessmentEngine, DB: app.db, ConfigSnapshot: configHandler.AssessmentConfigSnapshot, Audit: auditSvc}
-		protected.GET("/assessments/options", assessmentHandler.Options)
-		protected.GET("/assessments", assessmentHandler.List)
-		protected.POST("/assessments", assessmentHandler.Create)
-		protected.GET("/assessments/:id", assessmentHandler.Get)
-		protected.DELETE("/assessments/:id", assessmentHandler.Delete)
-		protected.GET("/assessments/:id/events", assessmentHandler.Events)
-		protected.GET("/assessments/:id/report", assessmentHandler.Report)
-		protected.GET("/assessments/:id/metrics", assessmentHandler.Metrics)
-		protected.POST("/assessments/:id/steps/:stepId/decision", assessmentHandler.Decision)
-		protected.POST("/assessments/:id/steps/:stepId/retry", assessmentHandler.Retry)
-		protected.POST("/assessments/:id/publish", assessmentHandler.Publish)
-		protected.POST("/assessments/:id/questions/:questionId/answer", assessmentHandler.Answer)
-		protected.POST("/assessments/:id/control/:action", assessmentHandler.Control)
 		protected.GET("/rbac/me", rbacHandler.Me)
 		protected.GET("/rbac/metadata", rbacHandler.Metadata)
 		protected.GET("/rbac/users", rbacHandler.ListUsers)
@@ -1134,7 +1110,15 @@ func setupRoutes(
 		protected.PUT("/assets/:id", assetHandler.Update)
 		protected.DELETE("/assets/:id", assetHandler.Delete)
 
-		// 批量任务管理
+		// 任务管理：目标任务与批量队列
+		protected.GET("/long-tasks/options", agentHandler.LongTaskOptions)
+		protected.GET("/long-tasks", agentHandler.ListLongTasks)
+		protected.POST("/long-tasks", agentHandler.CreateLongTask)
+		protected.GET("/long-tasks/:id", agentHandler.GetLongTask)
+		protected.DELETE("/long-tasks/:id", agentHandler.DeleteLongTask)
+		protected.GET("/long-tasks/:id/events", agentHandler.LongTaskEvents)
+		protected.GET("/long-tasks/:id/report", agentHandler.LongTaskReport)
+		protected.POST("/long-tasks/:id/control/:action", agentHandler.ControlLongTask)
 		protected.POST("/batch-tasks", agentHandler.CreateBatchQueue)
 		protected.GET("/batch-tasks", agentHandler.ListBatchQueues)
 		protected.GET("/batch-tasks/:queueId", agentHandler.GetBatchQueue)

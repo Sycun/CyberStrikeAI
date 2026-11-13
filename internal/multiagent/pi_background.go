@@ -18,7 +18,7 @@ func CompleteBackgroundStep(ctx context.Context, oa config.OpenAIConfig, msgs []
 	return CompleteBackgroundStepWithRuntime(ctx, config.AgentRuntimeConfig{}, oa, msgs, tools, maxTokens, logger)
 }
 
-// Generate one proposal only. The durable assessment engine owns tool execution,
+// Generate one proposal only. The caller owns tool execution,
 // approvals, retries, budgets and transcript persistence; the SDK cannot execute here.
 func CompleteBackgroundStepWithRuntime(ctx context.Context, runtime config.AgentRuntimeConfig, oa config.OpenAIConfig, msgs []agent.ChatMessage, tools []agent.Tool, maxTokens int, logger *zap.Logger) (*agent.ChatMessage, int, error) {
 	if err := runtime.Validate(); err != nil {
