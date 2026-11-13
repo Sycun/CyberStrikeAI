@@ -627,10 +627,6 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	updateHandler := handler.NewUpdateHandler(configDir, log.Logger, auditSvc,
 		app.updateRestart(configDir), updateActivation, configHandler.UpdateSource, configHandler.SetUpdateSource)
 
-	if err := agentHandler.InitLongTasks(configHandler.RuntimeConfigSnapshot); err != nil {
-		return nil, fmt.Errorf("initialize long tasks: %w", err)
-	}
-
 	// 设置路由（使用 App 实例以便动态获取 handler）
 	setupRoutes(
 		router,
@@ -1110,16 +1106,7 @@ func setupRoutes(
 		protected.PUT("/assets/:id", assetHandler.Update)
 		protected.DELETE("/assets/:id", assetHandler.Delete)
 
-		// 统一任务列表，兼容两种既有执行方式
-		protected.GET("/tasks", agentHandler.ListManagedTasks)
-		protected.GET("/long-tasks/options", agentHandler.LongTaskOptions)
-		protected.GET("/long-tasks", agentHandler.ListLongTasks)
-		protected.POST("/long-tasks", agentHandler.CreateLongTask)
-		protected.GET("/long-tasks/:id", agentHandler.GetLongTask)
-		protected.DELETE("/long-tasks/:id", agentHandler.DeleteLongTask)
-		protected.GET("/long-tasks/:id/events", agentHandler.LongTaskEvents)
-		protected.GET("/long-tasks/:id/report", agentHandler.LongTaskReport)
-		protected.POST("/long-tasks/:id/control/:action", agentHandler.ControlLongTask)
+		// 批量任务管理
 		protected.POST("/batch-tasks", agentHandler.CreateBatchQueue)
 		protected.GET("/batch-tasks", agentHandler.ListBatchQueues)
 		protected.GET("/batch-tasks/:queueId", agentHandler.GetBatchQueue)
@@ -1130,7 +1117,6 @@ func setupRoutes(
 		protected.PUT("/batch-tasks/:queueId/schedule", agentHandler.UpdateBatchQueueSchedule)
 		protected.PUT("/batch-tasks/:queueId/schedule-enabled", agentHandler.SetBatchQueueScheduleEnabled)
 		protected.DELETE("/batch-tasks/:queueId", agentHandler.DeleteBatchQueue)
-		protected.GET("/batch-tasks/:queueId/tasks/:taskId", agentHandler.GetBatchTask)
 		protected.PUT("/batch-tasks/:queueId/tasks/:taskId", agentHandler.UpdateBatchTask)
 		protected.POST("/batch-tasks/:queueId/tasks/:taskId/run", agentHandler.RunSingleBatchTask)
 		protected.POST("/batch-tasks/:queueId/tasks", agentHandler.AddBatchTask)

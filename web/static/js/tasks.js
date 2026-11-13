@@ -45,9 +45,9 @@ function getBatchQueueStatusPresentation(queue) {
     const nextStr = queue.nextRunAt ? new Date(queue.nextRunAt).toLocaleString() : '';
     const empty = { sublabel: null, progressNote: null, callout: null };
 
-    const failedCount = queue.taskStats ? queue.taskStats.failed : (queue.tasks || []).filter(task => task.status === 'failed').length;
+    const failedCount = (queue.tasks || []).filter(task => task.status === 'failed').length;
     if (queue.status === 'completed' && failedCount > 0) {
-        const allFailed = failedCount === (queue.taskStats ? queue.taskStats.total : (queue.tasks || []).length);
+        const allFailed = failedCount === (queue.tasks || []).length;
         return {
             text: allFailed ? _t('tasks.statusFailed') : _tPlain('tasks.statusEndedWithFailures', { count: failedCount }),
             class: 'batch-queue-status-failed',
@@ -90,7 +90,7 @@ function getBatchQueueStatusPresentation(queue) {
 function batchQueueAllowsSubtaskMutation(queue) {
     if (!queue) return false;
     if (queue.status === 'running') return false;
-    const hasRunningSubtask = queue.taskStats ? queue.taskStats.running > 0 : Array.isArray(queue.tasks) && queue.tasks.some(t => t && t.status === 'running');
+    const hasRunningSubtask = Array.isArray(queue.tasks) && queue.tasks.some(t => t && t.status === 'running');
     if (hasRunningSubtask) return false;
     return queue.status === 'pending' || queue.status === 'paused' || queue.status === 'completed' || queue.status === 'cancelled';
 }
@@ -98,7 +98,6 @@ function batchQueueAllowsSubtaskMutation(queue) {
 /** 是否允许对指定子任务发起单条执行（与后端 queueAllowsSingleTaskRunLocked 对齐） */
 function batchQueueCanRunSingleTask(queue, task) {
     if (!queue || !task) return false;
-    if (queue.taskStats && queue.taskStats.running > 0) return false;
     if (task.status === 'running') return false;
     if (queue.status === 'running') return false;
     return queue.status === 'pending' || queue.status === 'paused' || queue.status === 'completed' || queue.status === 'cancelled';
@@ -775,8 +774,8 @@ function toggleTasksAutoRefresh(enabled) {
     // 保存到localStorage
     localStorage.setItem('tasks-auto-refresh', enabled ? 'true' : 'false');
     
-    if (enabled && typeof initLongTasks !== 'function') {
-        // 旧页面的列表轮询；统一任务页由自己的刷新器接管。
+    if (enabled) {
+        // 启动自动刷新
         if (!tasksState.refreshInterval) {
             tasksState.refreshInterval = setInterval(() => {
                 loadBatchQueues();
@@ -793,7 +792,6 @@ function toggleTasksAutoRefresh(enabled) {
 
 // 初始化任务管理页面
 function initTasksPage() {
-    if (typeof initLongTasks === 'function') initLongTasks();
     initBatchQueuesFilterSelects();
     initBatchFormSelects();
     // 恢复自动刷新设置
@@ -807,16 +805,12 @@ function initTasksPage() {
         toggleTasksAutoRefresh(true);
     }
     
-    if (typeof initLongTasks !== 'function') loadBatchQueues();
+    // 只加载批量任务队列
+    loadBatchQueues();
 }
 
 // 清理定时器（页面切换时调用）
 function cleanupTasksPage() {
-    if (typeof cleanupLongTasks === 'function') cleanupLongTasks();
-    if (window.TaskListView) window.TaskListView.closeDrawer();
-    closeBatchImportModal();
-    closeAddBatchTaskModal();
-    closeBatchQueueDetailModal();
     if (tasksState.refreshInterval) {
         clearInterval(tasksState.refreshInterval);
         tasksState.refreshInterval = null;
@@ -848,21 +842,6 @@ window.clearTasksHistory = clearTasksHistory;
 
 // ==================== 批量任务功能 ====================
 
-const batchFormPending = new Set();
-let batchImportVersion = 0;
-let batchAddVersion = 0;
-let batchDetailVersion = 0;
-
-function setBatchFormPending(kind, buttonId, pending) {
-    if (pending) batchFormPending.add(kind); else batchFormPending.delete(kind);
-    const button = document.getElementById(buttonId);
-    if (!button) return;
-    button.dataset.stateDisabled = String(pending);
-    button.disabled = pending || (typeof hasPermission === 'function' && !hasPermission('tasks:write'));
-    button.setAttribute('aria-busy', String(pending));
-}
-
-
 // 批量任务状态
 const batchQueuesState = {
     queues: [],
@@ -877,7 +856,7 @@ const batchQueuesState = {
     totalPages: 1
 };
 
-async function refreshBatchProjectSelectOptions(version) {
+async function refreshBatchProjectSelectOptions() {
     const projectSelect = document.getElementById('batch-queue-project-id');
     if (!projectSelect) return;
 
@@ -898,7 +877,6 @@ async function refreshBatchProjectSelectOptions(version) {
                 ? parseProjectsListResponse(data).items
                 : (Array.isArray(data) ? data : (data.projects || []));
         }
-        if (version !== undefined && version !== batchImportVersion) return;
         const activeProjectId = typeof getActiveProjectId === 'function' ? getActiveProjectId() || '' : '';
 
         list.forEach((project) => {
@@ -918,7 +896,6 @@ async function refreshBatchProjectSelectOptions(version) {
 
 // 显示新建任务模态框
 async function showBatchImportModal() {
-    const version = ++batchImportVersion;
     const modal = document.getElementById('batch-import-modal');
     const input = document.getElementById('batch-tasks-input');
     const titleInput = document.getElementById('batch-queue-title');
@@ -961,7 +938,6 @@ async function showBatchImportModal() {
         if (roleSelect && typeof loadRoles === 'function') {
             try {
                 const loadedRoles = await loadRoles();
-                if (version !== batchImportVersion) return;
                 // 清空现有选项（除了默认选项）
                 roleSelect.innerHTML = '<option value="">' + _t('batchImportModal.defaultRole') + '</option>';
                 
@@ -984,8 +960,7 @@ async function showBatchImportModal() {
                 console.error('加载角色列表失败:', error);
             }
         }
-        await refreshBatchProjectSelectOptions(version);
-        if (version !== batchImportVersion) return;
+        await refreshBatchProjectSelectOptions();
         refreshBatchFormSelects();
 
         openAppModal('batch-import-modal', { focusEl: input });
@@ -994,7 +969,6 @@ async function showBatchImportModal() {
 
 // 关闭新建任务模态框
 function closeBatchImportModal() {
-    batchImportVersion++;
     closeAppModal('batch-import-modal');
 }
 
@@ -1044,7 +1018,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // 创建批量任务队列
 async function createBatchQueue() {
-    if (batchFormPending.has('create')) return;
     if (typeof requirePermission === 'function' && !requirePermission('tasks:write')) return;
     const input = document.getElementById('batch-tasks-input');
     const titleInput = document.getElementById('batch-queue-title');
@@ -1093,8 +1066,6 @@ async function createBatchQueue() {
         return;
     }
 
-    const version = batchImportVersion;
-    setBatchFormPending('create', 'batch-queue-create-btn', true);
     try {
         const response = await apiFetch('/api/batch-tasks', {
             method: 'POST',
@@ -1121,17 +1092,17 @@ async function createBatchQueue() {
         }
         
         const result = await response.json();
-        if (version === batchImportVersion && isAppModalOpen('batch-import-modal')) {
-            closeBatchImportModal();
-            showBatchQueueDetail(result.queueId);
-        }
+        closeBatchImportModal();
+
+        // 显示队列详情
+        showBatchQueueDetail(result.queueId);
         
         // 刷新批量队列列表
         refreshBatchQueues();
     } catch (error) {
         console.error('创建批量任务队列失败:', error);
-        if (version === batchImportVersion) alert(_t('tasks.createBatchQueueFailed') + ': ' + error.message);
-    } finally { setBatchFormPending('create', 'batch-queue-create-btn', false); }
+        alert(_t('tasks.createBatchQueueFailed') + ': ' + error.message);
+    }
 }
 
 // 获取角色图标（辅助函数）
@@ -1787,9 +1758,7 @@ function changeBatchQueuesPageSize() {
 }
 
 // 显示批量任务队列详情
-async function showBatchQueueDetail(queueId, options = {}) {
-    if (!options.inline && typeof window.openTaskFromQueue === 'function') return window.openTaskFromQueue(queueId);
-    const version = ++batchDetailVersion;
+async function showBatchQueueDetail(queueId) {
     const modal = document.getElementById('batch-queue-detail-modal');
     const title = document.getElementById('batch-queue-detail-title');
     const content = document.getElementById('batch-queue-detail-content');
@@ -1799,29 +1768,17 @@ async function showBatchQueueDetail(queueId, options = {}) {
         const addTaskBtn = document.getElementById('batch-queue-add-task-btn');
         
         if (!modal || !content) return;
-        const holder = document.getElementById('lt-batch-detail');
-        if (options.inline && holder) {
-            if (modal.parentElement !== holder) holder.appendChild(modal); holder.hidden = false;
-            modal.classList.remove('modal'); modal.classList.add('lt-inline-queue');
-        }
 
-
-        if (batchQueuesState.currentQueueId !== queueId) {
-            stopBatchQueueRefresh(); batchQueuesState.currentQueueId = null;
-            content.innerHTML = '<p>…</p>';
-            modal.querySelectorAll('.modal-header-actions button').forEach(button => { button.style.display = 'none'; });
-        }
         const alreadyOpen = isAppModalOpen('batch-queue-detail-modal');
         if (!alreadyOpen) {
             if (content) content.innerHTML = '<p style="color:#64748b;margin:0;">…</p>';
             openAppModal('batch-queue-detail-modal', { focus: false });
         }
-        if (options.inline) modal.style.display = 'flex';
 
         try {
         // 加载角色列表（如果还未加载）
         let loadedRoles = [];
-        if (!options.inline && typeof loadRoles === 'function') {
+        if (typeof loadRoles === 'function') {
             try {
                 loadedRoles = await loadRoles();
             } catch (error) {
@@ -1829,24 +1786,20 @@ async function showBatchQueueDetail(queueId, options = {}) {
             }
         }
         
-        const paged = options.inline && window.TaskChecklistView;
-        const page = options.taskPage || (paged ? window.TaskChecklistView.page(queueId) : 1);
-        const response = await apiFetch(`/api/batch-tasks/${queueId}` + (paged ? `?task_page=${page}&task_page_size=20` : ''));
+        const response = await apiFetch(`/api/batch-tasks/${queueId}`);
         if (!response.ok) {
             throw new Error(_t('tasks.getQueueDetailFailed'));
         }
         
         const result = await response.json();
-        if (version !== batchDetailVersion || !isAppModalOpen('batch-queue-detail-modal')) return;
         const queue = result.queue;
-        if (result.task_stats) queue.taskStats = result.task_stats;
         batchQueuesState.currentQueueId = queueId;
         const pres = getBatchQueueStatusPresentation(queue);
         const allowSubtaskMutation = batchQueueAllowsSubtaskMutation(queue);
 
         if (title) {
             // textContent 本身会做转义；这里不要再 escapeHtml，否则会把 && 显示成 &amp;...（看起来像“变形/乱码”）
-            title.textContent = options.inline ? String(queue.title || _t('longTasks.untitled')) : (queue.title ? _t('tasks.batchQueueTitle') + ' - ' + String(queue.title) : _t('tasks.batchQueueTitle'));
+            title.textContent = queue.title ? _t('tasks.batchQueueTitle') + ' - ' + String(queue.title) : _t('tasks.batchQueueTitle');
         }
         
         // 更新按钮显示
@@ -1880,19 +1833,6 @@ async function showBatchQueueDetail(queueId, options = {}) {
             deleteBtn.style.display = (queue.status === 'pending' || queue.status === 'completed' || queue.status === 'cancelled' || queue.status === 'paused') ? 'inline-block' : 'none';
         }
         
-        if (options.inline) {
-            if (addTaskBtn) addTaskBtn.textContent = _t('longTasks.addStep');
-            if (deleteBtn) deleteBtn.textContent = _t('longTasks.delete');
-            if (pauseBtn) pauseBtn.textContent = _t('longTasks.pause');
-            const rerun = document.getElementById('batch-queue-rerun-btn');
-            if (rerun) rerun.textContent = _t('longTasks.rerunAll');
-        }
-
-        if (options.inline && window.TaskChecklistView) {
-            window.TaskChecklistView.render(queue, result.task_pagination);
-            stopBatchQueueRefresh(); return;
-        }
-
         // 任务状态映射
         const taskStatusMap = {
             'pending': { text: _t('tasks.statusPending'), class: 'batch-task-status-pending' },
@@ -1944,7 +1884,6 @@ async function showBatchQueueDetail(queueId, options = {}) {
         const savedTechDetailsOpen = sameQueueAsBefore && !!(prevTechDetails && prevTechDetails.open);
 
         deferModalContent(function () {
-        if (version !== batchDetailVersion || !isAppModalOpen('batch-queue-detail-modal')) return;
         content.innerHTML = `
             <div class="batch-queue-detail-layout" data-bq-detail-for="${escapeAttr(queue.id)}">
             <section class="batch-queue-detail-hero">
@@ -2022,23 +1961,15 @@ async function showBatchQueueDetail(queueId, options = {}) {
         });
 
         // 仅运行中定时拉取详情；其它状态应停止，避免 innerHTML 重绘把 <details> 等 UI 打回默认态
-        if (queue.status === 'running' && !options.inline) {
+        if (queue.status === 'running') {
             startBatchQueueRefresh(queueId);
         } else {
             stopBatchQueueRefresh();
         }
     } catch (error) {
-        if (version !== batchDetailVersion || !isAppModalOpen('batch-queue-detail-modal')) return;
         console.error('获取队列详情失败:', error);
         closeBatchQueueDetailModal();
         alert(_t('tasks.getQueueDetailFailed') + ': ' + error.message);
-    }
-}
-
-function refreshBatchQueueDetailIfCurrent(queueId) {
-    if (batchQueuesState.currentQueueId === queueId && isAppModalOpen('batch-queue-detail-modal')) {
-        if (window.TaskChecklistView) window.TaskChecklistView.resetEditor(queueId);
-        return showBatchQueueDetail(queueId, { inline: true });
     }
 }
 
@@ -2072,7 +2003,7 @@ async function startBatchQueue() {
         }
         
         // 刷新详情
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (error) {
         console.error('启动批量任务失败:', error);
@@ -2103,7 +2034,7 @@ async function pauseBatchQueue() {
         }
         
         // 刷新详情
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (error) {
         console.error('暂停批量任务失败:', error);
@@ -2133,7 +2064,7 @@ async function rerunBatchQueue() {
             throw new Error(result.error || _t('tasks.rerunQueueFailed'));
         }
 
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (error) {
         console.error('重跑批量任务失败:', error);
@@ -2164,7 +2095,6 @@ async function deleteBatchQueue() {
         }
         
         closeBatchQueueDetailModal();
-        if (typeof window.onTaskQueueDeleted === 'function') window.onTaskQueueDeleted(queueId);
         refreshBatchQueues();
     } catch (error) {
         console.error('删除批量任务队列失败:', error);
@@ -2196,7 +2126,6 @@ async function deleteBatchQueueFromList(queueId) {
         if (batchQueuesState.currentQueueId === queueId) {
             closeBatchQueueDetailModal();
         }
-        if (typeof window.onTaskQueueDeleted === 'function') window.onTaskQueueDeleted(queueId);
         
         // 刷新队列列表
         refreshBatchQueues();
@@ -2208,7 +2137,6 @@ async function deleteBatchQueueFromList(queueId) {
 
 // 关闭批量任务队列详情模态框
 function closeBatchQueueDetailModal() {
-    batchDetailVersion++;
     closeAppModal('batch-queue-detail-modal');
     batchQueuesState.currentQueueId = null;
     stopBatchQueueRefresh();
@@ -2241,7 +2169,7 @@ function startBatchQueueRefresh(queueId) {
         batchQueuesState._bqDetailRefreshing = true;
         (async () => {
             try {
-                await refreshBatchQueueDetailIfCurrent(queueId);
+                await showBatchQueueDetail(queueId);
                 await refreshBatchQueues();
             } catch (e) {
                 console.warn('批量队列定时刷新失败:', e);
@@ -2262,7 +2190,6 @@ function stopBatchQueueRefresh() {
 
 // 刷新批量任务队列列表
 async function refreshBatchQueues() {
-    if (typeof window.refreshTaskWorkspace === 'function') return window.refreshTaskWorkspace();
     await loadBatchQueues(batchQueuesState.currentPage);
 }
 
@@ -2330,7 +2257,7 @@ function editBatchTaskFromElement(button) {
 function cancelInlineTask() {
     // 刷新整个详情来还原
     const queueId = batchQueuesState.currentQueueId;
-    if (queueId) refreshBatchQueueDetailIfCurrent(queueId);
+    if (queueId) showBatchQueueDetail(queueId);
 }
 
 async function saveInlineTask(queueId, taskId) {
@@ -2361,7 +2288,7 @@ async function saveInlineTask(queueId, taskId) {
         _bqInlineSaving = false;
         // 刷新队列详情
         if (batchQueuesState.currentQueueId === queueId) {
-            refreshBatchQueueDetailIfCurrent(queueId);
+            showBatchQueueDetail(queueId);
         }
 
         // 刷新队列列表
@@ -2375,7 +2302,6 @@ async function saveInlineTask(queueId, taskId) {
 
 // 显示添加批量任务模态框
 function showAddBatchTaskModal() {
-    batchAddVersion++;
     if (typeof requirePermission === 'function' && !requirePermission('tasks:write')) return;
     const queueId = batchQueuesState.currentQueueId;
     if (!queueId) {
@@ -2422,7 +2348,6 @@ function showAddBatchTaskModal() {
 
 // 关闭添加批量任务模态框
 function closeAddBatchTaskModal() {
-    batchAddVersion++;
     // 清理事件监听器
     if (showAddBatchTaskModal._escHandler) {
         document.removeEventListener('keydown', showAddBatchTaskModal._escHandler);
@@ -2445,7 +2370,6 @@ function closeAddBatchTaskModal() {
 
 // 保存添加的批量任务
 async function saveAddBatchTask() {
-    if (batchFormPending.has('add')) return;
     const queueId = batchQueuesState.currentQueueId;
     const messageInput = document.getElementById('add-task-message');
     
@@ -2465,8 +2389,6 @@ async function saveAddBatchTask() {
         return;
     }
     
-    const version = batchAddVersion;
-    setBatchFormPending('add', 'batch-task-add-btn', true);
     try {
         const response = await apiFetch(`/api/batch-tasks/${queueId}/tasks`, {
             method: 'POST',
@@ -2482,19 +2404,19 @@ async function saveAddBatchTask() {
         }
         
         // 关闭添加任务模态框
-        if (version === batchAddVersion && batchQueuesState.currentQueueId === queueId && isAppModalOpen('add-batch-task-modal')) closeAddBatchTaskModal();
+        closeAddBatchTaskModal();
         
         // 刷新队列详情
         if (batchQueuesState.currentQueueId === queueId) {
-            refreshBatchQueueDetailIfCurrent(queueId);
+            showBatchQueueDetail(queueId);
         }
         
         // 刷新队列列表
         refreshBatchQueues();
     } catch (error) {
         console.error('添加任务失败:', error);
-        if (version === batchAddVersion) alert(_t('tasks.addTaskFailed') + ': ' + error.message);
-    } finally { setBatchFormPending('add', 'batch-task-add-btn', false); }
+        alert(_t('tasks.addTaskFailed') + ': ' + error.message);
+    }
 }
 
 // 从元素获取任务信息并删除任务
@@ -2551,7 +2473,7 @@ async function deleteBatchTask(queueId, taskId) {
         
         // 刷新队列详情
         if (batchQueuesState.currentQueueId === queueId) {
-            refreshBatchQueueDetailIfCurrent(queueId);
+            showBatchQueueDetail(queueId);
         }
         
         // 刷新队列列表
@@ -2575,12 +2497,12 @@ async function updateBatchQueueScheduleEnabled(enabled) {
             const result = await response.json().catch(() => ({}));
             throw new Error(result.error || _t('batchQueueDetailModal.scheduleToggleFailed'));
         }
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (e) {
         console.error(e);
         alert(_t('batchQueueDetailModal.scheduleToggleFailed') + ': ' + e.message);
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
     }
 }
 
@@ -2588,7 +2510,7 @@ async function updateBatchQueueScheduleEnabled(enabled) {
 function cancelAllInlineEdits() {
     _bqInlineSaving = true; // 防止 blur 触发保存
     const queueId = batchQueuesState.currentQueueId;
-    if (queueId) refreshBatchQueueDetailIfCurrent(queueId);
+    if (queueId) showBatchQueueDetail(queueId);
     _bqInlineSaving = false;
 }
 
@@ -2642,7 +2564,7 @@ async function saveInlineTitle() {
             throw new Error(result.error || _t('tasks.updateTaskFailed'));
         }
         _bqInlineSaving = false;
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (e) {
         _bqInlineSaving = false;
@@ -2709,7 +2631,7 @@ async function saveInlineRole() {
             throw new Error(result.error || _t('tasks.updateTaskFailed'));
         }
         _bqInlineSaving = false;
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (e) {
         _bqInlineSaving = false;
@@ -2776,7 +2698,7 @@ async function saveInlineAgentMode() {
             throw new Error(result.error || _t('tasks.updateTaskFailed'));
         }
         _bqInlineSaving = false;
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (e) {
         _bqInlineSaving = false;
@@ -2851,7 +2773,7 @@ async function saveInlineConcurrency() {
             throw new Error(result.error || _t('tasks.updateTaskFailed'));
         }
         _bqInlineSaving = false;
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (e) {
         _bqInlineSaving = false;
@@ -2875,7 +2797,7 @@ async function runSingleBatchTask(queueId, taskId) {
         if (result.autoStarted === false && result.message) {
             alert(result.message);
         }
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (e) {
         console.error('单条执行失败:', e);
@@ -2966,7 +2888,7 @@ async function saveInlineSchedule() {
             throw new Error(result.error || _t('batchQueueDetailModal.editScheduleError'));
         }
         _bqInlineSaving = false;
-        refreshBatchQueueDetailIfCurrent(queueId);
+        showBatchQueueDetail(queueId);
         refreshBatchQueues();
     } catch (e) {
         _bqInlineSaving = false;
@@ -3068,7 +2990,7 @@ async function startInlineEditHITLPolicy() {
         const select = document.getElementById('bq-edit-hitl');
         select.focus();
         select.addEventListener('keydown', e => {
-            if (e.key === 'Escape') refreshBatchQueueDetailIfCurrent(queueId);
+            if (e.key === 'Escape') showBatchQueueDetail(queueId);
         });
         select.addEventListener('change', async () => {
             select.disabled = true;
@@ -3084,7 +3006,7 @@ async function startInlineEditHITLPolicy() {
                     const error = await result.json().catch(() => ({}));
                     throw new Error(error.error || _t('tasks.updateTaskFailed'));
                 }
-                if (batchQueuesState.currentQueueId === queueId) refreshBatchQueueDetailIfCurrent(queueId);
+                if (batchQueuesState.currentQueueId === queueId) showBatchQueueDetail(queueId);
                 refreshBatchQueues();
             } catch (error) {
                 select.disabled = false;

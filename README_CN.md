@@ -1,7 +1,7 @@
 <div align="center">
   <img src="images/logo.png" alt="CyberStrikeAI" width="144">
   <h1>CyberStrikeAI</h1>
-  <p><strong>交代目标，让智能体执行、汇报，并在需要时向你请示。</strong></p>
+  <p><strong>描述任务，让智能体调用工具并记录执行证据。</strong></p>
   <p><strong>中文</strong> · <a href="README.md">English</a></p>
   <p>
     <a href="https://github.com/Sycun/CyberStrikeAI/actions/workflows/pi-runtime.yml"><img src="https://github.com/Sycun/CyberStrikeAI/actions/workflows/pi-runtime.yml/badge.svg?branch=main" alt="Pi runtime CI"></a>
@@ -9,11 +9,11 @@
   </p>
 </div>
 
-CyberStrikeAI 是基于 **Go + Pi** 的网络安全智能体工作台。你描述希望完成的工作，智能体理解意图、规划步骤、调用工具并保存证据；执行中持续汇报进展，遇到缺失信息或需要你决定的问题时主动请示，得到答复后从原进度继续。
+CyberStrikeAI 是基于 **Go + Pi** 的网络安全智能体工作台。通过对话执行任务，或使用批量队列管理任务清单；智能体调用工具并记录结果与证据。
 
-本仓库由 **Sycun** 维护，基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 持续开发，保留上游历史、许可证与版权声明。当前版本适合团队内测，新功能入口为 **「任务管理 → 新建任务」**。
+本仓库由 **Sycun** 维护，基于 [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) 持续开发，保留上游历史、许可证与版权声明。批量任务入口为 **「任务管理 → 新建任务」**。
 
-[快速上手](#quick-start) · [体验任务闭环](#delegation) · [主要能力](#capabilities) · [架构](#architecture) · [文档](#documentation) · [反馈](#contributing)
+[快速上手](#quick-start) · [任务管理](#delegation) · [主要能力](#capabilities) · [架构](#architecture) · [文档](#documentation) · [反馈](#contributing)
 
 <a id="quick-start"></a>
 
@@ -78,11 +78,9 @@ go build -o cyberstrike-ai ./cmd/server
 
 ## 任务管理
 
-进入 **任务管理 → 新建任务**，在同一个表单中选择“自主规划”或“按清单执行”。前者根据目标、范围与验收条件持续规划和执行；后者执行每行一项的清单，也支持 Cron。所有任务在同一个列表中搜索、筛选和管理。
+进入 **任务管理 → 新建任务**，每行填写一项任务，可配置项目、角色、代理模式、工具审批、并发和 Cron 定时执行。队列列表支持状态筛选、搜索和分页；点击队列打开详情窗口，查看子任务结果与对话，并按状态执行暂停、继续、编辑等操作。
 
-可以查看每一步的执行会话、阶段结果与任务动态，暂停/继续，补充方向，答复问题，重试失败步骤，或调整时间与规划轮数预算。已完成步骤保留；预算耗尽、受阻和中断分别显示，不当成任务完成。已有清单、定时配置与执行记录保留在统一列表中。
-
-实现、GitHub 调研依据、API 和验证边界见[任务管理与长程能力](docs/zh-CN/long-running-tasks.md)。
+任务管理已恢复 v1.8.0 的批量队列逻辑，目标任务和后续统一列表改造已撤回。使用方式与数据兼容说明见[批量任务管理](docs/zh-CN/task-management.md)。
 
 <a id="capabilities"></a>
 
@@ -91,7 +89,7 @@ go build -o cyberstrike-ai ./cmd/server
 | 能力 | 可以做什么 | 说明 |
 | --- | --- | --- |
 | Pi 智能体 | 单智能体、Deep、Plan-Execute、Supervisor 编排 | [智能体与角色](docs/zh-CN/agent-and-role-guide.md) |
-| 持久任务 | 规划、依赖步骤、有限并发、预算、暂停恢复与验收 | [任务委派](docs/zh-CN/long-running-tasks.md) |
+| 批量任务 | 任务清单、并发、定时调度、暂停继续与执行记录 | [任务管理](docs/zh-CN/task-management.md) |
 | 工具与 Skills | YAML 工具配方、MCP 接入、角色工具集合、按需加载技能 | [工具](tools/README.md) · [Skills](skills/README.md) |
 | 可视化工作流 | 组合智能体、工具、条件和人工审批节点 | [工作流](docs/zh-CN/workflow-graph.md) |
 | 知识与证据 | RAG 检索、项目事实、工具记录、报告和攻击链分析 | [知识库](docs/zh-CN/knowledge-base.md) |
@@ -107,13 +105,13 @@ go build -o cyberstrike-ai ./cmd/server
 
 | 组成 | 职责 |
 | --- | --- |
-| **Go 服务与任务引擎** | 管理任务状态、依赖、预算、用户问答、工具执行与证据 |
+| **Go 服务与任务引擎** | 管理队列、定时调度、工具执行与证据 |
 | **Pi 运行时** | 模型交互、智能体工具循环、会话、上下文压缩、steering 与工具检索 |
 | **工具网关** | 将调用交给 MCP 或本地工具，沿用角色、权限、审批和执行监控 |
 | **SQLite 与 Pi 会话** | 分别保存业务状态与证据、模型会话与压缩记录 |
-| **Web 工作台** | 展示任务、问题、阶段报告、执行轨迹与项目资料 |
+| **Web 工作台** | 展示任务、执行轨迹与项目资料 |
 
-当前仅使用 **Pi 1.5.2**，Eino 执行内核与依赖已移除。目标任务控制器持久保存计划并调度完整的 Pi Agent 步骤，沿用现有工具循环、项目与执行会话。
+当前仅使用 **Pi 1.5.2**，Eino 执行内核与依赖已移除。批量队列沿用现有 Agent 工具循环、项目与执行会话。
 
 <a id="integrations"></a>
 
@@ -142,7 +140,7 @@ go build -o cyberstrike-ai ./cmd/server
 </tr>
 </table>
 
-仓库中的界面截图用于展示已有功能；任务委派的新入口和操作流程以[使用说明](docs/zh-CN/long-running-tasks.md)为准。
+仓库中的界面截图用于展示已有功能；批量任务的操作流程以[使用说明](docs/zh-CN/task-management.md)为准。
 
 </details>
 
@@ -161,9 +159,7 @@ update:
 
 ## 验证状态
 
-当前版本已进行 Go 全量与竞态测试、Pi SDK 集成测试、前端回归及本地界面检查。隔离的真实模型验收走通了「模糊任务 → 澄清 → 用户答复 → 回声工具执行 → 阶段报告 → 完成」，输入和工具结果均为合成材料。
-
-这些验证支持团队内测；复杂长任务、各模型渠道的兼容性，以及意图识别准确率、成本和效果仍需继续评估。最新检查见 [GitHub Actions](https://github.com/Sycun/CyberStrikeAI/actions)。
+回归覆盖 Go、前端及隔离的批量队列界面操作。已撤回功能的历史验收不代表当前版本能力；复杂长任务、各模型渠道的兼容性，以及意图识别准确率、成本和效果仍需继续评估。最新检查见 [GitHub Actions](https://github.com/Sycun/CyberStrikeAI/actions)。
 
 <a id="documentation"></a>
 
@@ -172,7 +168,7 @@ update:
 | 你想做什么 | 从这里开始 |
 | --- | --- |
 | 部署并配置模型 | [部署](docs/zh-CN/deployment.md) · [配置](docs/zh-CN/configuration.md) · [排错](docs/zh-CN/troubleshooting.md) |
-| 使用任务委派 | [操作与 API](docs/zh-CN/long-running-tasks.md) · [设计背景](docs/zh-CN/long-running-tasks.md) |
+| 管理批量任务 | [操作与兼容说明](docs/zh-CN/task-management.md) |
 | 调整智能体和工具 | [Pi 运行时](docs/zh-CN/pi-runtime.md) · [智能体与角色](docs/zh-CN/agent-and-role-guide.md) · [工具配方](tools/README.md) |
 | 接入自己的应用 | [API 参考](docs/zh-CN/api-reference.md) · [API 示例](docs/zh-CN/api-recipes.md) · [MCP](docs/zh-CN/mcp-federation.md) |
 | 维护团队服务 | [安全加固](docs/zh-CN/security-hardening.md) · [运维手册](docs/zh-CN/runbooks.md) |

@@ -51,12 +51,8 @@ func runPiSingle(ctx context.Context, cfg *config.Config, ag *agent.Agent, db *d
 	}
 	prompt := project.AppendSystemPromptBlock(ag.SystemInstruction(), extra)
 	prompt = project.AppendVisionImageAnalysisIfReady(prompt, cfg.Vision.Ready())
-	run := &piRun{cfg: cfg, ag: ag, db: db, projectID: projectID, conversationID: conversationID, agentID: "main", systemPrompt: prompt,
-		history: history, roleTools: roleTools, progress: progress, reasoning: intent}
-	if scoped, ok := ctx.Value(taskToolsKey{}).(taskTools); ok {
-		run.extraTools, run.extraExecute = scoped.definitions, scoped.execute
-	}
-	return run.run(ctx, message)
+	return (&piRun{cfg: cfg, ag: ag, db: db, projectID: projectID, conversationID: conversationID, agentID: "main", systemPrompt: prompt,
+		history: history, roleTools: roleTools, progress: progress, reasoning: intent}).run(ctx, message)
 }
 
 func piToolSchema(properties map[string]any, required ...string) map[string]any {

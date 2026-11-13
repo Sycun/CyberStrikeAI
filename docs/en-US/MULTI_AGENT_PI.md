@@ -8,4 +8,4 @@ Deep delegates with `task`; Plan-Execute records a plan and delegates bounded ex
 
 `multi_agent.skills` configures skill loading and native host tools. `multi_agent.runtime` contains discovery, task-board, retry, failover and output-budget settings. Large catalogs use native `tool_search`; TaskCreate/Update/Get/List and write_todos remain compatible with the conversation progress UI.
 
-Steering enters at a tool-batch boundary; cancellation stops inference and host tools. Uncertain effects after a crash are retained as unresolved results. Runtime completion does not bypass execution-evidence checks. Goal tasks in task management schedule complete Pi Agent steps and persist their plan and results. Completion requires a separate acceptance check. See [goal tasks](../zh-CN/long-running-tasks.md).
+Steering enters at a tool-batch boundary; cancellation stops inference and host tools. Uncertain effects after a crash are retained as unresolved results. Runtime completion does not bypass execution-evidence checks.

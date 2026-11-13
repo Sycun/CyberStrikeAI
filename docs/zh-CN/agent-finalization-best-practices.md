@@ -14,10 +14,4 @@ Pi 的 `agent_settled` 表示本次模型运行不再自动继续。业务任务
 
 过程事件、思考、工具输出与最终交付分开记录。退出工具的 final_result 仍经过宿主验收，不能绕过这些规则。
 
-## 长期任务
-
-目标任务在「任务管理」中调度现有 Pi Agent 的完整步骤，持久保存计划与结果，独立验收后才标记完成。参见[目标任务](long-running-tasks.md)。
-
-阶段汇报和待用户决定的问题不应被伪装成最终目标完成。计划中的自然语言接单与主动请示机制见 [任务委派设计](long-running-tasks.md)，实现与验证边界见文档。
-
-实现：`internal/agentfinalizer/decision.go`、`internal/multiagent/pi_runner.go`、`internal/taskflow/engine.go`。
+实现：`internal/agentfinalizer/decision.go`、`internal/multiagent/pi_runner.go`。

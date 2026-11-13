@@ -1,9 +1,9 @@
 name: Task management UI
 on:
   push:
-    paths: ['web/templates/index.html', 'web/static/js/tasks.js', 'web/static/js/task-list-view.js', 'web/static/js/task-checklist-view.js', 'web/static/js/long-tasks.js', 'web/static/js/router.js', 'web/static/js/auth.js', 'web/static/js/modal.js', 'web/static/js/rbac-guards.js', 'web/static/css/**', 'web/static/i18n/**', 'scripts/long-tasks-browser.test.cjs', 'scripts/task-controls-browser.test.cjs', 'scripts/task-pagination-browser.test.cjs', 'scripts/helpers/task-ui-fixture.cjs', '.github/workflows/task-ui.yml']
+    paths: ['web/templates/index.html', 'web/static/js/tasks.js', 'web/static/js/router.js', 'web/static/js/auth.js', 'web/static/js/modal.js', 'web/static/js/rbac-guards.js', 'web/static/css/**', 'web/static/i18n/**', 'scripts/batch-tasks-browser.test.cjs', 'scripts/helpers/batch-task-ui-fixture.cjs', '.github/workflows/task-ui.yml']
   pull_request:
-    paths: ['web/templates/index.html', 'web/static/js/tasks.js', 'web/static/js/task-list-view.js', 'web/static/js/task-checklist-view.js', 'web/static/js/long-tasks.js', 'web/static/js/router.js', 'web/static/js/auth.js', 'web/static/js/modal.js', 'web/static/js/rbac-guards.js', 'web/static/css/**', 'web/static/i18n/**', 'scripts/long-tasks-browser.test.cjs', 'scripts/task-controls-browser.test.cjs', 'scripts/task-pagination-browser.test.cjs', 'scripts/helpers/task-ui-fixture.cjs', '.github/workflows/task-ui.yml']
+    paths: ['web/templates/index.html', 'web/static/js/tasks.js', 'web/static/js/router.js', 'web/static/js/auth.js', 'web/static/js/modal.js', 'web/static/js/rbac-guards.js', 'web/static/css/**', 'web/static/i18n/**', 'scripts/batch-tasks-browser.test.cjs', 'scripts/helpers/batch-task-ui-fixture.cjs', '.github/workflows/task-ui.yml']
 permissions:
   contents: read
 jobs:
@@ -21,4 +21,4 @@ jobs:
           "$RUNNER_TEMP/task-ui-deps/node_modules/.bin/playwright" install --with-deps chromium
       - name: Test real task page entrypoints and controls
         run: |
-          NODE_PATH="$RUNNER_TEMP/task-ui-deps/node_modules" node --test scripts/long-tasks-browser.test.cjs scripts/task-controls-browser.test.cjs scripts/task-pagination-browser.test.cjs
+          NODE_PATH="$RUNNER_TEMP/task-ui-deps/node_modules" node --test scripts/batch-tasks-browser.test.cjs

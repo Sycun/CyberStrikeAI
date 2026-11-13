@@ -50,7 +50,6 @@
     <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-aligned-overview">
     <link rel="stylesheet" href="/static/css/vulnerability-list.css?v=20261113-compact-rows">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
-    <link rel="stylesheet" href="/static/css/long-tasks.css?v=20261114-task-filters">
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -2982,81 +2981,42 @@
                     <div class="page-header">
                         <h2 data-i18n="tasks.title">任务管理</h2>
                         <div class="page-header-actions">
-                            <button id="task-new-goal" class="btn-primary" data-require-permission="tasks:write" data-i18n="longTasks.new">新建任务</button>
+                            <button class="btn-primary" data-require-permission="tasks:write" onclick="showBatchImportModal()" data-i18n="tasks.newTask">新建任务</button>
                             <label class="auto-refresh-toggle">
                                 <input type="checkbox" id="tasks-auto-refresh" checked onchange="toggleTasksAutoRefresh(this.checked)">
                                 <span data-i18n="tasks.autoRefresh">自动刷新</span>
                             </label>
-                            <button class="btn-secondary" onclick="refreshTaskWorkspace()" data-i18n="common.refresh">刷新</button>
+                            <button class="btn-secondary" onclick="refreshBatchQueues()" data-i18n="common.refresh">刷新</button>
                         </div>
                     </div>
-                    <div class="page-content" id="long-task-workspace">
-                        <div id="lt-error" role="alert" hidden></div>
-                        <div class="lt-toolbar">
-                            <div class="lt-toolbar-search">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-                                <input id="lt-search" type="search" data-i18n="longTasks.search" data-i18n-attr="placeholder,aria-label" placeholder="搜索任务" aria-label="搜索任务">
-                            </div>
-                            <div class="lt-toolbar-filters">
-                                <div class="lt-filter-field">
-                                    <select id="lt-mode-filter" aria-label="执行方式">
-                                        <option value="" data-i18n="longTasks.allModes">全部执行方式</option>
-                                        <option value="goal" data-i18n="longTasks.modeGoal">自主规划</option>
-                                        <option value="list" data-i18n="longTasks.modeList">按清单执行</option>
+                    <div class="page-content">
+                        <!-- 批量任务队列列表 -->
+                        <div class="batch-queues-section" id="batch-queues-section" style="display: none;">
+                            <!-- 筛选控件 -->
+                            <div class="batch-queues-filters tasks-filters batch-queues-filters--compact">
+                                <label>
+                                    <span data-i18n="tasksPage.statusFilter">状态筛选</span>
+                                    <select id="batch-queues-status-filter" class="tasks-filter-select">
+                                        <option value="all" data-i18n="knowledgePage.all">全部</option>
+                                        <option value="pending" data-i18n="tasksPage.statusPending">待执行</option>
+                                        <option value="running" data-i18n="dashboard.executing">执行中</option>
+                                        <option value="paused" data-i18n="tasksPage.statusPaused">已暂停</option>
+                                        <option value="completed" data-i18n="dashboard.completed">已完成</option>
+                                        <option value="cancelled" data-i18n="tasksPage.statusCancelled">已取消</option>
                                     </select>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-                                </div>
-                                <div class="lt-filter-field">
-                                    <select id="lt-filter" aria-label="任务状态">
-                                        <option value="" data-i18n="longTasks.all">全部状态</option>
-                                        <option value="draft" data-i18n="longTasks.status.draft">草稿</option>
-                                        <option value="pending" data-i18n="longTasks.status.pending">待执行</option>
-                                        <option value="scheduled" data-i18n="longTasks.status.scheduled">等待定时执行</option>
-                                        <option value="partial" data-i18n="longTasks.status.partial">部分失败</option>
-                                        <option value="failed" data-i18n="longTasks.status.failed">失败</option>
-                                        <option value="running" data-i18n="longTasks.status.running">执行中</option>
-                                        <option value="paused" data-i18n="longTasks.status.paused">已暂停</option>
-                                        <option value="waiting_input" data-i18n="longTasks.status.waiting_input">待答复</option>
-                                        <option value="blocked" data-i18n="longTasks.status.blocked">受阻</option>
-                                        <option value="budget_exhausted" data-i18n="longTasks.status.budget_exhausted">预算耗尽</option>
-                                        <option value="completed" data-i18n="longTasks.status.completed">已完成</option>
-                                        <option value="cancelled" data-i18n="longTasks.status.cancelled">已取消</option>
-                                    </select>
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-                                </div>
+                                </label>
+                                <label class="batch-queues-filters__search">
+                                    <span data-i18n="tasksPage.searchQueuePlaceholder">搜索队列ID、标题或创建时间</span>
+                                    <input type="text" id="batch-queues-search" data-i18n="tasksPage.searchKeywordPlaceholder" data-i18n-attr="placeholder" placeholder="输入关键字搜索..."
+                                           oninput="filterBatchQueues()">
+                                </label>
                             </div>
-                        </div>
-                        <div id="lt-empty-state" class="lt-empty-state" hidden>
-                            <span class="lt-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h5M8 16h3"/></svg></span>
-                            <h3 id="lt-empty-title" data-i18n="longTasks.emptyTitle">创建你的第一个任务</h3>
-                            <p id="lt-empty-description" data-i18n="longTasks.empty">描述目标让系统规划，或提供已有任务清单，在这里统一管理执行与结果。</p>
-                            <button type="button" class="btn-primary" data-lt-action="new" data-require-permission="tasks:write" data-i18n="longTasks.new">新建任务</button>
-                        </div>
-                        <div class="lt-board" id="lt-board">
-                            <aside class="lt-sidebar"><div class="lt-sidebar-heading" data-i18n="longTasks.taskList">任务列表</div><div id="lt-list" data-task-scroll></div><div id="lt-pagination" class="task-pagination"></div></aside>
-                            <div id="lt-empty-detail" class="lt-empty" data-i18n="longTasks.choose">选择任务查看计划、进展和执行记录。</div>
-                            <section id="lt-detail" class="lt-detail" hidden>
-                                <div class="lt-detail-top"><header><h3 id="lt-name"></h3><div id="lt-state"></div></header>
-                                    <p id="lt-progress"></p><p id="lt-summary" class="task-parent-summary"></p><div id="lt-actions" class="lt-actions"></div>
-                                    <aside id="lt-question" hidden><strong data-i18n="longTasks.needsAnswer">需要你的答复</strong><p id="lt-question-text"></p><button type="button" class="btn-secondary" data-lt-action="guidance-panel" data-i18n="longTasks.answer">答复</button></aside>
-                                </div>
-                                <details class="lt-context"><summary data-i18n="longTasks.taskSettings">任务说明与设置</summary><div class="lt-context-body" data-task-scroll>
-                                    <h4 data-i18n="longTasks.objective">目标</h4><p id="lt-objective"></p>
-                                    <h4 data-i18n="longTasks.scope">范围与约束</h4><p id="lt-scope"></p>
-                                    <h4 data-i18n="longTasks.criteria">验收条件</h4><p id="lt-criteria"></p>
-                                    <h4 data-i18n="longTasks.strategy">持续推进路线</h4><p id="lt-strategy"></p>
-                                </div></details>
-                                <details id="lt-support" class="lt-context"><summary data-i18n="longTasks.guidanceAndEvents">补充方向与任务动态</summary><div class="lt-context-body" data-task-scroll>
-                                    <form id="lt-guidance-form"><label id="lt-guidance-label" for="lt-guidance-input" data-i18n="longTasks.guidance">补充方向</label><textarea id="lt-guidance-input" rows="3" maxlength="8000" required></textarea><button id="lt-guidance-send" type="submit" class="btn-primary" data-i18n="longTasks.sendGuidance">提交补充</button></form>
-                                    <details><summary data-i18n="longTasks.guidanceHistory">已提交的补充</summary><p id="lt-guidance-history"></p></details>
-                                    <details open><summary data-i18n="longTasks.events">任务动态</summary><ol id="lt-events"></ol></details>
-                                </div></details>
-                                <section class="task-items-panel"><div class="task-items-heading"><h4 data-i18n="longTasks.plan">执行计划与结果</h4></div><div id="lt-steps" class="task-record-list" data-task-scroll></div><div id="lt-step-pagination" class="task-pagination"></div></section>
-                            </section>
-                            <section id="lt-batch-detail" class="lt-detail" hidden></section>
+                            <div class="batch-queues-board">
+                                <div id="batch-queues-list" class="batch-queues-list"></div>
+                                <div id="batch-queues-pagination" class="pagination-container"></div>
+                            </div>
                         </div>
                     </div>
-
                 </div>
 
                 <!-- C2 监听器管理页面 -->
@@ -6448,7 +6408,7 @@
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="closeBatchImportModal()" data-i18n="common.cancel">取消</button>
-                <button class="btn-primary" data-require-permission="tasks:write" id="batch-queue-create-btn" onclick="createBatchQueue()" data-i18n="batchImportModal.createQueue">创建队列</button>
+                <button class="btn-primary" data-require-permission="tasks:write" onclick="createBatchQueue()" data-i18n="batchImportModal.createQueue">创建队列</button>
             </div>
         </div>
     </div>
@@ -6489,7 +6449,7 @@
                     <textarea id="add-task-message" class="form-control" rows="5" data-i18n="addBatchTaskModal.taskMessagePlaceholder" data-i18n-attr="placeholder" placeholder="请输入任务消息"></textarea>
                 </div>
                 <div class="form-actions">
-                    <button class="btn-primary" data-require-permission="tasks:write" id="batch-task-add-btn" onclick="saveAddBatchTask()" data-i18n="addBatchTaskModal.add">添加</button>
+                    <button class="btn-primary" data-require-permission="tasks:write" onclick="saveAddBatchTask()" data-i18n="addBatchTaskModal.add">添加</button>
                     <button class="btn-secondary" onclick="closeAddBatchTaskModal()" data-i18n="common.cancel">取消</button>
                 </div>
             </div>
@@ -7169,10 +7129,7 @@
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>
     <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
-    <script src="/static/js/task-list-view.js?v=20261113-task-rows-3"></script>
-    <script src="/static/js/tasks.js?v=20261113-task-rows-3"></script>
-    <script src="/static/js/task-checklist-view.js?v=20261113-task-rows-3"></script>
-    <script src="/static/js/long-tasks.js?v=20261113-task-rows-3"></script>
+    <script src="/static/js/tasks.js?v=20261114-batch-restore"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>
     <script src="/static/js/update.js?v={{.Version}}-update-status"></script>

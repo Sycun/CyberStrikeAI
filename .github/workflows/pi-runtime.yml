@@ -25,6 +25,4 @@ jobs:
         working-directory: runtime/pi
       - run: go run ./cmd/build-runtime
       - run: bash scripts/check-pi-only.sh
-      - run: go test -race ./internal/agentruntime ./internal/multiagent ./internal/taskflow ./internal/knowledge ./internal/workflow
-      - name: Verify durable tasks through the native Pi worker
-        run: go test -race ./internal/handler -run TestLongTask -count=1
+      - run: go test -race ./internal/agentruntime ./internal/multiagent ./internal/knowledge ./internal/workflow

@@ -1,7 +1,7 @@
 <div align="center">
   <img src="images/logo.png" alt="CyberStrikeAI" width="144">
   <h1>CyberStrikeAI</h1>
-  <p><strong>Describe the goal. Let an agent do the work, report progress, and ask when it needs your judgment.</strong></p>
+  <p><strong>Describe tasks. Let agents use tools and record execution evidence.</strong></p>
   <p><a href="README_CN.md">中文</a> · <strong>English</strong></p>
   <p>
     <a href="https://github.com/Sycun/CyberStrikeAI/actions/workflows/pi-runtime.yml"><img src="https://github.com/Sycun/CyberStrikeAI/actions/workflows/pi-runtime.yml/badge.svg?branch=main" alt="Pi runtime CI"></a>
@@ -9,11 +9,11 @@
   </p>
 </div>
 
-CyberStrikeAI is a cybersecurity agent workbench built with **Go + Pi**. Describe the outcome you want: the agent interprets your intent, plans steps, calls tools, and records evidence. It reports progress as it works, asks for missing information or decisions, and continues from the saved state after you answer.
+CyberStrikeAI is a cybersecurity agent workbench built with **Go + Pi**. Run tasks through chat or manage supplied task lists in batch queues. Agents call tools and record results and evidence.
 
-This repository is maintained by **Sycun**, building on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) with the upstream history, license, and copyright notices preserved. The current version is ready for team trials. Start the new workflow from **Task Management → New task**.
+This repository is maintained by **Sycun**, building on [AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI) with the upstream history, license, and copyright notices preserved. Create a batch queue from **Task Management → New task**.
 
-[Quick start](#quick-start) · [Delegate your first task](#delegation) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Documentation](#documentation) · [Feedback](#contributing)
+[Quick start](#quick-start) · [Task management](#delegation) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Documentation](#documentation) · [Feedback](#contributing)
 
 <a id="quick-start"></a>
 
@@ -78,11 +78,9 @@ A deployment needs the runtime source and a matching Pi worker bundle, or a fres
 
 ## Task management
 
-Open **Task Management → New task** and choose autonomous planning or checklist execution. Objectives drive adaptive plans; supplied checklists support manual or Cron execution. Both appear in one searchable task list.
+Open **Task Management → New task** and enter one task per line. Configure the project, role, agent mode, tool approval, concurrency and optional Cron schedule. Filter, search and paginate queues; open a queue's detail dialog to inspect results and conversations, pause or resume execution, and edit eligible subtasks.
 
-Inspect execution conversations, checkpoints and activity; pause/resume, supply guidance, answer questions, retry failed steps and adjust time or planning-round budgets. Completed work is retained. Blocked, interrupted and budget-exhausted tasks are distinct from successful completion. Existing queues, schedules and execution records remain available in the shared list.
-
-See [task management, source research and validation boundaries](docs/zh-CN/long-running-tasks.md).
+Task management has returned to the v1.8.0 batch-queue behavior. Goal tasks and the subsequent unified-list redesign have been withdrawn. See [batch task management and data compatibility (Chinese)](docs/zh-CN/task-management.md).
 
 <a id="capabilities"></a>
 
@@ -91,7 +89,7 @@ See [task management, source research and validation boundaries](docs/zh-CN/long
 | Capability | What it provides | Details |
 | --- | --- | --- |
 | Pi agents | Single-agent, Deep, Plan-Execute, and Supervisor modes | [Agents and roles](docs/en-US/agent-and-role-guide.md) |
-| Durable tasks | Planning, dependencies, bounded concurrency, budgets, pause/resume, and review | [Task delegation](docs/zh-CN/long-running-tasks.md) |
+| Batch tasks | Task lists, concurrency, schedules, pause/resume and execution records | [Task management](docs/zh-CN/task-management.md) |
 | Tools and skills | YAML recipes, MCP connections, role-specific tool sets, and on-demand skills | [Tools](tools/README_EN.md) · [Skills](skills/README.md) |
 | Visual workflows | Compose agent, tool, condition, and approval nodes | [Workflows](docs/en-US/workflow-graph.md) |
 | Knowledge and evidence | RAG retrieval, project facts, tool records, reports, and attack-chain analysis | [Knowledge base](docs/en-US/knowledge-base.md) |
@@ -107,13 +105,13 @@ Specialized operations also include [WebShell](docs/en-US/webshell.md) and [C2](
 
 | Component | Responsibility |
 | --- | --- |
-| **Go server and task engine** | Task state, dependencies, budgets, owner questions, tool execution, and evidence |
+| **Go server and task engine** | Queue state, schedules, tool execution, and evidence |
 | **Pi runtime** | Model interaction, agent tool loops, sessions, compaction, steering, and tool discovery |
 | **Tool gateway** | Dispatch to MCP or local tools under role restrictions, permissions, approvals, and execution monitoring |
 | **SQLite and Pi sessions** | Business state and evidence in SQLite; model conversations and compaction records in Pi sessions |
-| **Web workbench** | Tasks, questions, stage reports, execution traces, and project materials |
+| **Web workbench** | Tasks, execution traces, and project materials |
 
-**Pi 1.5.2 is the only agent runtime.** The Eino execution engine and dependencies have been removed. Goal-task coordination persists plans and schedules complete Pi Agent steps using the existing tool loop, projects and execution conversations.
+**Pi 1.5.2 is the only agent runtime.** The Eino execution engine and dependencies have been removed. Batch queues use the existing Agent tool loop, projects and execution conversations.
 
 <a id="integrations"></a>
 
@@ -142,7 +140,7 @@ Specialized operations also include [WebShell](docs/en-US/webshell.md) and [C2](
 </tr>
 </table>
 
-These repository screenshots illustrate existing features. For the new task-delegation entry point and workflow, follow the [usage guide](docs/zh-CN/long-running-tasks.md).
+These repository screenshots illustrate existing features. For the batch-task workflow, follow the [usage guide](docs/zh-CN/task-management.md).
 
 </details>
 
@@ -161,9 +159,7 @@ Before migrating from an Eino version, back up runtime configuration and data, a
 
 ## Validation status
 
-The current implementation has been checked with full Go tests, race tests, Pi SDK integration tests, frontend regressions, and local browser checks. An isolated live-model smoke run completed the sequence **ambiguous request → clarification → owner answer → echo tool execution → stage reports → completion**, using synthetic inputs and tool results.
-
-This supports team trials. Complex long-running tasks, compatibility across model channels, general intent accuracy, cost, and effectiveness still need further evaluation. See the latest checks in [GitHub Actions](https://github.com/Sycun/CyberStrikeAI/actions).
+Regression checks cover Go, frontend behavior and isolated batch-queue UI operations. Historical validation of withdrawn features does not describe current product capabilities. Model compatibility, cost and effectiveness require separate evaluation. See [GitHub Actions](https://github.com/Sycun/CyberStrikeAI/actions) for current checks.
 
 <a id="documentation"></a>
 
@@ -172,7 +168,7 @@ This supports team trials. Complex long-running tasks, compatibility across mode
 | What you want to do | Start here |
 | --- | --- |
 | Deploy and configure models | [Deployment](docs/en-US/deployment.md) · [Configuration](docs/en-US/configuration.md) · [Troubleshooting](docs/en-US/troubleshooting.md) |
-| Delegate tasks | [Usage and API](docs/zh-CN/long-running-tasks.md) · [Design background, Chinese](docs/zh-CN/long-running-tasks.md) |
+| Manage batch tasks | [Usage and compatibility, Chinese](docs/zh-CN/task-management.md) |
 | Customize agents and tools | [Pi runtime](docs/en-US/pi-runtime.md) · [Agents and roles](docs/en-US/agent-and-role-guide.md) · [Tool recipes](tools/README_EN.md) |
 | Integrate an application | [API reference](docs/en-US/api-reference.md) · [API examples](docs/en-US/api-recipes.md) · [MCP](docs/en-US/mcp-federation.md) |
 | Operate a team service | [Security hardening](docs/en-US/security-hardening.md) · [Runbooks](docs/en-US/runbooks.md) |

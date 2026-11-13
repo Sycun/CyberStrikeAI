@@ -26,7 +26,6 @@ import (
 	"cyberstrike-ai/internal/openai"
 	"cyberstrike-ai/internal/reasoning"
 	"cyberstrike-ai/internal/security"
-	"cyberstrike-ai/internal/taskflow"
 
 	"github.com/gin-gonic/gin"
 	"github.com/robfig/cron/v3"
@@ -183,8 +182,6 @@ func discardPlanningIfEchoesToolResult(respPlan *responsePlanAgg, toolData inter
 
 // AgentHandler Agent处理器
 type AgentHandler struct {
-	longTasks        *taskflow.Engine
-	longTaskRuntime  *longTaskRuntime
 	asyncWorkers     sync.WaitGroup
 	asyncSubmitMu    sync.Mutex
 	agent            *agent.Agent
@@ -1989,13 +1986,9 @@ func (h *AgentHandler) CreateBatchQueue(c *gin.Context) {
 // GetBatchQueue 获取批量任务队列
 func (h *AgentHandler) GetBatchQueue(c *gin.Context) {
 	queueID := c.Param("queueId")
-	queue, exists := h.batchTaskManager.SnapshotBatchQueue(queueID)
+	queue, exists := h.batchTaskManager.GetBatchQueue(queueID)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "队列不存在"})
-		return
-	}
-	if c.Query("task_page") != "" || c.Query("task_page_size") != "" {
-		h.writeBatchTaskPage(c, queue)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"queue": queue})

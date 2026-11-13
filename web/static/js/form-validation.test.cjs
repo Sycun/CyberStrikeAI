@@ -6,13 +6,11 @@ const taskSource = fs.readFileSync('web/static/js/tasks.js','utf8');
 function concurrencyHarness(value) {
  let calls = 0, message, focused = false;
  const input = {value, focus() { focused = true; }};
- const ctx = {window:{},_bqInlineSaving:false, batchQueuesState:{currentQueueId:'q'},
+ const ctx = {_bqInlineSaving:false, batchQueuesState:{currentQueueId:'q'},
   document:{getElementById:() => input}, _t:x => x, alert:x => {message=x;},
   apiFetch:async () => {calls++;return {ok:true,json:async () => ({queue:{title:'title'}})};},
-  showBatchQueueDetail() {},isAppModalOpen:() => true,refreshBatchQueues() {},console};
+  showBatchQueueDetail() {},refreshBatchQueues() {},console};
  vm.createContext(ctx);
- const refreshStart = taskSource.indexOf('function refreshBatchQueueDetailIfCurrent(');
- vm.runInContext(taskSource.slice(refreshStart,taskSource.indexOf('// 开始批量任务队列',refreshStart)),ctx);
  const start = taskSource.indexOf('async function saveInlineConcurrency(');
  vm.runInContext(taskSource.slice(start,taskSource.indexOf('// --- 单条执行 ---',start)),ctx);
  return {ctx,calls:() => calls,message:() => message,focused:() => focused};

@@ -37,4 +37,4 @@
 
 - [Pi runtime and migration](pi-runtime.md)
 
-- [Delegated work and owner questions](../zh-CN/long-running-tasks.md)
+- [Batch task management (Chinese)](../zh-CN/task-management.md)

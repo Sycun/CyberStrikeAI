@@ -36,6 +36,5 @@
 - [测试指南](testing.md) · [贡献规范](contributing-guide.md) · [发布流程](release-process.md)
 
 - [Pi 原生运行时与迁移](pi-runtime.md)
-- [任务委派、阶段汇报与主动请示（设计调研）](long-running-tasks.md)
 
-- [任务委派与主动请示](long-running-tasks.md)
+- [批量任务管理](task-management.md)

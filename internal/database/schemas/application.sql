@@ -902,24 +902,3 @@ CREATE UNIQUE INDEX uq_workflow_package_imports_inspection_success ON workflow_p
 CREATE TABLE pi_session_roots (
     path TEXT PRIMARY KEY
 );
-
--- Durable objectives shown alongside batch queues in task management.
-CREATE TABLE long_tasks (
-    id TEXT PRIMARY KEY,
-    owner_user_id TEXT NOT NULL,
-    project_id TEXT NOT NULL DEFAULT '',
-    name TEXT NOT NULL,
-    status TEXT NOT NULL,
-    payload TEXT NOT NULL,
-    updated_at DATETIME NOT NULL
-);
-CREATE INDEX idx_long_tasks_owner ON long_tasks(owner_user_id, updated_at);
-CREATE TABLE long_task_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    task_id TEXT NOT NULL REFERENCES long_tasks(id) ON DELETE CASCADE,
-    step_id TEXT NOT NULL DEFAULT '',
-    kind TEXT NOT NULL,
-    message TEXT NOT NULL,
-    created_at DATETIME NOT NULL
-);
-CREATE INDEX idx_long_task_events_task ON long_task_events(task_id, id);
