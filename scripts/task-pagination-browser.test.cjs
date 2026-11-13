@@ -95,3 +95,11 @@ test('a stale step snapshot can be refreshed explicitly before retry',async t=>{
  await page.locator('[data-step-refresh]').click();await page.waitForFunction(()=>document.querySelector('.task-inspector-body').textContent.includes('New checked result'));
  await page.locator('[data-step-retry]').click();await page.locator('#task-step-inspector').waitFor({state:'detached'});assert.equal(state.tasks.get('a').steps[0].status,'pending');
 });
+
+
+test('a task waiting for input before its first plan still renders and accepts an answer',async t=>{
+ const {page,state,select}=await fixture(t);const task=state.tasks.get('a');task.steps=null;task.status='waiting_input';task.question='Which local fixture?';
+ await select('a');await page.locator('#lt-question').waitFor();assert.equal(await page.locator('#lt-steps .task-record-row').count(),0);
+ await page.locator('#lt-guidance-input').fill('Use fixture A');await page.locator('#lt-guidance-send').click();await page.locator('#lt-state .lt-status-running').waitFor();
+ assert.deepEqual(task.guidance,['Use fixture A']);assert.deepEqual(state.pageErrors,[]);
+});

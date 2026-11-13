@@ -41,7 +41,7 @@ async function fixture(t) {
             if (url.pathname === '/api/projects') return send(200, { projects: [] });
             if (url.pathname === '/api/long-tasks/options') return send(200, { projects: [], roles: [], models: [] });
             if (url.pathname === '/api/tasks') {
-                const rows = [...state.tasks.values()].map(task => ({ ...task, mode: 'goal', completed_steps: task.steps.filter(step => step.status === 'completed').length, total_steps: task.steps.length }));
+                const rows = [...state.tasks.values()].map(task => ({ ...task, mode: 'goal', completed_steps: (task.steps || []).filter(step => step.status === 'completed').length, total_steps: (task.steps || []).length }));
                 for (const q of state.queues.values()) rows.push({ id:q.id, mode:'list', name:q.title, status:q.status, summary:q.lastRunError || '', updated_at:q.createdAt, schedule_mode:q.scheduleMode, next_run_at:q.nextRunAt, completed_steps:q.tasks.filter(step => step.status==='completed').length, total_steps:q.tasks.length });
                 const filtered=rows.filter(task => (!url.searchParams.get('mode') || task.mode===url.searchParams.get('mode')) && (!url.searchParams.get('status') || task.status===url.searchParams.get('status')) && (!url.searchParams.get('q') || task.name.includes(url.searchParams.get('q'))));
                 const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||30);

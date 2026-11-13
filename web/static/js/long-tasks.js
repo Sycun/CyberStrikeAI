@@ -40,6 +40,7 @@
         el('lt-empty-detail').hidden = !!state.selected; el('lt-detail').hidden = !t;
         el('lt-batch-detail').hidden = state.selectedMode !== 'list' || !state.selected;
         if (!t) { el('lt-steps').replaceChildren(); el('lt-steps').dataset.taskId = ''; return; }
+        if (!Array.isArray(t.steps)) t.steps = [];
         el('lt-name').textContent = t.name; el('lt-name').title = t.name;
         V.setHTML(el('lt-state'), badge(t.status));
         const done = t.steps.filter(s => s.status === 'completed').length;
