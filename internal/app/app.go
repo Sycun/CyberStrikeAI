@@ -81,7 +81,7 @@ type App struct {
 }
 
 // New 创建新应用
-func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error) {
+func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation string) (*App, error) {
 	if err := cfg.AgentRuntime.Validate(); err != nil {
 		return nil, err
 	}
@@ -625,7 +625,7 @@ func New(cfg *config.Config, log *logger.Logger, configPath string) (*App, error
 	})
 
 	updateHandler := handler.NewUpdateHandler(configDir, log.Logger, auditSvc,
-		app.updateRestart(configDir), configHandler.UpdateSource, configHandler.SetUpdateSource)
+		app.updateRestart(configDir), updateActivation, configHandler.UpdateSource, configHandler.SetUpdateSource)
 
 	assessmentStore := &assessment.Store{DB: db}
 	if err := assessmentStore.Recover(); err != nil {
