@@ -444,7 +444,7 @@ test('the console lives inside the settings page as its own section', () => {
         'settings-section-update must live inside page-settings');
     assert.match(template, /id="settings-section-update"[\s\S]{0,700}?id="update-console"/);
     assert.match(template, /id="update-console"/);
-    assert.match(template, /<script src="\/static\/js\/update\.js\?v=\{\{\.Version\}\}-activation"><\/script>/);
+    assert.match(template, /<script src="\/static\/js\/update\.js\?v=\{\{\.Version\}\}-update-status"><\/script>/);
     assert.match(template, /<div class="settings-section-header update-section-head">/);
     assert.match(template, /<h3 data-i18n="update\.title">/);
 
@@ -683,6 +683,7 @@ test('local edits, a diverged tree and a clean-but-unchecked tree each block the
             patch: { updateAvailable: false, behind: 0, blockingChanges: [] },
             copy: /更新源没有比本机更新的提交/,
             path: null,
+            informational: true,
         },
     ];
     for (const c of cases) {
@@ -691,6 +692,10 @@ test('local edits, a diverged tree and a clean-but-unchecked tree each block the
         assert.match(html, /<button class="btn-primary update-apply-btn" disabled[^>]*onclick="startUpdateApply\(\)">/,
             'the apply button must be disabled for: ' + c.copy);
         assert.match(html, c.copy, 'a disabled button must say why');
+        if (c.informational) {
+            assert.match(html, /<div class="update-hint">更新源没有比本机更新的提交/);
+            assert.doesNotMatch(html, /class="update-blocker-list"/);
+        }
         assert.match(html, /data-require-permission="update:apply"/);
         if (c.path) assert.match(html, c.path, 'the blocking file names must be listed, not just counted');
         // Disabled in the markup and refused in code: the two must agree.
@@ -700,7 +705,7 @@ test('local edits, a diverged tree and a clean-but-unchecked tree each block the
         await h.flush();
         assert.deepEqual(h.calls, [], 'a blocked apply must never reach the server: ' + c.copy);
         assert.equal(h.toasts.length, 1, 'the refusal must be said out loud instead of failing silent');
-        assert.equal(h.toasts[0].type, 'error');
+        assert.equal(h.toasts[0].type, c.informational ? 'info' : 'error');
     }
 
     const busy = await harness({ status: statusOf(), job: runningJob });

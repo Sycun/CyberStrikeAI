@@ -511,7 +511,6 @@ function updateApplyBlockers(status, job) {
             behind: status.behind || 0,
         }));
     }
-    if (!status.updateAvailable && !status.buildPending) blockers.push(updateT('blockedNoUpdate'));
     return blockers;
 }
 
@@ -523,6 +522,10 @@ async function startUpdateApply() {
         // 浏览器不会把 disabled 按钮的点击送到这里，走到这儿说明状态已经和画面不一致了，
         // 那就照实说为什么不能点，一声不吭更像坏了。
         notify(blockers[0], 'error');
+        return;
+    }
+    if (!status.updateAvailable && !status.buildPending) {
+        notify(updateT('blockedNoUpdate'), 'info');
         return;
     }
     const restart = updateCanRestart();
@@ -822,7 +825,8 @@ function renderUpdateSwitchHint() {
 
 function renderUpdateApplyBody(status, job) {
     const blockers = updateApplyBlockers(status, job);
-    const blocked = blockers.length > 0;
+    const noUpdate = !status.updateAvailable && !status.buildPending;
+    const blocked = blockers.length > 0 || noUpdate;
     const parts = [];
 
     if (job && job.state === 'running') {
@@ -857,9 +861,11 @@ function renderUpdateApplyBody(status, job) {
 
     parts.push(renderUpdateSwitchHint());
 
-    if (blocked) {
+    if (blockers.length) {
         parts.push('<ul class="update-blocker-list">' + blockers.map(b =>
             '<li class="update-error">' + escapeHtml(b) + '</li>').join('') + '</ul>');
+    } else if (noUpdate) {
+        parts.push('<div class="update-hint">' + escapeHtml(updateT('blockedNoUpdate')) + '</div>');
     }
 
     const local = status.localChanges || [];
