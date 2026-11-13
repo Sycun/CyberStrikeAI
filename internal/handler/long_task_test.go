@@ -150,6 +150,14 @@ func TestLongTaskMemoryKeepsTaskBoundaryAndPriorAttempts(t *testing.T) {
 	if !strings.Contains(result.Content, "attempt-one") || !strings.Contains(result.Content, "attempt-two") || strings.Contains(result.Content, "foreign") {
 		t.Fatal(result.Content)
 	}
+	var oldRef string
+	if err = h.db.QueryRow(`SELECT id FROM process_details WHERE conversation_id=? LIMIT 1`, ids[0]).Scan(&oldRef); err != nil {
+		t.Fatal(err)
+	}
+	prior, err := h.longTaskRuntime.trace(task.ID, map[string]any{"trace_id": oldRef})
+	if err != nil || !strings.Contains(prior.Content, `"step_status":"previous_attempt"`) {
+		t.Fatalf("old attempt was promoted: %s %v", prior.Content, err)
+	}
 	result, err = h.longTaskRuntime.memory(task.ID, map[string]any{"query": "needle", "step_id": "not-in-task"})
 	if err != nil || strings.Contains(result.Content, "attempt-one") {
 		t.Fatal(result, err)
@@ -263,6 +271,10 @@ func testLongTaskNativePiLifecycle(t *testing.T, denied bool) {
 	if denied {
 		if got.Status != "blocked" || toolRuns.Load() != 0 || len(got.Steps) != 1 || got.Steps[0].Status != "failed" || !strings.Contains(got.Steps[0].Summary, "没有成功工具结果") {
 			t.Fatalf("false completion was not rejected: %+v steps=%+v", got, got.Steps)
+		}
+		messages, err := h.db.GetMessages(got.Steps[0].ConversationID)
+		if err != nil || len(messages) < 2 || !strings.Contains(messages[len(messages)-1].Content, "目标任务步骤未完成") {
+			t.Fatalf("failed conversation left without failure notice: %+v %v", messages, err)
 		}
 		return
 	}

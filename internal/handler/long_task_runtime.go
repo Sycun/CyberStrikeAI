@@ -236,6 +236,13 @@ func (r *longTaskRuntime) Run(ctx context.Context, t *taskflow.Task, step taskfl
 	if err != nil {
 		return out, err
 	}
+	defer func() {
+		if err != nil {
+			notice := "目标任务步骤未完成: " + err.Error()
+			_ = h.appendAssistantMessageNotice(assistant.ID, notice)
+			_ = h.db.AddProcessDetail(assistant.ID, conv.ID, "error", notice, nil)
+		}
+	}()
 	ctx = authctx.WithPrincipal(ctx, p)
 	runCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -484,6 +491,9 @@ func (r *longTaskRuntime) trace(id string, args map[string]any) (agentruntime.To
 		for _, c := range s.Conversations {
 			if c == conversation {
 				sourceID, sourceStatus = s.ID, s.Status
+				if conversation != s.ConversationID {
+					sourceStatus = "previous_attempt"
+				}
 				allowed = true
 			}
 		}
