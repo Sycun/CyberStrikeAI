@@ -48,7 +48,7 @@
     <link rel="stylesheet" href="/static/vendor/xterm.css">
     <!-- 移动端样式层：全部规则限定在 767.98px 以下，桌面端零影响 -->
     <link rel="stylesheet" href="/static/css/mobile.css?v=20261015-project-table-3">
-    <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-long-targets">
+    <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-tree-views">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
 </head>
 <body>
@@ -2702,8 +2702,7 @@
                                  aria-label="漏洞视图" data-i18n="vulnerabilityPage.viewLabel" data-i18n-attr="aria-label">
                                 <button type="button" data-vuln-view="host" aria-pressed="true" data-i18n="vulnerabilityPage.viewHost">按域名</button>
                                 <button type="button" data-vuln-view="task" aria-pressed="false" data-i18n="vulnerabilityPage.viewTask">按任务</button>
-                                <button type="button" data-vuln-view="case" aria-pressed="false" data-i18n="vulnerabilityPage.viewCases">独立漏洞</button>
-                                <button type="button" data-vuln-view="none" aria-pressed="false" data-i18n="vulnerabilityPage.viewRaw">原始记录</button>
+                                <button type="button" data-vuln-view="none" aria-pressed="false" data-i18n="vulnerabilityPage.viewRaw">原始漏洞</button>
                             </div>
                         </div>
                         <div class="page-header-actions">
@@ -2718,7 +2717,6 @@
                         <div class="vulnerability-dashboard" id="vulnerability-dashboard">
                             <div class="vulnerability-workspace-caption">
                                 <span data-i18n="vulnerabilityPage.workspaceSubtitle">资产、上报与处置进展</span>
-                                <span id="vulnerability-distinct-count"></span>
                             </div>
                             <div class="dashboard-stats" id="vulnerability-stat-cards" role="group" aria-label="漏洞严重度统计">
                                 <div class="stat-card stat-card-total is-clickable is-active" data-severity="" role="button" tabindex="0"
@@ -2875,10 +2873,7 @@
                                         <option value="latest" data-i18n="vulnerabilityPage.sortLatest">最新发现</option>
                                     </select>
                                 </label>
-                                <div id="vulnerability-group-controls" class="vulnerability-group-controls">
-                                    <button type="button" id="vulnerability-expand-groups" class="btn-secondary" onclick="setVulnerabilityGroupsOpen(true)" data-i18n="vulnerabilityPage.expandPage">展开本页</button>
-                                    <button type="button" id="vulnerability-collapse-groups" class="btn-secondary" onclick="setVulnerabilityGroupsOpen(false)" data-i18n="vulnerabilityPage.collapsePage">收起本页</button>
-                                </div>
+
                             </div>
                         </div>
                         <div id="vulnerabilities-list" class="vulnerabilities-list">
@@ -7136,7 +7131,7 @@
     <script src="/static/js/skills.js?v=20261103-personal-integration"></script>
     <script src="/static/js/fact-graph.js"></script>
     <script src="/static/js/projects.js?v=20260819-1-pagination-20261027"></script>
-    <script src="/static/js/vulnerability.js?v=20261113-domain-labels"></script>
+    <script src="/static/js/vulnerability.js?v=20261113-tree-views"></script>
     <script src="/static/js/vulnerability-workspace.js?v=20261113-long-targets"></script>
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>

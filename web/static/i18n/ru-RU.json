@@ -2877,6 +2877,11 @@
     "errorGeneric": "Что-то пошло не так. Повторите попытку."
   },
   "vulnerabilityPage": {
+    "taskSearch": "Поиск задач, очередей или тегов…",
+    "allTasks": "Все задачи",
+    "clearTaskSelection": "Сбросить фильтр задач",
+    "taskQueueGroup": "Очередь {{id}}",
+    "selectColumn": "Выбор",
     "statReports": "Отчёты об уязвимостях",
     "history_retest_started": "Создана ветка проверки",
     "retestSnapshot": "Снимок доказательств при проверке",
@@ -2980,7 +2985,7 @@
     "viewLabel": "Вид списка уязвимостей",
     "viewHost": "По хостам",
     "viewTask": "По задачам",
-    "viewRaw": "Исходные записи",
+    "viewRaw": "Исходные уязвимости",
     "viewTaskGroup": "Задача {{id}}",
     "viewNoTask": "Без связанной задачи",
     "batchExport": "Пакетный экспорт",

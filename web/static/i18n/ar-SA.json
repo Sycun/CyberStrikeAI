@@ -2721,6 +2721,11 @@
     "errorGeneric": "حدث خطأ ما. يُرجى المحاولة مرة أخرى."
   },
   "vulnerabilityPage": {
+    "taskSearch": "البحث في المهام أو قوائم الانتظار أو الوسوم…",
+    "allTasks": "جميع المهام",
+    "clearTaskSelection": "مسح مرشح المهام",
+    "taskQueueGroup": "قائمة المهام {{id}}",
+    "selectColumn": "تحديد",
     "statReports": "تقارير الثغرات",
     "history_retest_started": "تم إنشاء فرع إعادة الاختبار",
     "retestSnapshot": "لقطة الأدلة عند إعادة الاختبار",
@@ -2824,7 +2829,7 @@
     "viewLabel": "عرض الثغرات",
     "viewHost": "حسب المضيف",
     "viewTask": "حسب المهمة",
-    "viewRaw": "السجلات الأصلية",
+    "viewRaw": "الثغرات الأصلية",
     "viewTaskGroup": "المهمة {{id}}",
     "viewNoTask": "لا توجد مهمة مرتبطة",
     "batchExport": "تصدير جماعي",

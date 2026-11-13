@@ -2864,6 +2864,11 @@
     "errorGeneric": "Something went wrong. Please try again."
   },
   "vulnerabilityPage": {
+    "taskSearch": "Search tasks, queues or tags…",
+    "allTasks": "All tasks",
+    "clearTaskSelection": "Clear task filter",
+    "taskQueueGroup": "Task queue {{id}}",
+    "selectColumn": "Select",
     "statReports": "Reported findings",
     "history_retest_started": "Retest branch created",
     "retestSnapshot": "Evidence snapshot at retest",
@@ -2967,7 +2972,7 @@
     "viewLabel": "Vulnerability view",
     "viewHost": "By host",
     "viewTask": "By task",
-    "viewRaw": "Raw records",
+    "viewRaw": "Raw findings",
     "viewTaskGroup": "Task {{id}}",
     "viewNoTask": "No linked task",
     "batchExport": "Batch export",
