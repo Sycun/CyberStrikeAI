@@ -5388,6 +5388,7 @@
     "guidanceAndEvents": "Guidance and activity",
     "loading": "Loading…",
     "result": "Execution result",
-    "error": "Error"
+    "error": "Error",
+    "refreshDetail": "Refresh details"
   }
 }

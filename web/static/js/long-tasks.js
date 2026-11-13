@@ -81,7 +81,18 @@
         const step=task.steps.find(item=>item.id===id);if(!step)return;
         const terminal=['completed','cancelled'].includes(task.status);
         const retry=writable()&&!terminal&&!active(task)&&['failed','blocked','interrupted','cleanup_unconfirmed'].includes(step.status);
-        const dialog=V.openDrawer(tr('stepDetail'),`${badge(step.status)}<h4>${esc(tr('taskContent'))}</h4><p>${esc(step.title)}</p><h4>${esc(tr('instruction'))}</h4><p>${esc(step.instruction)}</p><h4>${esc(tr('depends'))}</h4><p>${esc((step.depends_on||[]).join(', ')||tr('independent'))}</p><h4>${esc(tr('result'))}</h4><pre>${esc(step.summary||tr('noResult'))}</pre><p class="lt-form-error" data-step-error hidden></p>`,`${step.conversation_id?`<a class="btn-secondary" href="#chat?conversation=${encodeURIComponent(step.conversation_id)}">${esc(tr('trace'))}</a>`:''}${retry?`<button type="button" class="btn-primary" data-step-retry>${esc(tr('retry'))}</button>`:''}`);
+        const dialog=V.openDrawer(tr('stepDetail'),`${badge(step.status)}<h4>${esc(tr('taskContent'))}</h4><p>${esc(step.title)}</p><h4>${esc(tr('instruction'))}</h4><p>${esc(step.instruction)}</p><h4>${esc(tr('depends'))}</h4><p>${esc((step.depends_on||[]).join(', ')||tr('independent'))}</p><h4>${esc(tr('result'))}</h4><pre>${esc(step.summary||tr('noResult'))}</pre><p class="lt-form-error" data-step-error hidden></p>`,`${step.conversation_id?`<a class="btn-secondary" href="#chat?conversation=${encodeURIComponent(step.conversation_id)}">${esc(tr('trace'))}</a>`:''}<button type="button" class="btn-secondary" data-step-refresh>${esc(tr('refreshDetail'))}</button>${retry?`<button type="button" class="btn-primary" data-step-retry>${esc(tr('retry'))}</button>`:''}`);
+        dialog.querySelector('[data-step-refresh]').addEventListener('click',async event=>{
+            event.target.disabled=true;
+            try {
+                const data=await api('/'+encodeURIComponent(task.id));
+                if(!dialog.isConnected||!dialog.open||!current(task))return;
+                const scroll=dialog.querySelector('.task-inspector-body').scrollTop;
+                state.task=data.task;renderTask();openStep(data.task,id);
+                document.querySelector('#task-step-inspector .task-inspector-body')?.scrollTo(0,scroll);
+            }catch(error){if(dialog.isConnected){const box=dialog.querySelector('[data-step-error]');box.hidden=false;box.textContent=error.message;}}
+            finally{if(event.target.isConnected)event.target.disabled=false;}
+        });
         dialog.querySelector('[data-step-retry]')?.addEventListener('click',async event=>{
             if(!confirm(tr('retryConfirm')))return;event.target.disabled=true;
             try { const data=await control('retry',{step_id:id,cleanup_confirmed:true},task);if(data&&dialog.isConnected)V.closeDrawer(); }

@@ -86,3 +86,12 @@ test('new parent rows above the viewport preserve the visible reading anchor',as
  const y=await page.locator('#lt-list').evaluate((root,id)=>[...root.children].find(row=>row.dataset.recordId===id).getBoundingClientRect().top,anchor.id);
  assert.ok(Math.abs(y-anchor.y)<2,`reading anchor moved from ${anchor.y} to ${y}`);
 });
+
+
+test('a stale step snapshot can be refreshed explicitly before retry',async t=>{
+ const {page,state,select,refresh}=await fixture(t);await select('a');await page.locator('#lt-steps [data-record-open=s1]').first().click();
+ state.tasks.get('a').revision++;state.tasks.get('a').steps[0].summary='New checked result';await refresh();
+ await page.locator('[data-step-retry]').click();await page.waitForFunction(()=>document.querySelector('[data-step-error]').textContent.includes('revision conflict'));
+ await page.locator('[data-step-refresh]').click();await page.waitForFunction(()=>document.querySelector('.task-inspector-body').textContent.includes('New checked result'));
+ await page.locator('[data-step-retry]').click();await page.locator('#task-step-inspector').waitFor({state:'detached'});assert.equal(state.tasks.get('a').steps[0].status,'pending');
+});

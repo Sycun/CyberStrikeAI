@@ -5376,6 +5376,7 @@
     "guidanceAndEvents": "补充方向与任务动态",
     "loading": "正在加载…",
     "result": "执行结果",
-    "error": "错误信息"
+    "error": "错误信息",
+    "refreshDetail": "刷新详情"
   }
 }
