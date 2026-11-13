@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -128,17 +128,9 @@ func (db *DB) runPassiveCheckpoint(trigger string) {
 	db.logger.Debug("SQLite PASSIVE checkpoint 完成（成功）", fields...)
 }
 
-func init() {
-	sql.Register("cyberstrike-sqlite3", &sqlite3.SQLiteDriver{
-		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-			return conn.RegisterFunc("vulnerability_target_host", vulnerabilityTargetHost, true)
-		},
-	})
-}
-
 // NewDB 创建数据库连接
 func NewDB(dbPath string, logger *zap.Logger) (*DB, error) {
-	db, err := sql.Open("cyberstrike-sqlite3", sqliteOpenDSN(dbPath))
+	db, err := sql.Open("sqlite3", sqliteOpenDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
@@ -219,6 +211,9 @@ func (db *DB) initTables() error {
 	}
 	if err := db.migrateVulnerabilitiesConversationFK(); err != nil {
 		return fmt.Errorf("迁移漏洞会话外键失败: %w", err)
+	}
+	if err := db.backfillVulnerabilityTargets(); err != nil {
+		return fmt.Errorf("回填漏洞目标失败: %w", err)
 	}
 	if err := db.BackfillModelTokenUsageFromProcessDetails(); err != nil {
 		return fmt.Errorf("回填模型Token用量失败: %w", err)
