@@ -50,7 +50,7 @@
     <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-aligned-overview">
     <link rel="stylesheet" href="/static/css/vulnerability-list.css?v=20261113-compact-rows">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
-    <link rel="stylesheet" href="/static/css/long-tasks.css?v=20261113-task-rows-3">
+    <link rel="stylesheet" href="/static/css/long-tasks.css?v=20261114-task-filters">
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -2993,27 +2993,38 @@
                     <div class="page-content" id="long-task-workspace">
                         <div id="lt-error" role="alert" hidden></div>
                         <div class="lt-toolbar">
-                            <input id="lt-search" type="search" data-i18n="longTasks.search" data-i18n-attr="placeholder,aria-label" placeholder="搜索任务" aria-label="搜索任务">
-                            <select id="lt-mode-filter" aria-label="执行方式">
-                                <option value="" data-i18n="longTasks.allModes">全部执行方式</option>
-                                <option value="goal" data-i18n="longTasks.modeGoal">自主规划</option>
-                                <option value="list" data-i18n="longTasks.modeList">按清单执行</option>
-                            </select>
-                            <select id="lt-filter" aria-label="任务状态">
-                                <option value="" data-i18n="longTasks.all">全部状态</option>
-                                <option value="draft" data-i18n="longTasks.status.draft">草稿</option>
-                                <option value="pending" data-i18n="longTasks.status.pending">待执行</option>
-                                <option value="scheduled" data-i18n="longTasks.status.scheduled">等待定时执行</option>
-                                <option value="partial" data-i18n="longTasks.status.partial">部分失败</option>
-                                <option value="failed" data-i18n="longTasks.status.failed">失败</option>
-                                <option value="running" data-i18n="longTasks.status.running">执行中</option>
-                                <option value="paused" data-i18n="longTasks.status.paused">已暂停</option>
-                                <option value="waiting_input" data-i18n="longTasks.status.waiting_input">待答复</option>
-                                <option value="blocked" data-i18n="longTasks.status.blocked">受阻</option>
-                                <option value="budget_exhausted" data-i18n="longTasks.status.budget_exhausted">预算耗尽</option>
-                                <option value="completed" data-i18n="longTasks.status.completed">已完成</option>
-                                <option value="cancelled" data-i18n="longTasks.status.cancelled">已取消</option>
-                            </select>
+                            <div class="lt-toolbar-search">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+                                <input id="lt-search" type="search" data-i18n="longTasks.search" data-i18n-attr="placeholder,aria-label" placeholder="搜索任务" aria-label="搜索任务">
+                            </div>
+                            <div class="lt-toolbar-filters">
+                                <div class="lt-filter-field">
+                                    <select id="lt-mode-filter" aria-label="执行方式">
+                                        <option value="" data-i18n="longTasks.allModes">全部执行方式</option>
+                                        <option value="goal" data-i18n="longTasks.modeGoal">自主规划</option>
+                                        <option value="list" data-i18n="longTasks.modeList">按清单执行</option>
+                                    </select>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                                <div class="lt-filter-field">
+                                    <select id="lt-filter" aria-label="任务状态">
+                                        <option value="" data-i18n="longTasks.all">全部状态</option>
+                                        <option value="draft" data-i18n="longTasks.status.draft">草稿</option>
+                                        <option value="pending" data-i18n="longTasks.status.pending">待执行</option>
+                                        <option value="scheduled" data-i18n="longTasks.status.scheduled">等待定时执行</option>
+                                        <option value="partial" data-i18n="longTasks.status.partial">部分失败</option>
+                                        <option value="failed" data-i18n="longTasks.status.failed">失败</option>
+                                        <option value="running" data-i18n="longTasks.status.running">执行中</option>
+                                        <option value="paused" data-i18n="longTasks.status.paused">已暂停</option>
+                                        <option value="waiting_input" data-i18n="longTasks.status.waiting_input">待答复</option>
+                                        <option value="blocked" data-i18n="longTasks.status.blocked">受阻</option>
+                                        <option value="budget_exhausted" data-i18n="longTasks.status.budget_exhausted">预算耗尽</option>
+                                        <option value="completed" data-i18n="longTasks.status.completed">已完成</option>
+                                        <option value="cancelled" data-i18n="longTasks.status.cancelled">已取消</option>
+                                    </select>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                                </div>
+                            </div>
                         </div>
                         <div id="lt-empty-state" class="lt-empty-state" hidden>
                             <span class="lt-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h5M8 16h3"/></svg></span>
