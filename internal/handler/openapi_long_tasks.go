@@ -24,6 +24,22 @@ func addLongTaskSpec(spec map[string]interface{}) {
 		return op
 	}
 	id := map[string]interface{}{"name": "id", "in": "path", "required": true, "schema": stringSchema}
+	queueID := map[string]interface{}{"name": "queueId", "in": "path", "required": true, "schema": stringSchema}
+	taskID := map[string]interface{}{"name": "taskId", "in": "path", "required": true, "schema": stringSchema}
+	taskPath := paths["/api/batch-tasks/{queueId}/tasks/{taskId}"]
+	if taskPath == nil {
+		taskPath = map[string]interface{}{}
+		paths["/api/batch-tasks/{queueId}/tasks/{taskId}"] = taskPath
+	}
+	taskPath.(map[string]interface{})["get"] = operation("读取清单内单条任务的完整内容及结果", nil, []interface{}{queueID, taskID})
+
+	if path, ok := paths["/api/batch-tasks/{queueId}"].(map[string]interface{}); ok {
+		if get, ok := path["get"].(map[string]interface{}); ok {
+			params, _ := get["parameters"].([]map[string]interface{})
+			get["parameters"] = append(params, map[string]interface{}{"name": "task_page", "in": "query", "schema": map[string]interface{}{"type": "integer", "minimum": 1}}, map[string]interface{}{"name": "task_page_size", "in": "query", "schema": map[string]interface{}{"type": "integer", "default": 20, "minimum": 1, "maximum": 100}})
+			get["description"] = "不带分页参数时保留完整队列响应；带 task_page 时返回当前页预览、task_stats 全队列统计和 task_pagination。完整结果通过单条任务接口读取。"
+		}
+	}
 	paths["/api/tasks"] = map[string]interface{}{"get": operation("统一任务列表：按 mode、status、q 筛选后统一分页", nil, nil)}
 	paths["/api/long-tasks"] = map[string]interface{}{"get": operation("分页查询目标任务；支持 status、q、limit、offset", nil, nil), "post": operation("创建目标任务草稿，不自动执行", create, nil)}
 	paths["/api/long-tasks"].(map[string]interface{})["post"].(map[string]interface{})["responses"].(map[string]interface{})["201"] = map[string]interface{}{"description": "草稿已保存"}

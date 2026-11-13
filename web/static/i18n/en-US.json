@@ -5375,6 +5375,19 @@
     "defaultModel": "Default model",
     "untitled": "Untitled task",
     "addStep": "Add step",
-    "rerunAll": "Rerun all"
+    "rerunAll": "Rerun all",
+    "viewDetail": "View details",
+    "firstPage": "First",
+    "lastPage": "Last",
+    "pageSummary": "{{start}}–{{end}} of {{total}}",
+    "perPage": "{{count}} per page",
+    "pageNumber": "{{page}} / {{pages}}",
+    "stepDetail": "Step details",
+    "taskSettings": "Task settings",
+    "stepList": "Steps",
+    "guidanceAndEvents": "Guidance and activity",
+    "loading": "Loading…",
+    "result": "Execution result",
+    "error": "Error"
   }
 }

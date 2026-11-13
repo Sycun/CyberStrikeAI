@@ -5363,6 +5363,19 @@
     "defaultModel": "默认模型",
     "untitled": "未命名任务",
     "addStep": "添加子任务",
-    "rerunAll": "重跑全部"
+    "rerunAll": "重跑全部",
+    "viewDetail": "查看详情",
+    "firstPage": "首页",
+    "lastPage": "末页",
+    "pageSummary": "{{start}}–{{end}} / {{total}} 条",
+    "perPage": "每页 {{count}} 条",
+    "pageNumber": "{{page}} / {{pages}}",
+    "stepDetail": "子任务详情",
+    "taskSettings": "任务设置",
+    "stepList": "子任务列表",
+    "guidanceAndEvents": "补充方向与任务动态",
+    "loading": "正在加载…",
+    "result": "执行结果",
+    "error": "错误信息"
   }
 }

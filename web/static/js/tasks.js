@@ -45,9 +45,9 @@ function getBatchQueueStatusPresentation(queue) {
     const nextStr = queue.nextRunAt ? new Date(queue.nextRunAt).toLocaleString() : '';
     const empty = { sublabel: null, progressNote: null, callout: null };
 
-    const failedCount = (queue.tasks || []).filter(task => task.status === 'failed').length;
+    const failedCount = queue.taskStats ? queue.taskStats.failed : (queue.tasks || []).filter(task => task.status === 'failed').length;
     if (queue.status === 'completed' && failedCount > 0) {
-        const allFailed = failedCount === (queue.tasks || []).length;
+        const allFailed = failedCount === (queue.taskStats ? queue.taskStats.total : (queue.tasks || []).length);
         return {
             text: allFailed ? _t('tasks.statusFailed') : _tPlain('tasks.statusEndedWithFailures', { count: failedCount }),
             class: 'batch-queue-status-failed',
@@ -90,7 +90,7 @@ function getBatchQueueStatusPresentation(queue) {
 function batchQueueAllowsSubtaskMutation(queue) {
     if (!queue) return false;
     if (queue.status === 'running') return false;
-    const hasRunningSubtask = Array.isArray(queue.tasks) && queue.tasks.some(t => t && t.status === 'running');
+    const hasRunningSubtask = queue.taskStats ? queue.taskStats.running > 0 : Array.isArray(queue.tasks) && queue.tasks.some(t => t && t.status === 'running');
     if (hasRunningSubtask) return false;
     return queue.status === 'pending' || queue.status === 'paused' || queue.status === 'completed' || queue.status === 'cancelled';
 }
@@ -98,6 +98,7 @@ function batchQueueAllowsSubtaskMutation(queue) {
 /** 是否允许对指定子任务发起单条执行（与后端 queueAllowsSingleTaskRunLocked 对齐） */
 function batchQueueCanRunSingleTask(queue, task) {
     if (!queue || !task) return false;
+    if (queue.taskStats && queue.taskStats.running > 0) return false;
     if (task.status === 'running') return false;
     if (queue.status === 'running') return false;
     return queue.status === 'pending' || queue.status === 'paused' || queue.status === 'completed' || queue.status === 'cancelled';
@@ -812,6 +813,7 @@ function initTasksPage() {
 // 清理定时器（页面切换时调用）
 function cleanupTasksPage() {
     if (typeof cleanupLongTasks === 'function') cleanupLongTasks();
+    if (window.TaskListView) window.TaskListView.closeDrawer();
     closeBatchImportModal();
     closeAddBatchTaskModal();
     closeBatchQueueDetailModal();
@@ -1799,7 +1801,7 @@ async function showBatchQueueDetail(queueId, options = {}) {
         if (!modal || !content) return;
         const holder = document.getElementById('lt-batch-detail');
         if (options.inline && holder) {
-            holder.appendChild(modal); holder.hidden = false;
+            if (modal.parentElement !== holder) holder.appendChild(modal); holder.hidden = false;
             modal.classList.remove('modal'); modal.classList.add('lt-inline-queue');
         }
 
@@ -1814,11 +1816,12 @@ async function showBatchQueueDetail(queueId, options = {}) {
             if (content) content.innerHTML = '<p style="color:#64748b;margin:0;">…</p>';
             openAppModal('batch-queue-detail-modal', { focus: false });
         }
+        if (options.inline) modal.style.display = 'flex';
 
         try {
         // 加载角色列表（如果还未加载）
         let loadedRoles = [];
-        if (typeof loadRoles === 'function') {
+        if (!options.inline && typeof loadRoles === 'function') {
             try {
                 loadedRoles = await loadRoles();
             } catch (error) {
@@ -1826,7 +1829,9 @@ async function showBatchQueueDetail(queueId, options = {}) {
             }
         }
         
-        const response = await apiFetch(`/api/batch-tasks/${queueId}`);
+        const paged = options.inline && window.TaskChecklistView;
+        const page = options.taskPage || (paged ? window.TaskChecklistView.page(queueId) : 1);
+        const response = await apiFetch(`/api/batch-tasks/${queueId}` + (paged ? `?task_page=${page}&task_page_size=20` : ''));
         if (!response.ok) {
             throw new Error(_t('tasks.getQueueDetailFailed'));
         }
@@ -1834,6 +1839,7 @@ async function showBatchQueueDetail(queueId, options = {}) {
         const result = await response.json();
         if (version !== batchDetailVersion || !isAppModalOpen('batch-queue-detail-modal')) return;
         const queue = result.queue;
+        if (result.task_stats) queue.taskStats = result.task_stats;
         batchQueuesState.currentQueueId = queueId;
         const pres = getBatchQueueStatusPresentation(queue);
         const allowSubtaskMutation = batchQueueAllowsSubtaskMutation(queue);
@@ -1880,6 +1886,11 @@ async function showBatchQueueDetail(queueId, options = {}) {
             if (pauseBtn) pauseBtn.textContent = _t('longTasks.pause');
             const rerun = document.getElementById('batch-queue-rerun-btn');
             if (rerun) rerun.textContent = _t('longTasks.rerunAll');
+        }
+
+        if (options.inline && window.TaskChecklistView) {
+            window.TaskChecklistView.render(queue, result.task_pagination);
+            stopBatchQueueRefresh(); return;
         }
 
         // 任务状态映射
@@ -2026,6 +2037,7 @@ async function showBatchQueueDetail(queueId, options = {}) {
 
 function refreshBatchQueueDetailIfCurrent(queueId) {
     if (batchQueuesState.currentQueueId === queueId && isAppModalOpen('batch-queue-detail-modal')) {
+        if (window.TaskChecklistView) window.TaskChecklistView.resetEditor(queueId);
         return showBatchQueueDetail(queueId, { inline: true });
     }
 }

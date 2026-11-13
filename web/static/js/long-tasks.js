@@ -1,7 +1,8 @@
 /* Durable objectives in the existing task-management page. */
 (function () {
     'use strict';
-    const state = { active: false, tasks: [], selected: null, selectedMode: 'goal', task: null, events: [], cursor: 0, offset: 0, more: false, epoch: 0, loading: false, timer: null, options: null, controller: null, optionsRequest: null, viewVersion: 0, searchTimer: null, mutating: new Set(), errorKind: null };
+    const state = { active: false, tasks: [], selected: null, selectedMode: 'goal', task: null, events: [], cursor: 0, offset: 0, total: 0, stepPages: new Map(), more: false, epoch: 0, loading: false, timer: null, options: null, controller: null, optionsRequest: null, viewVersion: 0, searchTimer: null, mutating: new Set(), errorKind: null };
+    const V = window.TaskListView;
     const el = id => document.getElementById(id);
     const tr = (key, args) => typeof window.t === 'function' ? window.t('longTasks.' + key, args) : key;
     const esc = value => String(value == null ? '' : value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -19,19 +20,13 @@
     }
     function error(message, kind = 'action') { state.errorKind = message ? kind : null; const box = el('lt-error'); if (box) { box.textContent = message || ''; box.hidden = !message; } }
     function renderList() {
-        el('lt-list').innerHTML = state.tasks.length ? state.tasks.map(task => {
+        V.renderRows(el('lt-list'), state.tasks.map(task => {
             const mode = task.mode || 'goal';
-            const selected = state.selected === task.id && state.selectedMode === mode;
             const progress = Number.isInteger(task.total_steps) ? tr('listProgress', { done: task.completed_steps, total: task.total_steps }) : '';
             const schedule = task.schedule_mode === 'cron' ? ' · ' + tr('scheduledLabel') : '';
-            return `<button class="lt-card ${selected ? 'is-selected' : ''}" data-lt-action="select" data-id="${esc(task.id)}" data-mode="${mode}" aria-pressed="${selected}">
-                <span class="lt-card-title">${esc(task.name)}</span>${badge(task.status)}
-                <span class="lt-card-meta">${esc(tr(mode === 'list' ? 'modeList' : 'modeGoal'))}${esc(schedule)}${progress ? ' · ' + esc(progress) : ''}</span>
-                ${task.summary ? `<span class="lt-card-summary">${esc(task.summary)}</span>` : ''}
-                <time>${esc(new Date(task.updated_at).toLocaleString())}</time></button>`;
-        }).join('') : `<div class="lt-empty">${esc(tr('noMatches'))}</div>`;
-        el('lt-page').textContent = String(state.offset / 30 + 1);
-        el('lt-prev').disabled = state.offset === 0; el('lt-next').disabled = !state.more;
+            return {id:mode+':'+task.id,title:task.name,status:task.status,summary:tr(mode==='list'?'modeList':'modeGoal')+schedule+(progress?' · '+progress:''),selected:state.selected===task.id&&state.selectedMode===mode};
+        }), {navigation:true,key:'parents:'+state.offset,open:key=>{const i=key.indexOf(':');select(key.slice(i+1),key.slice(0,i));}});
+        V.renderPager(el('lt-pagination'),{page:state.offset/V.pageSize+1,total:state.total,size:V.pageSize,change:page=>{state.offset=(page-1)*V.pageSize;invalidate();refresh();}});
         const empty = !state.tasks.length && !state.selected;
         el('lt-board').hidden = empty; el('lt-empty-state').hidden = !empty;
         const filtered = el('lt-search').value || el('lt-filter').value || el('lt-mode-filter').value;
@@ -39,13 +34,14 @@
         el('lt-empty-description').textContent = tr(filtered ? 'changeFilters' : 'empty');
         if (typeof window.applyRBACToUI === 'function') window.applyRBACToUI(el('lt-empty-state'));
     }
-    function renderTask() {
+    function renderTask(resetSteps = false) {
+        const restore = V.captureScroll(el('lt-detail'));
         const t = state.selectedMode === 'goal' ? state.task : null;
         el('lt-empty-detail').hidden = !!state.selected; el('lt-detail').hidden = !t;
         el('lt-batch-detail').hidden = state.selectedMode !== 'list' || !state.selected;
         if (!t) { el('lt-steps').replaceChildren(); el('lt-steps').dataset.taskId = ''; return; }
-        el('lt-name').textContent = t.name;
-        el('lt-state').innerHTML = badge(t.status);
+        el('lt-name').textContent = t.name; el('lt-name').title = t.name;
+        V.setHTML(el('lt-state'), badge(t.status));
         const done = t.steps.filter(s => s.status === 'completed').length;
         const total = t.steps.filter(s => s.status !== 'retired').length;
         el('lt-progress').textContent = tr('progress', { done, total, rounds: t.rounds, max: t.max_rounds, minutes: Math.ceil(t.remaining_seconds / 60) });
@@ -67,19 +63,34 @@
         }
         actions.push(button('report', 'report'));
         if (writable('tasks:delete') && !active(t)) actions.push(button('delete', 'delete'));
-        el('lt-actions').innerHTML = actions.join('');
+        V.setHTML(el('lt-actions'), actions.join(''));
         el('lt-guidance-form').hidden = terminal || !writable();
         el('lt-guidance-send').textContent = tr(t.question ? 'answerResume' : 'sendGuidance');
         el('lt-guidance-send').disabled = state.mutating.has(t.id) || ['pausing', 'cancelling'].includes(t.status) || (!!t.question && (active(t) || !canExecute()));
-        const stepsRoot = el('lt-steps');
-        const expanded = new Set(stepsRoot.dataset.taskId === t.id ? [...stepsRoot.querySelectorAll('[data-step-id] details[open]')].map(detail => detail.closest('[data-step-id]').dataset.stepId) : []);
-        stepsRoot.dataset.taskId = t.id;
-        el('lt-steps').innerHTML = t.steps.length ? t.steps.map(s => `<article class="lt-step" data-step-id="${esc(s.id)}"><header><strong>${esc(s.id)} · ${esc(s.title)}</strong>${badge(s.status)}</header><p class="lt-dependencies">${esc(tr('depends'))}: ${(s.depends_on || []).length ? s.depends_on.map(esc).join(' → ') : esc(tr('independent'))}</p><details><summary>${esc(tr('instruction'))}</summary><p>${esc(s.instruction)}</p></details><p class="lt-step-result">${esc(s.summary || tr('noResult'))}</p><footer>${s.conversation_id ? `<a class="btn-secondary" href="#chat?conversation=${encodeURIComponent(s.conversation_id)}">${esc(tr('trace'))}</a>` : ''}${writable() && !terminal && !active(t) && ['failed', 'blocked', 'interrupted', 'cleanup_unconfirmed'].includes(s.status) ? button('retry', 'retry', `data-step="${esc(s.id)}"`) : ''}<small>${esc(tr('attempts', { count: s.attempts || 0 }))}</small></footer></article>`).join('') : `<div class="lt-empty">${esc(tr('noPlan'))}</div>`;
-        stepsRoot.querySelectorAll('[data-step-id] details').forEach(detail => { detail.open = expanded.has(detail.closest('[data-step-id]').dataset.stepId); });
+        if (t.question && el('lt-support').dataset.question !== t.question) el('lt-support').open = true;
+        el('lt-support').dataset.question = t.question || '';
+        const page=Math.min(state.stepPages.get(t.id)||1,Math.max(1,Math.ceil(t.steps.length/V.pageSize)));
+        state.stepPages.set(t.id,page);
+        const offset=(page-1)*V.pageSize;
+        V.renderRows(el('lt-steps'),t.steps.slice(offset,offset+V.pageSize).map((step,index)=>({id:step.id,index:offset+index+1,title:step.title,status:step.status,summary:step.summary||step.instruction})),{key:t.id+':'+page,empty:tr('noPlan'),open:id=>openStep(t,id)});
+        V.renderPager(el('lt-step-pagination'),{page,total:t.steps.length,size:V.pageSize,change:next=>{state.stepPages.set(t.id,next);renderTask(true);}});
         el('lt-guidance-history').textContent = (t.guidance || []).join('\n\n');
+        restore(); if(resetSteps)el('lt-steps').scrollTop=0;
+    }
+    function openStep(task,id) {
+        const step=task.steps.find(item=>item.id===id);if(!step)return;
+        const terminal=['completed','cancelled'].includes(task.status);
+        const retry=writable()&&!terminal&&!active(task)&&['failed','blocked','interrupted','cleanup_unconfirmed'].includes(step.status);
+        const dialog=V.openDrawer(tr('stepDetail'),`${badge(step.status)}<h4>${esc(tr('taskContent'))}</h4><p>${esc(step.title)}</p><h4>${esc(tr('instruction'))}</h4><p>${esc(step.instruction)}</p><h4>${esc(tr('depends'))}</h4><p>${esc((step.depends_on||[]).join(', ')||tr('independent'))}</p><h4>${esc(tr('result'))}</h4><pre>${esc(step.summary||tr('noResult'))}</pre><p class="lt-form-error" data-step-error hidden></p>`,`${step.conversation_id?`<a class="btn-secondary" href="#chat?conversation=${encodeURIComponent(step.conversation_id)}">${esc(tr('trace'))}</a>`:''}${retry?`<button type="button" class="btn-primary" data-step-retry>${esc(tr('retry'))}</button>`:''}`);
+        dialog.querySelector('[data-step-retry]')?.addEventListener('click',async event=>{
+            if(!confirm(tr('retryConfirm')))return;event.target.disabled=true;
+            try { const data=await control('retry',{step_id:id,cleanup_confirmed:true},task);if(data&&dialog.isConnected)V.closeDrawer(); }
+            catch(error){if(dialog.isConnected){const box=dialog.querySelector('[data-step-error]');box.hidden=false;box.textContent=error.message;}}
+            finally{if(event.target.isConnected)event.target.disabled=false;}
+        });
     }
     function renderEvents() {
-        el('lt-events').innerHTML = state.events.slice(-200).reverse().map(e => `<li><time>${esc(new Date(e.created_at).toLocaleTimeString())}</time><span>${esc(e.step_id ? '[' + e.step_id + '] ' : '')}${esc(e.message || e.kind)}</span></li>`).join('') || `<li>${esc(tr('noEvents'))}</li>`;
+        V.setHTML(el('lt-events'), state.events.slice(-200).reverse().map(e => `<li><time>${esc(new Date(e.created_at).toLocaleTimeString())}</time><span>${esc(e.step_id ? '[' + e.step_id + '] ' : '')}${esc(e.message || e.kind)}</span></li>`).join('') || `<li>${esc(tr('noEvents'))}</li>`);
     }
     async function refresh() {
         if (!state.active || state.loading) return;
@@ -87,10 +98,10 @@
         const epoch = state.epoch, selected = state.selected, mode = state.selectedMode;
         const controller = new AbortController(); state.controller = controller;
         try {
-            const params = new URLSearchParams({ limit: 30, offset: state.offset, mode: el('lt-mode-filter').value, status: el('lt-filter').value, q: el('lt-search').value });
+            const params = new URLSearchParams({ limit: V.pageSize, offset: state.offset, mode: el('lt-mode-filter').value, status: el('lt-filter').value, q: el('lt-search').value });
             const list = await api('/api/tasks?' + params, { signal: controller.signal });
             if (epoch !== state.epoch || !state.active) return;
-            state.tasks = list.tasks; state.more = list.has_more; renderList();
+            state.tasks = list.tasks; state.more = list.has_more; state.total = list.total ?? list.tasks.length; state.offset = list.offset ?? state.offset; renderList();
             if (selected && mode === 'list') {
                 if (typeof window.showBatchQueueDetail === 'function') await window.showBatchQueueDetail(selected, { inline: true });
             } else if (selected) {
@@ -107,7 +118,7 @@
     }
     function invalidate() { state.epoch++; if (state.controller) state.controller.abort(); state.controller = null; state.loading = false; }
     function select(id, mode = 'goal') {
-        error(''); invalidate(); if (typeof window.closeBatchQueueDetailModal === 'function') window.closeBatchQueueDetailModal();
+        V.closeDrawer(); error(''); invalidate(); if (typeof window.closeBatchQueueDetailModal === 'function') window.closeBatchQueueDetailModal();
         state.selectedMode = mode; state.selected = id; state.task = null; state.events = []; state.cursor = 0;
         el('lt-guidance-input').value = ''; renderTask(); renderEvents(); renderList(); refresh();
     }
@@ -129,7 +140,7 @@
             if (action === 'select') return select(target.dataset.id, target.dataset.mode || 'goal');
             if (action === 'refresh') { invalidate(); return refresh(); }
             if (action === 'new') return openCreate();
-            if (action === 'previous' || action === 'next') { state.offset = Math.max(0, state.offset + (action === 'next' ? 30 : -30)); invalidate(); return refresh(); }
+            if (action === 'guidance-panel') { el('lt-support').open=true;el('lt-guidance-input').focus({preventScroll:true});return; }
             if (!task || (mutationActions.has(action) && state.mutating.has(task.id))) return;
             if (action === 'delete') {
                 if (!window.confirm(tr('deleteConfirm'))) return;

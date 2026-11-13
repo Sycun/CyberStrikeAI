@@ -5388,6 +5388,19 @@
     "defaultModel": "Модель по умолчанию",
     "untitled": "Задача без названия",
     "addStep": "Добавить шаг",
-    "rerunAll": "Повторить всё"
+    "rerunAll": "Повторить всё",
+    "viewDetail": "Подробнее",
+    "firstPage": "Первая",
+    "lastPage": "Последняя",
+    "pageSummary": "{{start}}–{{end}} из {{total}}",
+    "perPage": "По {{count}} на странице",
+    "pageNumber": "{{page}} / {{pages}}",
+    "stepDetail": "Сведения о шаге",
+    "taskSettings": "Настройки задачи",
+    "stepList": "Шаги",
+    "guidanceAndEvents": "Указания и события",
+    "loading": "Загрузка…",
+    "result": "Результат выполнения",
+    "error": "Ошибка"
   }
 }

@@ -6,7 +6,7 @@ const taskSource = fs.readFileSync('web/static/js/tasks.js','utf8');
 function concurrencyHarness(value) {
  let calls = 0, message, focused = false;
  const input = {value, focus() { focused = true; }};
- const ctx = {_bqInlineSaving:false, batchQueuesState:{currentQueueId:'q'},
+ const ctx = {window:{},_bqInlineSaving:false, batchQueuesState:{currentQueueId:'q'},
   document:{getElementById:() => input}, _t:x => x, alert:x => {message=x;},
   apiFetch:async () => {calls++;return {ok:true,json:async () => ({queue:{title:'title'}})};},
   showBatchQueueDetail() {},isAppModalOpen:() => true,refreshBatchQueues() {},console};

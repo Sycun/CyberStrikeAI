@@ -7,8 +7,8 @@ const { fixture, goal } = require('./helpers/task-ui-fixture.cjs');
 test('goal task actions: retry, budget, resume, pause, answer, report, cancel and delete', async t => {
     const { page, state, select, refresh } = await fixture(t);
     await select('a');
-    await page.locator('[data-lt-action=retry]').click();
-    await page.locator('.lt-step .lt-status-pending').waitFor();
+    await page.locator('#lt-steps [data-record-open]').first().click(); await page.locator('[data-step-retry]').click();
+    await page.locator('#lt-steps .lt-status-pending').waitFor();
     assert.equal(state.tasks.get('a').steps[0].status, 'pending');
     await page.locator('[data-lt-action=budget]').click();
     await page.locator('#lt-modal [name=max_rounds]').fill('60'); await page.locator('#lt-modal [name=minutes]').fill('90');
@@ -26,19 +26,21 @@ test('goal task actions: retry, budget, resume, pause, answer, report, cancel an
     assert.deepEqual(state.pageErrors, []);
 });
 
-test('search responds while typing and expanded step instructions survive refresh', async t => {
+test('search responds while typing and the step inspector survives refresh', async t => {
     const { page, state, select, refresh } = await fixture(t);
-    await select('a'); await page.locator('.lt-step details summary').click(); await refresh();
-    assert.equal(await page.locator('.lt-step details').evaluate(e => e.open), true);
+    await select('a'); await page.locator('#lt-steps [data-record-open]').first().click(); await refresh();
+    assert.equal(await page.locator('#task-step-inspector').isVisible(), true);
+    await page.locator('[data-inspector-close]').click();
     await page.locator('#lt-search').fill('目标 b');
-    await page.waitForFunction(() => document.querySelectorAll('.lt-card').length === 1 && document.querySelector('.lt-card').dataset.id === 'b');
+    await page.waitForFunction(() => document.querySelectorAll('#lt-list .task-record-row').length === 1 && document.querySelector('#lt-list .task-record-row').dataset.recordId === 'goal:b');
     assert.ok(state.requests.some(r => r.query.q === '目标 b'));
 });
 
 test('cancelled tasks never offer a retry that the API rejects', async t => {
     const { page, state, select, refresh } = await fixture(t);
     await select('a'); state.tasks.get('a').status = 'cancelled'; await refresh();
-    assert.equal(await page.locator('[data-lt-action=retry]').count(), 0);
+    await page.locator('#lt-steps [data-record-open]').first().click();
+    assert.equal(await page.locator('[data-step-retry]').count(), 0);
 });
 
 test('a late creation-options response does not open a modal after leaving the page', async t => {
@@ -66,10 +68,10 @@ test('deleting A while selecting B preserves B and report filenames stay attache
 test('goal paging, filters, refresh toggle, modal close and execution links work', async t => {
     const { page, state, select, refresh } = await fixture(t);
     for (let i = 0; i < 34; i++) state.tasks.set('extra-' + i, goal('extra-' + i));
-    await refresh(); await page.locator('#lt-next').click(); await page.waitForFunction(() => document.getElementById('lt-page').textContent === '2');
-    await page.locator('#lt-prev').click(); await page.waitForFunction(() => document.getElementById('lt-page').textContent === '1');
-    await page.locator('#lt-filter').selectOption('paused'); await page.waitForFunction(() => document.querySelectorAll('.lt-card').length === 1);
-    await page.locator('#lt-filter').selectOption(''); await page.waitForFunction(() => document.querySelectorAll('.lt-card').length === 30);
+    await refresh(); await page.locator('#lt-pagination [data-page-nav=next]').click(); await page.waitForFunction(() => document.querySelector('#lt-pagination .task-page-controls span').textContent.startsWith('2 /'));
+    await page.locator('#lt-pagination [data-page-nav=previous]').click(); await page.waitForFunction(() => document.querySelector('#lt-pagination .task-page-controls span').textContent.startsWith('1 /'));
+    await page.locator('#lt-filter').selectOption('paused'); await page.waitForFunction(() => document.querySelectorAll('#lt-list .task-record-row').length === 1);
+    await page.locator('#lt-filter').selectOption(''); await page.waitForFunction(() => document.querySelectorAll('#lt-list .task-record-row').length === 20);
     await page.locator('#task-new-goal').click(); await page.locator('#lt-modal').waitFor(); await page.locator('#lt-modal [data-close]').last().click(); await page.waitForFunction(() => !document.getElementById('lt-modal'));
     await page.locator('#task-new-goal').click(); await page.locator('#lt-modal').waitFor(); await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('lt-modal'));
     assert.equal(state.requests.filter(r => r.method === 'POST').length, 0);
@@ -77,7 +79,7 @@ test('goal paging, filters, refresh toggle, modal close and execution links work
     await page.waitForTimeout(4200); assert.ok(state.requests.filter(r => r.path === '/api/tasks').length > count);
     await page.locator('#tasks-auto-refresh').uncheck(); await refresh(); const stopped = state.requests.length;
     await page.waitForTimeout(4200); assert.equal(state.requests.length, stopped);
-    await select('a'); await page.locator('.lt-step a').click(); await page.waitForFunction(() => window.visitedConversation === 'conversation-a');
+    await select('a'); await page.locator('#lt-steps [data-record-open]').first().click(); await page.locator('#task-step-inspector a').click(); await page.waitForFunction(() => window.visitedConversation === 'conversation-a');
     assert.deepEqual(state.pageErrors, []);
 });
 
@@ -118,25 +120,28 @@ test('batch queue controls: create, close, metadata, add/edit/delete steps, sing
     await page.locator('[onclick="createBatchQueue()"]').click();
     await page.locator('[data-bq-detail-for="new-queue"]').waitFor();
     assert.equal(state.queues.get('new-queue').executeNow, false);
-    await page.locator('[data-lt-action=select][data-id=a][data-mode=goal]').click();
-    await page.locator('.lt-card[data-id=q1][data-mode=list]').click(); await page.locator('[data-bq-detail-for=q1]').waitFor();
+    await page.locator('[data-record-id="goal:a"] [data-record-open]').click();
+    await page.locator('[data-record-id="list:q1"] [data-record-open]').click(); await page.locator('[data-bq-detail-for=q1]').waitFor();
+    await page.locator('#bq-settings > summary').click();
     await page.locator('#bq-title-val .bq-inline-editable').click(); await page.locator('#bq-edit-title').fill('Renamed queue'); await page.locator('#bq-edit-title').press('Enter');
     await page.waitForFunction(() => document.getElementById('bq-title-val').textContent === 'Renamed queue'); assert.equal(state.queues.get('q1').title, 'Renamed queue');
     await page.locator('#bq-concurrency-val .bq-inline-editable').click(); await page.locator('#bq-edit-concurrency').fill('2'); await page.locator('#bq-edit-concurrency').press('Enter');
     await page.waitForFunction(() => !document.getElementById('bq-edit-concurrency')); assert.equal(state.queues.get('q1').concurrency, 2);
     await page.locator('#batch-queue-add-task-btn').click(); await page.locator('#add-task-message').fill('Added fixture step'); await page.locator('[onclick="saveAddBatchTask()"]').click();
-    await page.locator('.batch-task-item[data-task-id=added]').waitFor();
-    await page.locator('.batch-task-item[data-task-id=added] .batch-task-edit-btn').click(); await page.locator('#bq-task-edit-added').fill('Edited fixture step'); await page.locator('#bq-task-edit-added').press('Tab');
-    await page.waitForFunction(() => document.querySelector('[data-task-id=added] .batch-task-message').textContent === 'Edited fixture step');
-    await page.locator('.batch-task-item[data-task-id=added] .batch-task-delete-btn').click(); await page.locator('.batch-task-item[data-task-id=added]').waitFor({ state: 'detached' });
-    await page.locator('.batch-task-item[data-task-id=b1] .batch-task-run-btn').click(); await page.waitForFunction(() => document.querySelector('[data-task-id=b1] .batch-task-status').textContent === '已完成');
+    await page.locator('#bq-task-rows [data-record-id=added]').waitFor();
+    await page.locator('#bq-task-rows [data-record-id=added] [data-record-open]').first().click();
+    await page.locator('[data-checklist-action=edit]').click();await page.locator('[data-task-editor] textarea').fill('Edited fixture step');await page.locator('[data-task-editor] [type=submit]').click();
+    await page.waitForFunction(() => document.querySelector('[data-task-overview]').textContent.includes('Edited fixture step'));
+    await page.locator('[data-checklist-action=delete]').click();await page.locator('#bq-task-rows [data-record-id=added]').waitFor({state:'detached'});
+    await page.locator('#bq-task-rows [data-record-id=b1] [data-record-open]').first().click();await page.locator('[data-checklist-action=run]').click();
+    await page.waitForFunction(() => document.querySelector('#bq-task-rows [data-record-id=b1] .lt-status').textContent === '已完成');await page.locator('[data-inspector-close]').click();
     await page.locator('#batch-queue-start-btn').click(); await page.locator('#batch-queue-pause-btn').waitFor({ state: 'visible' }); assert.equal(state.queues.get('q1').status, 'running');
     await page.locator('#batch-queue-pause-btn').click(); await page.locator('#batch-queue-start-btn').waitFor({ state: 'visible' }); assert.equal(state.queues.get('q1').status, 'paused');
     await page.locator('#batch-queue-start-btn').click(); await page.locator('#batch-queue-pause-btn').waitFor({ state: 'visible' });
     state.queues.get('q1').status = 'completed'; await page.evaluate(() => showBatchQueueDetail('q1')); await page.locator('#batch-queue-rerun-btn').click(); await page.locator('#batch-queue-pause-btn').waitFor({ state: 'visible' });
     await page.locator('#batch-queue-pause-btn').click(); await page.locator('#batch-queue-delete-btn').waitFor({ state: 'visible' }); await page.locator('#batch-queue-delete-btn').click();
     await page.locator('#batch-queue-detail-modal').waitFor({ state: 'hidden' }); assert.equal(state.queues.has('q1'), false);
-    await page.locator('.lt-card[data-id=new-queue][data-mode=list]').click(); await page.locator('[data-bq-detail-for=new-queue]').waitFor(); await page.locator('#batch-queue-delete-btn').click(); await page.locator('.lt-card[data-id=new-queue][data-mode=list]').waitFor({ state: 'detached' });
+    await page.locator('[data-record-id="list:new-queue"] [data-record-open]').click(); await page.locator('[data-bq-detail-for=new-queue]').waitFor(); await page.locator('#batch-queue-delete-btn').click(); await page.locator('[data-record-id="list:new-queue"] [data-record-open]').waitFor({ state: 'detached' });
     assert.deepEqual(state.pageErrors, []);
 });
 
@@ -148,7 +153,7 @@ test('batch create and add-step clicks cannot submit twice on a slow connection'
     await page.locator('[data-bq-detail-for="new-queue"]').waitFor();
     assert.equal(state.requests.filter(r => r.method === 'POST' && r.path === '/api/batch-tasks').length, 1);
     await page.locator('#batch-queue-add-task-btn').click(); await page.locator('#add-task-message').fill('One new step');
-    await page.locator('[onclick="saveAddBatchTask()"]').dblclick(); await page.locator('[data-task-id=added]').waitFor();
+    await page.locator('[onclick="saveAddBatchTask()"]').dblclick(); await page.locator('#bq-task-rows [data-record-id=added]').waitFor();
     assert.equal(state.requests.filter(r => r.method === 'POST' && r.path.endsWith('/new-queue/tasks')).length, 1);
 });
 
@@ -158,10 +163,10 @@ test('late batch detail and creation lookups do not take over a newer selection 
     await page.evaluate(() => refreshBatchQueues());
     let release; const gate = new Promise(resolve => { release = resolve; });
     state.hook = async req => { if (req.path === '/api/batch-tasks/q1' && req.method === 'GET') await gate; };
-    await page.locator('.lt-card[data-id=q1][data-mode=list]').click(); await page.locator('[data-lt-action=select][data-id=a][data-mode=goal]').click();
-    await page.locator('.lt-card[data-id=q2][data-mode=list]').click(); await page.locator('[data-bq-detail-for=q2]').waitFor();
+    await page.locator('[data-record-id="list:q1"] [data-record-open]').click(); await page.locator('[data-record-id="goal:a"] [data-record-open]').click();
+    await page.locator('[data-record-id="list:q2"] [data-record-open]').click(); await page.locator('[data-bq-detail-for=q2]').waitFor();
     release(); await page.waitForTimeout(150); assert.equal(await page.locator('[data-bq-detail-for=q2]').count(), 1);
-    await page.locator('[data-lt-action=select][data-id=a][data-mode=goal]').click();
+    await page.locator('[data-record-id="goal:a"] [data-record-open]').click();
     const createGate = new Promise(resolve => { release = resolve; });
     state.hook = async req => { if (req.path === '/api/projects') await createGate; };
     await page.evaluate(() => { void showBatchImportModal(); }); await page.evaluate(() => switchPage('dashboard')); release(); await page.waitForTimeout(150);
@@ -172,11 +177,11 @@ test('one task list and one creation form support objectives, checklists and sch
     const { page, state } = await fixture(t);
     assert.equal(await page.locator('[data-task-tab]').count(), 0);
     assert.equal(await page.locator('#task-new-batch').count(), 0);
-    assert.equal(await page.locator('#lt-list [data-mode=goal]').count(), 2);
-    assert.equal(await page.locator('#lt-list [data-mode=list]').count(), 1);
+    assert.equal(await page.locator('#lt-list [data-record-id^="goal:"]').count(), 2);
+    assert.equal(await page.locator('#lt-list [data-record-id^="list:"]').count(), 1);
     await page.locator('#lt-mode-filter').selectOption('list');
-    await page.waitForFunction(() => document.querySelectorAll('.lt-card').length === 1);
-    await page.locator('.lt-card[data-mode=list][data-id=q1]').click();
+    await page.waitForFunction(() => document.querySelectorAll('#lt-list .task-record-row').length === 1);
+    await page.locator('[data-record-id="list:q1"] [data-record-open]').click();
     await page.locator('#lt-batch-detail [data-bq-detail-for=q1]').waitFor();
     assert.equal(await page.locator('#batch-queue-detail-modal').evaluate(node => node.classList.contains('modal')), false);
     await page.screenshot({path:'/tmp/csai-unified-task-list-preview.png'});
@@ -195,7 +200,7 @@ test('one task list and one creation form support objectives, checklists and sch
     assert.equal(state.queues.get('new-queue').cronExpr, '0 2 * * *');
     assert.equal(state.queues.get('new-queue').executeNow, false);
     assert.equal(state.queues.get('new-queue').tasks.length, 2);
-    assert.equal(await page.locator('#lt-list [data-mode=list]').count(), 2);
+    assert.equal(await page.locator('#lt-list [data-record-id^="list:"]').count(), 2);
     await page.locator('#task-new-goal').click();
     await page.locator('#lt-modal [name=name]').fill('Unified objective');
     await page.locator('#lt-modal [name=objective]').fill('Summarize the local report');
@@ -241,7 +246,7 @@ test('creation and budget dialogs stay centered with visible actions on desktop 
 test('the unified empty state stays usable and checklist details fit narrow screens', async t => {
     const { page,state,refresh }=await fixture(t);
     await page.setViewportSize({width:390,height:844});
-    await page.locator('.lt-card[data-mode=list][data-id=q1]').click();await page.locator('[data-bq-detail-for=q1]').waitFor();
+    await page.locator('[data-record-id="list:q1"] [data-record-open]').click();await page.locator('[data-bq-detail-for=q1]').waitFor();
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));
     await page.locator('#batch-queue-start-btn').scrollIntoViewIfNeeded();
     const button=await page.locator('#batch-queue-start-btn').boundingBox();assert.ok(button.x>=0 && button.x+button.width<=390);

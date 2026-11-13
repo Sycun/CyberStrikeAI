@@ -19,7 +19,7 @@ type ManagedTaskRow struct {
 // ListManagedTasks merges before filtering/paging, avoiding gaps or duplicates
 // caused by paginating the two sources independently. No execution traces enter
 // the listing, and each source uses its own RBAC resource assignments.
-func (db *DB) ListManagedTasks(user, scope, mode, status, query string, limit, offset int) ([]ManagedTaskRow, error) {
+func managedTaskQuery(user, scope, mode, status, query string) (string, []any) {
 	access := func(alias, resource string) (string, []any) {
 		if scope == RBACScopeAll {
 			return "1=1", nil
@@ -66,6 +66,18 @@ func (db *DB) ListManagedTasks(user, scope, mode, status, query string, limit, o
 		sql += ` AND (instr(lower(name),lower(?))>0 OR instr(id,?)>0)`
 		args = append(args, query, query)
 	}
+	return sql, args
+}
+
+func (db *DB) CountManagedTasks(user, scope, mode, status, query string) (int, error) {
+	querySQL, args := managedTaskQuery(user, scope, mode, status, query)
+	var total int
+	err := db.QueryRow(`SELECT COUNT(*) FROM (`+querySQL+`)`, args...).Scan(&total)
+	return total, err
+}
+
+func (db *DB) ListManagedTasks(user, scope, mode, status, query string, limit, offset int) ([]ManagedTaskRow, error) {
+	sql, args := managedTaskQuery(user, scope, mode, status, query)
 	sql += ` ORDER BY updated_at DESC,mode,id LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := db.Query(sql, args...)

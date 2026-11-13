@@ -16,7 +16,7 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
     // Load exactly the entrypoint's scripts in their original order. Do not inject
     // long-tasks.js independently: that hid a missing production script tag.
     const scriptTags = [...template.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/g)]
-        .filter(match => /^\/static\/js\/(router|auth|tasks|long-tasks)\.js(?:\?|$)/.test(match[1]))
+        .filter(match => /^\/static\/js\/(router|auth|task-list-view|task-checklist-view|tasks|long-tasks)\.js(?:\?|$)/.test(match[1]))
         .map(match => match[0]).join('');
     const styleTags = [...template.matchAll(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*>/g)]
         .filter(match => /^\/static\/css\/(style|mobile|long-tasks)\.css(?:\?|$)/.test(match[1]))
@@ -33,7 +33,7 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
         if (req.url === '/api/auth/validate') { res.setHeader('Content-Type','application/json'); return res.end('{}'); }
         if (req.url === '/favicon.ico') { res.statusCode=204; return res.end(); }
         if (req.url.startsWith('/api/batch-tasks')) { res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({queues:[],total:0,total_pages:1})); }
-        if (req.url.startsWith('/api/tasks?')) { authenticated.push(req.headers.authorization); res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({tasks:[{...task,mode:'goal'}],has_more:false})); }
+        if (req.url.startsWith('/api/tasks?')) { authenticated.push(req.headers.authorization); res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({tasks:[{...task,mode:'goal'}],has_more:false,total:1,offset:0})); }
         if (req.url.startsWith('/api/long-tasks')) {
             authenticated.push(req.headers.authorization);
             if (req.headers.authorization !== 'Bearer fixture-token') { res.statusCode = 401; return res.end('{}'); }
@@ -69,13 +69,14 @@ test('goal task page: authenticated controls, stable polling, XSS, report and re
         await page.evaluate(() => applyRBACToUI(document.getElementById('page-tasks')));
         assert.equal(await page.locator('#task-new-goal').isVisible(), true);
         assert.equal(await page.locator('#task-new-batch').count(), 0);
-        await page.locator('[data-lt-action=select]').click();
+        await page.locator('#lt-list [data-record-open]').click();
         await page.locator('#lt-name').waitFor();
         await page.waitForFunction(() => document.getElementById('lt-name').textContent.includes('本地材料'));
         assert.equal(await page.evaluate(() => window.bad), undefined);
         assert.equal(await page.locator('#lt-name img').count(), 0);
         await page.locator('[data-lt-action=start]').click();
         await page.locator('#lt-state .lt-status-running').waitFor();
+        await page.locator('#lt-support > summary').click();
         await page.locator('#lt-guidance-input').fill('保留这个尚未提交的补充');
         await page.evaluate(() => refreshTaskWorkspace());
         assert.equal(await page.locator('#lt-guidance-input').inputValue(), '保留这个尚未提交的补充');

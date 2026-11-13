@@ -22,7 +22,7 @@ function queue(id = 'q1') {
 async function fixture(t) {
     const a = goal('a', 'paused'); a.steps = [{ id: 's1', title: 'Local step', instruction: 'Read evidence', depends_on: [], status: 'failed', summary: 'Previous failure', conversation_id: 'conversation-a', attempts: 1 }];
     const state = { tasks: new Map([['a', a], ['b', goal('b')]]), queues: new Map([['q1', queue()]]), requests: [], hook: null, confirm: true, failResume: '', pageErrors: [] };
-    const scripts = [...template.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/g)].filter(m => /^\/static\/js\/(router|auth|modal|tasks|long-tasks|rbac-guards)\.js(?:\?|$)/.test(m[1])).map(m => m[0]).join('');
+    const scripts = [...template.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/g)].filter(m => /^\/static\/js\/(router|auth|modal|task-list-view|task-checklist-view|tasks|long-tasks|rbac-guards)\.js(?:\?|$)/.test(m[1])).map(m => m[0]).join('');
     const styles = [...template.matchAll(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*>/g)].filter(m => /^\/static\/css\/(style|mobile|long-tasks)\.css(?:\?|$)/.test(m[1])).map(m => m[0]).join('');
     const locale = JSON.stringify(JSON.parse(read('web/static/i18n/zh-CN.json'))).replaceAll('<', '\\u003c');
     const html = `<!doctype html><html><head><meta charset="UTF-8">${styles}</head><body><div class="container"><main class="main-layout"><section class="content-area">${div('page-tasks')}<div class="page" id="page-dashboard"><button onclick="switchPage('tasks')">Back to tasks</button></div><div class="page" id="page-chat"></div></section></main></div>${div('batch-import-modal')}${div('batch-queue-detail-modal')}${div('add-batch-task-modal')}<script>window.t=(key,opts={})=>{let v=key.split('.').reduce((o,k)=>o&&o[k],${locale});return String(v||key).replace(/{{(\\w+)}}/g,(_,k)=>String(opts[k]??''))};window.loadRoles=async()=>[];window.loadConversation=async id=>{window.visitedConversation=id};window.initializeChatUI=()=>{};window.refreshAppData=async()=>{};</script>${scripts}<script>document.removeEventListener('DOMContentLoaded',initializeApp);saveAuth('fixture-token',new Date(Date.now()+3600000),{user:{id:'fixture',username:'fixture'},permissions:['tasks:read','tasks:write','tasks:delete','agent:execute','chat:read','chat:write'],scope:'own'});</script></body></html>`;
@@ -45,7 +45,7 @@ async function fixture(t) {
                 for (const q of state.queues.values()) rows.push({ id:q.id, mode:'list', name:q.title, status:q.status, summary:q.lastRunError || '', updated_at:q.createdAt, schedule_mode:q.scheduleMode, next_run_at:q.nextRunAt, completed_steps:q.tasks.filter(step => step.status==='completed').length, total_steps:q.tasks.length });
                 const filtered=rows.filter(task => (!url.searchParams.get('mode') || task.mode===url.searchParams.get('mode')) && (!url.searchParams.get('status') || task.status===url.searchParams.get('status')) && (!url.searchParams.get('q') || task.name.includes(url.searchParams.get('q'))));
                 const offset=Number(url.searchParams.get('offset')||0),limit=Number(url.searchParams.get('limit')||30);
-                return send(200,{tasks:filtered.slice(offset,offset+limit),has_more:filtered.length>offset+limit});
+                return send(200,{tasks:filtered.slice(offset,offset+limit),has_more:filtered.length>offset+limit,total:filtered.length,offset});
             }
             if (url.pathname === '/api/long-tasks') {
                 if (req.method === 'POST') { const task = { ...goal('new-' + state.tasks.size), ...body }; state.tasks.set(task.id, task); return send(201, { task }); }
@@ -82,6 +82,16 @@ async function fixture(t) {
             const batch = url.pathname.match(/^\/api\/batch-tasks\/([^/]+)(?:\/(.*))?$/);
             if (batch) {
                 const q = state.queues.get(batch[1]); if (!q) return send(404, { error: 'queue missing' }); const suffix = batch[2] || '';
+                if(suffix.startsWith('tasks/') && req.method==='GET') {
+                    const item=q.tasks.find(item=>item.id===suffix.split('/')[1]);if(!item)return send(404,{error:'step missing'});
+                    const counts={total:q.tasks.length};for(const item of q.tasks)counts[item.status]=(counts[item.status]||0)+1;
+                    return send(200,{task:item,queue:{...q,tasks:[]},task_stats:counts});
+                }
+                if(!suffix && req.method==='GET' && url.searchParams.has('task_page')) {
+                    const size=Number(url.searchParams.get('task_page_size')||20),total=q.tasks.length,pages=Math.max(1,Math.ceil(total/size)),page=Math.min(pages,Math.max(1,Number(url.searchParams.get('task_page')||1))),offset=(page-1)*size;
+                    const counts={total,pending:0,running:0,completed:0,failed:0,cancelled:0};for(const item of q.tasks)counts[item.status]=(counts[item.status]||0)+1;
+                    return send(200,{queue:{...q,tasks:q.tasks.slice(offset,offset+size).map(item=>({...item,message:item.message.slice(0,600),result:(item.result||'').slice(0,400)}))},task_stats:counts,task_pagination:{page,page_size:size,total,total_pages:pages,offset,preview:true}});
+                }
                 if (suffix === 'start' || suffix === 'rerun') q.status = 'running';
                 else if (suffix === 'pause') q.status = 'paused';
                 else if (suffix === 'metadata' || suffix === 'schedule' || suffix === 'schedule-enabled') Object.assign(q, body);
@@ -101,9 +111,9 @@ async function fixture(t) {
     page.on('pageerror', error => state.pageErrors.push(error.message));
     page.on('dialog', dialog => (dialog.type() === 'confirm' && !state.confirm) ? dialog.dismiss() : dialog.accept());
     await page.goto(`http://127.0.0.1:${server.address().port}/#tasks`);
-    await page.locator('[data-lt-action=select][data-id=a]').waitFor();
+    await page.locator('[data-record-id="goal:a"] [data-record-open]').waitFor();
     await page.locator('#tasks-auto-refresh').uncheck();
-    const select = async id => { await page.locator(`[data-lt-action=select][data-mode=goal][data-id="${id}"]`).click(); await page.waitForFunction(id => document.getElementById('lt-name').textContent === '目标 ' + id, id); };
+    const select = async id => { await page.locator(`[data-record-id="goal:${id}"] [data-record-open]`).click(); await page.waitForFunction(id => document.getElementById('lt-name').textContent === '目标 ' + id, id); };
     const refresh = () => page.evaluate(() => refreshTaskWorkspace());
     return { page, state, select, refresh };
 }
