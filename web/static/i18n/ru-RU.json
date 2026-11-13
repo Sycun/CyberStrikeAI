@@ -5362,6 +5362,9 @@
       "yielded": "Segment saved"
     },
     "contextUsage": "Context / window",
-    "toolDefinitions": "Tool definitions"
+    "toolDefinitions": "Tool definitions",
+    "status": "Статус",
+    "updatedAt": "Обновлено",
+    "loading": "Загрузка оценки…"
   }
 }

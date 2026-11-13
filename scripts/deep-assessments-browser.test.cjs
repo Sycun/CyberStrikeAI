@@ -9,6 +9,8 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const template = read('web/templates/index.html');
 const region = template.match(/<div id="page-deep-assessments"[^>]*><div id="deep-assessments-root"><\/div><\/div>/)?.[0];
 assert.ok(region, 'independent page missing');
+const navOrder = [...template.slice(template.indexOf('<nav class="main-sidebar-nav">'), template.indexOf('</nav>', template.indexOf('<nav class="main-sidebar-nav">'))).matchAll(/class="nav-item(?: [^"]*)?" data-page="([^"]+)"/g)].map(m => m[1]);
+assert.equal(navOrder[navOrder.indexOf('chat') + 1], 'deep-assessments');
 const sample = id => ({ id, name: '隔离样例 ' + id, status: 'draft', revision: 0, objective: '检查本地夹具', scope: '仅本地', criteria: '引用真实证据', strategy: '', summary: '', question: '', concurrency: 2, remaining_seconds: 172800, token_budget: 2000000, tokens_used: 0, max_rounds: 512, rounds: 0, updated_at: new Date().toISOString(), steps: [], metrics: {}, auto_resume: true });
 async function fixture(t) {
  const state = { tasks: new Map(Array.from({ length: 24 }, (_, i) => ['t' + i, sample('t' + i)])), requests: [], errors: [] };
@@ -81,9 +83,56 @@ test('assessment escapes evidence and fits mobile and dark layouts',async t=>{
  if(screenshotRoot){fs.mkdirSync(screenshotRoot,{recursive:true});await page.screenshot({path:path.join(screenshotRoot,'deep-assessments-desktop.png'),fullPage:true});}
  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>document.documentElement.setAttribute('data-theme','dark'));
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ await page.locator('[data-da-action="close-detail"]').click();
  await page.locator('[data-da-action="create"]').click();
- await page.locator('#da-dialog').waitFor({state:'visible'});
- const box=await page.locator('#da-dialog').boundingBox();assert.ok(box.x>=0&&box.x+box.width<=391);
+ await page.locator('#da-form-drawer').waitFor({state:'visible'});
+ await page.waitForFunction(()=>Math.abs(document.getElementById('da-form-drawer').getBoundingClientRect().right-innerWidth)<1);
+ const box=await page.locator('#da-form-drawer').boundingBox();assert.ok(box.x>=0&&box.x+box.width<=391);assert.ok(Math.abs(box.y)<1&&Math.abs(box.height-844)<1);
  if(screenshotRoot)await page.screenshot({path:path.join(screenshotRoot,'deep-assessments-mobile.png'),fullPage:true});
+ assert.deepEqual(state.errors,[]);
+});
+
+
+test('assessment creation uses a right drawer with backdrop, Escape and button dismissal',async t=>{
+ const {page,state}=await fixture(t);
+ await page.locator('[data-da-action="create"]').click();
+ const drawer=page.locator('#da-form-drawer');await drawer.waitFor({state:'visible'});
+ // Wait for the short slide transition before checking final viewport geometry.
+ await page.waitForFunction(()=>Math.abs(document.getElementById('da-form-drawer').getBoundingClientRect().right-innerWidth)<1);
+ const box=await drawer.boundingBox();assert.ok(box.x>0);assert.equal(box.y,0);assert.equal(box.height,1000);assert.ok(Math.abs(box.x+box.width-1440)<1);
+ assert.equal(await page.locator('[name="name"]').evaluate(el=>el===document.activeElement),true);
+ await page.locator('[name="name"]').fill('Unsubmitted draft');
+ await page.locator('[name="objective"]').click();assert.equal(await drawer.isVisible(),true);
+ // A blank area inside the panel must not count as its backdrop.
+ await page.mouse.click(box.x+8,110);assert.equal(await drawer.isVisible(),true);
+ // Dragging out of a field must not accidentally dismiss the drawer.
+ const input=await page.locator('[name="name"]').boundingBox();
+ await page.mouse.move(input.x+10,input.y+10);await page.mouse.down();await page.mouse.move(20,110);await page.mouse.up();assert.equal(await drawer.isVisible(),true);
+ await page.mouse.click(20,110);await drawer.waitFor({state:'hidden'});
+ assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('da-drawer-open')),false);
+ await page.locator('[data-da-action="create"]').click();await drawer.waitFor({state:'visible'});await page.keyboard.press('Escape');await drawer.waitFor({state:'hidden'});
+ await page.locator('[data-da-action="create"]').click();await drawer.waitFor({state:'visible'});await drawer.locator('.da-drawer-close').click();await drawer.waitFor({state:'hidden'});
+ assert.equal(state.requests.filter(r=>r.method==='POST').length,0);
+ assert.deepEqual(state.errors,[]);
+});
+
+test('full-width list opens a detail drawer and budget closes only its own layer',async t=>{
+ const {page,state}=await fixture(t);
+ assert.equal(await page.locator('#da-inspector').isVisible(),false);
+ const list=await page.locator('.da-list-panel').boundingBox();assert.ok(list.width>1300);
+ const pager=await page.locator('.da-pagination').boundingBox();assert.ok(pager.y+pager.height<=1000);
+ await page.locator('[data-da-action="select"][data-id="t0"]').click();
+ const inspector=page.locator('#da-inspector');await inspector.waitFor({state:'visible'});
+ await page.locator('[data-da-action="budget"]').click();
+ const form=page.locator('#da-form-drawer');await form.waitFor({state:'visible'});
+ await page.locator('[name="hours"]').fill('72');await page.evaluate(()=>DeepAssessments.refresh());assert.equal(await page.locator('[name="hours"]').inputValue(),'72');
+ await page.mouse.click(20,160);await form.waitFor({state:'hidden'});assert.equal(await inspector.isVisible(),true);
+ assert.equal(await page.locator('body').evaluate(el=>el.classList.contains('da-drawer-open')),true);
+ await page.locator('#da-guidance').fill('Keep this draft direction');
+ await page.mouse.click(20,160);await inspector.waitFor({state:'hidden'});
+ await page.evaluate(()=>DeepAssessments.refresh());assert.equal(await inspector.isVisible(),false);
+ await page.locator('[data-da-action="select"][data-id="t0"]').click();await inspector.waitFor({state:'visible'});assert.equal(await page.locator('#da-guidance').inputValue(),'Keep this draft direction');
+ await page.keyboard.press('Escape');await inspector.waitFor({state:'hidden'});
+ assert.equal(state.requests.filter(r=>r.method==='POST').length,0);
  assert.deepEqual(state.errors,[]);
 });

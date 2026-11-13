@@ -50,7 +50,7 @@
     <link rel="stylesheet" href="/static/css/vulnerability-workspace.css?v=20261113-aligned-overview">
     <link rel="stylesheet" href="/static/css/vulnerability-list.css?v=20261113-compact-rows">
     <script src="/static/js/router.js?v=20261011-token-settings"></script>
-    <link rel="stylesheet" href="/static/css/deep-assessments.css?v=20261114">
+    <link rel="stylesheet" href="/static/css/deep-assessments.css?v=20261114-drawers">
 </head>
 <body>
     <div id="login-overlay" class="login-overlay" style="display: none;">
@@ -238,6 +238,12 @@
                             <span data-i18n="nav.chat">对话</span>
                         </div>
                     </div>
+                    <div class="nav-item" data-page="deep-assessments">
+                        <div class="nav-item-content" data-title="深度测评" onclick="switchPage('deep-assessments')" data-i18n="nav.deepAssessments" data-i18n-attr="data-title" data-i18n-skip-text="true">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6M10 6v8M6 10h8"/></svg>
+                            <span data-i18n="nav.deepAssessments">深度测评</span>
+                        </div>
+                    </div>
                     <div class="nav-item nav-item-has-submenu" data-page="security" data-require-permission-any="hitl:read config:read">
                         <div class="nav-item-content" data-title="安全防护" onclick="window.toggleSubmenu('security')" data-i18n="nav.security" data-i18n-attr="data-title" data-i18n-skip-text="true">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -295,12 +301,6 @@
                                 <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
                             </svg>
                             <span data-i18n="nav.tasks">任务管理</span>
-                        </div>
-                    </div>
-                    <div class="nav-item" data-page="deep-assessments">
-                        <div class="nav-item-content" data-title="深度测评" onclick="switchPage('deep-assessments')" data-i18n="nav.deepAssessments" data-i18n-attr="data-title" data-i18n-skip-text="true">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"/><path d="m15 15 6 6M10 6v8M6 10h8"/></svg>
-                            <span data-i18n="nav.deepAssessments">深度测评</span>
                         </div>
                     </div>
                     <div class="nav-item" data-page="workflows">
@@ -7140,7 +7140,7 @@
     <script src="/static/js/vulnerability-download.js?v=20261030-2"></script>
     <script src="/static/js/webshell.js?v=20261011-token-usage-tool-title"></script>
     <script src="/static/js/chat-files.js?v=20261103-personal-integration"></script>
-    <script src="/static/js/deep-assessments.js?v=20261114"></script>
+    <script src="/static/js/deep-assessments.js?v=20261114-drawers"></script>
     <script src="/static/js/tasks.js?v=20261114-batch-restore"></script>
     <script src="/static/js/workflow-package-client.js"></script>
     <script src="/static/js/workflows.js"></script>

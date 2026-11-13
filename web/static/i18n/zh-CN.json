@@ -5337,6 +5337,9 @@
       "yielded": "分段完成"
     },
     "contextUsage": "上下文 / 窗口",
-    "toolDefinitions": "工具定义"
+    "toolDefinitions": "工具定义",
+    "status": "状态",
+    "updatedAt": "更新时间",
+    "loading": "正在读取测评…"
   }
 }

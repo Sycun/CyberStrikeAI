@@ -5349,6 +5349,9 @@
       "yielded": "Segment saved"
     },
     "contextUsage": "Context / window",
-    "toolDefinitions": "Tool definitions"
+    "toolDefinitions": "Tool definitions",
+    "status": "Status",
+    "updatedAt": "Updated",
+    "loading": "Loading assessment…"
   }
 }
