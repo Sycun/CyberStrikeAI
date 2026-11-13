@@ -27456,37 +27456,86 @@ tr.mcp-stats-tool-row[data-tool-name]:focus-visible {
     margin-bottom: 0;
 }
 
-.vulnerability-host-group {
+#page-vulnerabilities > .page-header,
+.vulnerability-header-start {
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.vulnerability-header-start {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+.vulnerability-view-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+
+.vulnerability-view-switch button {
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 5px 10px;
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+.vulnerability-view-switch button:hover {
+    color: var(--text-primary);
+}
+
+.vulnerability-view-switch button[aria-pressed="true"] {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+}
+
+.vulnerability-view-switch button:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: -2px;
+}
+
+.vulnerability-group {
     min-width: 0;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--bg-secondary);
 }
 
-.vulnerability-host-group > summary {
+.vulnerability-group > summary {
     padding: 12px 16px;
     cursor: pointer;
     overflow-wrap: anywhere;
 }
 
-.vulnerability-host-group > summary:focus-visible {
+.vulnerability-group > summary:focus-visible {
     outline: 2px solid var(--accent-color);
     outline-offset: -2px;
     border-radius: 8px;
 }
 
-.vulnerability-host-name {
+.vulnerability-group-name {
     margin-inline-start: 6px;
     font-weight: 600;
 }
 
-.vulnerability-host-count {
+.vulnerability-group-count {
     margin-inline-start: 8px;
     color: var(--text-muted);
     font-size: 0.8125rem;
 }
 
-.vulnerability-host-cards {
+.vulnerability-group-cards {
     display: grid;
     gap: 10px;
     padding: 0 12px 12px;
