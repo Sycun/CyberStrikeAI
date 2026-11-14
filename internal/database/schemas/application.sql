@@ -942,3 +942,14 @@ CREATE TABLE IF NOT EXISTS deep_assessment_sessions (
  PRIMARY KEY(task_id,step_id,conversation_id)
 );
 CREATE INDEX IF NOT EXISTS idx_deep_assessment_sessions_conversation ON deep_assessment_sessions(conversation_id,task_id);
+
+-- Source snapshots survive deletion of an assessment or its execution conversation.
+CREATE TABLE IF NOT EXISTS vulnerability_assessment_sources (
+ vulnerability_id TEXT PRIMARY KEY REFERENCES vulnerabilities(id) ON DELETE CASCADE,
+ assessment_id TEXT NOT NULL,
+ assessment_name TEXT NOT NULL,
+ step_id TEXT NOT NULL,
+ step_title TEXT NOT NULL,
+ conversation_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_vulnerability_assessment_sources_task ON vulnerability_assessment_sources(assessment_id,step_id);

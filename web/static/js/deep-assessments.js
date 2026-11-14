@@ -1,8 +1,8 @@
 /* Independent assessment workspace. Batch task routes and controllers are untouched. */
 (function () {
     'use strict';
-    const S = { id: '', task: null, tab: 'graph', graph: null, graphScope: '', graphOffset: 0, graphNode: null, nodeOffset: 0, nodeMore: false, nodeRequest: 0, stepOffset: 0, stepTotal: 0, stepMore: false, page: 0, more: false, busy: false, epoch: 0, timer: null, mounted: false, drawerEpoch: 0, events: [], receipts: [], receiptOffset: 0, receiptMore: false };
-    const labels = { graph: '探索图', continuous: '持续执行', mode: '运行模式', elapsed: '已运行', graphHint: '摘要用于续接；原始观察和执行回执可随时展开。', graphVisible: '当前页节点', graphFolded: '已折叠节点', graphHome: '全图概览', graphExpand: '展开关联节点', graphFit: '适应画布', graphSelect: '点击节点查看原始内容与来源。', graphMore: '继续读取原文', status: '状态', updatedAt: '更新时间', loading: '正在读取测评…', contextUsage:'上下文 / 窗口', toolDefinitions:'工具定义', title: '深度测评', subtitle: '围绕一个目标持续探索，保存证据与进度，跨会话继续执行。', create: '新建测评', refresh: '刷新', search: '搜索测评名称', all: '全部状态', empty: '暂无测评，先创建一个目标。', select: '选择测评，查看探索进度与证据。', previous: '上一页', next: '下一页', name: '测评名称', objective: '目标', scope: '允许范围与排除项', criteria: '验收条件', model: '模型渠道', project: '关联项目', role: '角色', default: '系统默认', none: '不关联', tokens: '累计 Token', rounds: '规划轮次', concurrency: '并行步骤', autoResume: '服务重启后自动恢复结果明确的步骤', save: '保存草稿', close: '关闭', start: '开始 / 继续', pause: '暂停', cancel: '停止', delete: '删除', report: '下载报告', overview: '概览', plan: '步骤清单', evidence: '证据回执', activity: '运行记录', quality: '上下文与用量', guidance: '补充线索或调整方向', send: '提交方向', answer: '答复并继续', retry: '恢复此步骤', conversation: '查看执行会话', unknown: '请先核对回执，确认上次操作结果及执行资源状态。', reconcile: '我已核对上次调用结果，允许从原会话继续', confirmStop: '停止后将保留已有结果，结束本次测评。', confirmDelete: '删除本条测评？关联执行会话仍保留。', strategy: '当前路线', summary: '当前结论 / 缺口', question: '待补充信息', dependencies: '前置步骤', segments: '执行分段', evidenceIDs: '证据引用', noSteps: '开始后由规划器逐步生成探索方向。', noRecords: '暂无记录', calls: '工具调用', compactions: '上下文压缩', activeTools: '当前可见工具', session: '会话', tokenNote: '累计用量包含 Pi 压缩，不作为任务自动结束条件。', recoveryNote: '结果不明的调用会暂停等待核对，已完成步骤不会自动重做。', saved: '已保存', updated: '已更新', retryNote: '恢复会保留原 Pi 会话及历史证据。' };
+    const S = { routeKey: '', focusStepId: '', focusedStep: null, originFindingId: '', originFinding: null, findings: [], findingOffset: 0, findingMore: false, findingTotal: 0, id: '', task: null, tab: 'graph', graph: null, graphScope: '', graphOffset: 0, graphNode: null, nodeOffset: 0, nodeMore: false, nodeRequest: 0, stepOffset: 0, stepTotal: 0, stepMore: false, page: 0, more: false, busy: false, epoch: 0, timer: null, mounted: false, drawerEpoch: 0, events: [], receipts: [], receiptOffset: 0, receiptMore: false };
+    const labels = { findings: '关联漏洞', noFindings: '暂未登记漏洞。', openFinding: '在漏洞管理查看', allFindings: '在漏洞管理查看本次测评', reproduction: '复现步骤', findingEvidence: '复现证据', sourceStep: '来源步骤', allSteps: '显示全部步骤与回执', sourceFinding: '关联漏洞', graph: '探索图', continuous: '持续执行', mode: '运行模式', elapsed: '已运行', graphHint: '摘要用于续接；原始观察和执行回执可随时展开。', graphVisible: '当前页节点', graphFolded: '已折叠节点', graphHome: '全图概览', graphExpand: '展开关联节点', graphFit: '适应画布', graphSelect: '点击节点查看原始内容与来源。', graphMore: '继续读取原文', status: '状态', updatedAt: '更新时间', loading: '正在读取测评…', contextUsage:'上下文 / 窗口', toolDefinitions:'工具定义', title: '深度测评', subtitle: '围绕一个目标持续探索，保存证据与进度，跨会话继续执行。', create: '新建测评', refresh: '刷新', search: '搜索测评名称', all: '全部状态', empty: '暂无测评，先创建一个目标。', select: '选择测评，查看探索进度与证据。', previous: '上一页', next: '下一页', name: '测评名称', objective: '目标', scope: '允许范围与排除项', criteria: '验收条件', model: '模型渠道', project: '关联项目', role: '角色', default: '系统默认', none: '不关联', tokens: '累计 Token', rounds: '规划轮次', concurrency: '并行步骤', autoResume: '服务重启后自动恢复结果明确的步骤', save: '保存草稿', close: '关闭', start: '开始 / 继续', pause: '暂停', cancel: '停止', delete: '删除', report: '下载报告', overview: '概览', plan: '步骤清单', evidence: '证据回执', activity: '运行记录', quality: '上下文与用量', guidance: '补充线索或调整方向', send: '提交方向', answer: '答复并继续', retry: '恢复此步骤', conversation: '查看执行会话', unknown: '请先核对回执，确认上次操作结果及执行资源状态。', reconcile: '我已核对上次调用结果，允许从原会话继续', confirmStop: '停止后将保留已有结果，结束本次测评。', confirmDelete: '删除本条测评？关联执行会话仍保留。', strategy: '当前路线', summary: '当前结论 / 缺口', question: '待补充信息', dependencies: '前置步骤', segments: '执行分段', evidenceIDs: '证据引用', noSteps: '开始后由规划器逐步生成探索方向。', noRecords: '暂无记录', calls: '工具调用', compactions: '上下文压缩', activeTools: '当前可见工具', session: '会话', tokenNote: '累计用量包含 Pi 压缩，不作为任务自动结束条件。', recoveryNote: '结果不明的调用会暂停等待核对，已完成步骤不会自动重做。', saved: '已保存', updated: '已更新', retryNote: '恢复会保留原 Pi 会话及历史证据。' };
     const states = { draft: '草稿', running: '执行中', pending: '待执行', completed: '已完成', blocked: '受阻', failed: '失败', paused: '已暂停', pausing: '暂停中', cancelling: '停止中', cancelled: '已停止', recovering: '待恢复', waiting_retry: '等待模型恢复', waiting_input: '待答复', needs_review: '待核对', uncertain: '结果不明', waiting_progress: '等待新进展', interrupted: '已中断', cleanup_unconfirmed: '待确认资源停止', retired: '已撤下', reconciled: '已核对', yielded: '分段完成' };
     const tr = (key, fallback) => { const v = typeof window.t === 'function' ? window.t('deepAssessments.' + key) : ''; return v && v !== 'deepAssessments.' + key ? v : fallback; };
     const L = key => tr(key, labels[key] || key);
@@ -11,6 +11,7 @@
     const $ = id => document.getElementById(id);
     const active = t => ['running', 'pausing', 'cancelling'].includes(t?.status);
     const terminal = t => ['completed', 'cancelled'].includes(t?.status);
+    const canFindings = () => typeof window.hasPermission !== 'function' || window.hasPermission('vulnerability:read');
     const can = action => typeof window.hasPermission !== 'function' || window.hasPermission('assessments:' + action);
     function notice(message, error = false) {
         ['da-notice', 'da-detail-notice', 'da-form-notice'].forEach(id => {
@@ -75,6 +76,34 @@
     async function json(path, options) { return (await api(path, options)).json(); }
     const button = (action, label, extra = '') => `<button type="button" class="btn-secondary" data-da-action="${action}" ${extra}>${esc(label)}</button>`;
     const badge = value => `<span class="da-badge da-${esc(value)}">${esc(status(value))}</span>`;
+    function writeRoute() {
+        if (!S.id) return;
+        const params = new URLSearchParams({ assessment_id: S.id, tab: S.tab });
+        if (S.focusStepId) params.set('step_id', S.focusStepId);
+        if (S.originFindingId) params.set('vulnerability_id', S.originFindingId);
+        history.replaceState(null, '', '#deep-assessments?' + params);
+        S.routeKey = window.location.hash;
+    }
+    function applyRoute() {
+        const [page, ...query] = window.location.hash.slice(1).split('?');
+        if (page !== 'deep-assessments' || !$('page-deep-assessments')?.classList.contains('active') || (typeof window.hasPermission === 'function' && !window.hasPermission('assessments:read'))) return false;
+        const params = new URLSearchParams(query.join('?')), id = params.get('assessment_id');
+        if (!id) return false;
+        if (S.routeKey === window.location.hash && $('da-inspector').open) return false;
+        const changed = S.id !== id;
+        S.id = id; if (changed) { S.task = null; $('da-guidance').value = ''; }
+        S.focusStepId = params.get('step_id') || ''; S.originFindingId = params.get('vulnerability_id') || '';
+        S.focusedStep = null; S.originFinding = null; S.findings = []; S.findingOffset = 0; S.receiptOffset = 0; S.stepOffset = 0;
+        S.tab = ['overview','graph','plan','evidence','activity','quality','findings'].includes(params.get('tab')) ? params.get('tab') : (S.focusStepId ? 'plan' : 'graph');
+        S.graph = null; S.graphScope = ''; S.graphNode = null; S.graphOffset = 0; S.events = []; S.receipts = [];
+        S.routeKey = window.location.hash; ++S.epoch;
+        renderTask(); openDrawer('da-inspector'); return true;
+    }
+    function sourceBanner(includeEvidence = false) {
+        if (!S.focusStepId && !S.originFinding) return '';
+        const finding = S.originFinding;
+        return `<section class="da-source-banner"><strong>${esc(L('sourceStep'))}：${esc(S.focusedStep?.title || finding?.assessment_step_title || S.focusStepId)}</strong>${finding ? `<p>${esc(L('sourceFinding'))}：${esc(finding.title)}</p>` : ''}${includeEvidence && finding ? `<h4>${esc(L('reproduction'))}</h4><pre>${esc(finding.reproduction_steps)}</pre><h4>${esc(L('findingEvidence'))}</h4><pre>${esc(finding.evidence)}</pre>` : ''}<div class="da-controls">${button('clear-source', L('allSteps'))}${finding ? button('open-finding', L('openFinding'), `data-vulnerability="${esc(finding.id)}"`) : ''}</div></section>`;
+    }
     function mount() {
         const root = $('deep-assessments-root'); if (!root || S.mounted) return;
         S.mounted = true;
@@ -98,7 +127,7 @@
         bindDrawer('da-inspector');
         bindDrawer('da-form-drawer');
         window.addEventListener('hashchange', () => {
-            if (window.location.hash.slice(1).split('?')[0] !== 'deep-assessments') { closeDrawer('da-form-drawer'); closeDrawer('da-inspector'); }
+            if (window.location.hash.slice(1).split('?')[0] !== 'deep-assessments') { closeDrawer('da-form-drawer'); closeDrawer('da-inspector'); } else if (applyRoute()) void refresh();
         });
         root.addEventListener('click', event => { const target = event.target.closest('[data-da-action]'); if (target) void action(target.dataset.daAction, target.dataset); });
         root.addEventListener('submit', event => { event.preventDefault(); if (event.target.id === 'da-create-form') void saveCreate(event.target); if (event.target.id === 'da-guidance-form') void guidance();  });
@@ -112,7 +141,7 @@
         if (!task) { $('da-title').textContent = L('title'); $('da-controls').innerHTML = ''; $('da-tabs').innerHTML = ''; $('da-body').textContent = L(S.id ? 'loading' : 'select'); $('da-guidance-form').hidden = true; return; }
         $('da-title').innerHTML = `<h3>${esc(task.name)} ${badge(task.status)}</h3>`;
         $('da-controls').innerHTML = `${can('write') && !terminal(task) ? (!active(task) ? button('start', L('start'), task.question || task.status === 'needs_review' ? 'disabled' : '') : button('pause', L('pause'), task.status !== 'running' ? 'disabled' : '')) + button('cancel', L('cancel')) : ''}${button('report', L('report'))}${can('delete') && !active(task) ? button('delete', L('delete')) : ''}`;
-        $('da-tabs').innerHTML = ['overview', 'graph', 'plan', 'evidence', 'activity', 'quality'].map(tab => `<button type="button" role="tab" aria-selected="${S.tab === tab}" data-da-action="tab" data-tab="${tab}" class="${S.tab === tab ? 'active' : ''}">${esc(L(tab))}</button>`).join('');
+        $('da-tabs').innerHTML = ['overview', 'graph', 'plan', ...(canFindings() ? ['findings'] : []), 'evidence', 'activity', 'quality'].map(tab => `<button type="button" role="tab" aria-selected="${S.tab === tab}" data-da-action="tab" data-tab="${tab}" class="${S.tab === tab ? 'active' : ''}">${esc(L(tab))}</button>`).join('');
         const body = $('da-body'), scroller = $('da-inspector').querySelector('.da-detail-scroll'), scroll = scroller.scrollTop;
         const opened = new Set([...body.querySelectorAll('details[open]')].map(el => el.dataset.step));
         if (S.tab !== 'graph') window.DeepAssessmentGraph?.destroy();
@@ -122,10 +151,12 @@
         } else if (S.tab === 'graph') {
             renderGraph(body);
         } else if (S.tab === 'plan') {
-            body.innerHTML = (task.steps || []).map(step => `<details class="da-step" data-step="${esc(step.id)}" ${opened.has(step.id) ? 'open' : ''}><summary>${badge(step.status)} <strong>${esc(step.title)}</strong><small>${esc(step.id)}</small></summary><pre>${esc(step.instruction)}</pre><p>${esc(L('dependencies'))}: ${esc((step.depends_on || []).join(', ') || '—')} · ${esc(L('segments'))}: ${step.attempts || 0}</p><pre>${esc(step.summary)}</pre><p>${esc(L('evidenceIDs'))}: ${esc((step.evidence || []).join(', ') || '—')}</p><div class="da-controls">${step.conversation_id ? button('conversation', L('conversation'), `data-conversation="${esc(step.conversation_id)}"`) : ''}${!active(task) && can('write') && ['failed', 'blocked', 'interrupted', 'uncertain', 'cleanup_unconfirmed'].includes(step.status) ? button('retry', L('retry'), `data-step="${esc(step.id)}"`) : ''}</div></details>`).join('') || `<p>${esc(L('noSteps'))}</p>`;
-            body.innerHTML += `<div class="da-controls">${S.stepOffset ? button('step-previous', L('previous')) : ''}<span>${(task.steps || []).length} / ${S.stepTotal}</span>${S.stepMore ? button('step-next', L('next')) : ''}</div>`;
+            body.innerHTML = sourceBanner() + (S.focusedStep ? [S.focusedStep] : task.steps || []).map(step => `<details class="da-step" data-step="${esc(step.id)}" ${opened.has(step.id) || step.id === S.focusStepId ? 'open' : ''}><summary>${badge(step.status)} <strong>${esc(step.title)}</strong><small>${esc(step.id)}</small></summary><pre>${esc(step.instruction)}</pre><p>${esc(L('dependencies'))}: ${esc((step.depends_on || []).join(', ') || '—')} · ${esc(L('segments'))}: ${step.attempts || 0}</p><pre>${esc(step.summary)}</pre><p>${esc(L('evidenceIDs'))}: ${esc((step.evidence || []).join(', ') || '—')}</p><div class="da-controls">${step.conversation_id ? button('conversation', L('conversation'), `data-conversation="${esc(step.conversation_id)}"`) : ''}${!active(task) && can('write') && ['failed', 'blocked', 'interrupted', 'uncertain', 'cleanup_unconfirmed'].includes(step.status) ? button('retry', L('retry'), `data-step="${esc(step.id)}"`) : ''}</div></details>`).join('') || `<p>${esc(L('noSteps'))}</p>`;
+            if (!S.focusStepId) body.innerHTML += `<div class="da-controls">${S.stepOffset ? button('step-previous', L('previous')) : ''}<span>${(task.steps || []).length} / ${S.stepTotal}</span>${S.stepMore ? button('step-next', L('next')) : ''}</div>`;
+        } else if (S.tab === 'findings') {
+            body.innerHTML = `<div class="da-controls">${button('all-findings', L('allFindings'))}<span>${S.findingTotal}</span></div>` + (S.findings.map(v => `<article class="da-finding"><h4>${esc(v.title)}</h4><p>${esc(v.severity)} · ${esc(v.status)}</p><p>${esc(L('sourceStep'))}：${esc(v.assessment_step_title || v.assessment_step_id)}</p><div class="da-controls">${button('open-finding', L('openFinding'), `data-vulnerability="${esc(v.id)}"`)}${button('finding-evidence', L('findingEvidence'), `data-vulnerability="${esc(v.id)}" data-step="${esc(v.assessment_step_id)}"`)}</div></article>`).join('') || `<p>${esc(L('noFindings'))}</p>`) + `<div class="da-controls">${S.findingOffset ? button('previous-findings', L('previous')) : ''}${S.findingMore ? button('next-findings', L('next')) : ''}</div>`;
         } else if (S.tab === 'evidence') {
-            body.innerHTML = S.receipts.map(row => `<details class="da-step" data-step="${esc(row.id)}" ${opened.has(row.id) ? 'open' : ''}><summary>${badge(row.status)} ${esc(row.tool)} · ${esc(row.step_id)}</summary><code>${esc(row.execution_id || row.id)}</code><pre>${esc(row.arguments)}</pre><pre>${esc(row.result)}</pre></details>`).join('') || `<p>${esc(L('noRecords'))}</p>`;
+            body.innerHTML = sourceBanner(true) + S.receipts.map(row => `<details class="da-step" data-step="${esc(row.id)}" ${opened.has(row.id) ? 'open' : ''}><summary>${badge(row.status)} ${esc(row.tool)} · ${esc(row.step_id)}</summary><code>${esc(row.execution_id || row.id)}</code><pre>${esc(row.arguments)}</pre><pre>${esc(row.result)}</pre></details>`).join('') || `<p>${esc(L('noRecords'))}</p>`;
             body.innerHTML += `<div class="da-controls">${S.receiptOffset > 0 ? button('previous-receipts', L('previous')) : ''}${S.receiptMore ? button('more-receipts', L('next')) : ''}</div>`;
         } else if (S.tab === 'activity') {
             body.innerHTML = S.events.slice().reverse().map(row => `<div class="da-event"><small>${esc(new Date(row.created_at).toLocaleString())} · ${esc(row.step_id)} · ${esc(row.kind)}</small><pre>${esc(row.message)}</pre></div>`).join('') || `<p>${esc(L('noRecords'))}</p>`;
@@ -153,9 +184,19 @@
             $('deep-assessments-root').querySelector('[data-da-action="next"]').disabled = !S.more;
             if (detail && (!S.task || detail.task.revision >= S.task.revision)) S.task = detail.task;
             if (detail) { S.stepTotal = detail.step_total ?? detail.task.steps?.length ?? 0; S.stepMore = !!detail.step_has_more; }
+            if (id && S.originFindingId && canFindings()) {
+                const data = await json('/' + encodeURIComponent(id) + '/vulnerabilities/' + encodeURIComponent(S.originFindingId)); if (epoch !== S.epoch) return;
+                S.originFinding = data.vulnerability; S.focusedStep = data.step; S.focusStepId = data.vulnerability.assessment_step_id;
+            } else if (id && S.focusStepId) {
+                const data = await json('/' + encodeURIComponent(id) + '/steps/' + encodeURIComponent(S.focusStepId)); if (epoch !== S.epoch) return; S.focusedStep = data.step;
+            }
+            if (id && S.tab === 'findings' && canFindings()) {
+                const data = await json('/' + encodeURIComponent(id) + '/vulnerabilities?limit=20&offset=' + S.findingOffset); if (epoch !== S.epoch) return;
+                S.findings = data.vulnerabilities || []; S.findingTotal = data.total; S.findingMore = data.has_more;
+            }
             if (id && S.tab === 'graph') { const data = await json('/' + encodeURIComponent(id) + '/graph?' + new URLSearchParams({ scope: S.graphScope, offset: S.graphOffset, limit: 80 })); if (epoch !== S.epoch) return; S.graph = data; }
             if (id && S.tab === 'activity') { const data = await json('/' + encodeURIComponent(id) + '/events?after=' + (S.events.at(-1)?.id || 0)); if (epoch !== S.epoch) return; S.events.push(...data.events); S.events = S.events.slice(-500); }
-            if (id && S.tab === 'evidence') { const data = await json('/' + encodeURIComponent(id) + '/receipts?offset=' + S.receiptOffset); if (epoch !== S.epoch) return; S.receipts = data.receipts; S.receiptMore = data.has_more; }
+            if (id && S.tab === 'evidence') { const data = await json('/' + encodeURIComponent(id) + '/receipts?' + new URLSearchParams({ offset: S.receiptOffset, step_id: S.focusStepId })); if (epoch !== S.epoch) return; S.receipts = data.receipts; S.receiptMore = data.has_more; }
             renderTask();
         } catch (error) { if (epoch === S.epoch) notice(error.message, true); }
     }
@@ -218,7 +259,7 @@
         const values = Object.fromEntries(new FormData(form));
         values.concurrency = Number(values.concurrency); values.auto_resume = form.elements.auto_resume.checked;
         S.busy = true; ++S.epoch; form.querySelector('button[type="submit"]').disabled = true;
-        try { const data = await json('', { method: 'POST', body: JSON.stringify(values) }); S.id = data.task.id; S.task = data.task; S.tab = 'graph'; S.stepOffset = 0; S.stepMore = false; S.stepTotal = 0; S.graph = null; S.graphScope = ''; S.graphOffset = 0; S.graphNode = null; S.events = []; S.receipts = []; S.receiptOffset = 0; closeDrawer('da-form-drawer'); renderTask(); if ($('page-deep-assessments')?.classList.contains('active')) openDrawer('da-inspector'); notice(L('saved')); }
+        try { const data = await json('', { method: 'POST', body: JSON.stringify(values) }); S.id = data.task.id; S.task = data.task; S.focusStepId = ''; S.focusedStep = null; S.originFindingId = ''; S.originFinding = null; S.findingOffset = 0; S.tab = 'graph'; S.stepOffset = 0; S.stepMore = false; S.stepTotal = 0; S.graph = null; S.graphScope = ''; S.graphOffset = 0; S.graphNode = null; S.events = []; S.receipts = []; S.receiptOffset = 0; closeDrawer('da-form-drawer'); writeRoute(); renderTask(); if ($('page-deep-assessments')?.classList.contains('active')) openDrawer('da-inspector'); notice(L('saved')); }
         catch (error) { notice(error.message, true); }
         finally { S.busy = false; form.querySelector('button[type="submit"]').disabled = false; await refresh(); }
     }
@@ -231,8 +272,12 @@
             if (name === 'create') return await create();
             if (name === 'refresh') return await refresh();
             if (name === 'previous' || name === 'next') { S.page += name === 'previous' ? -1 : 1; S.page = Math.max(0, S.page); return await refresh(); }
-            if (name === 'select') { ++S.drawerEpoch; if (S.id !== data.id) { S.id = data.id; S.task = null; S.tab = 'graph'; S.stepOffset = 0; S.stepMore = false; S.stepTotal = 0; S.graph = null; S.graphScope = ''; S.graphOffset = 0; S.graphNode = null; ++S.nodeRequest; S.events = []; S.receipts = []; S.receiptOffset = 0; $('da-guidance').value = ''; $('da-inspector').querySelector('.da-detail-scroll').scrollTop = 0; } renderTask(); openDrawer('da-inspector'); return await refresh(); }
-            if (name === 'tab') { S.tab = data.tab; $('da-inspector').querySelector('.da-detail-scroll').scrollTop = 0; return await refresh(); }
+            if (name === 'select') { ++S.drawerEpoch; S.focusStepId = ''; S.focusedStep = null; S.originFindingId = ''; S.originFinding = null; S.findingOffset = 0; if (S.id !== data.id) { S.id = data.id; S.task = null; S.tab = 'graph'; S.stepOffset = 0; S.stepMore = false; S.stepTotal = 0; S.graph = null; S.graphScope = ''; S.graphOffset = 0; S.graphNode = null; ++S.nodeRequest; S.events = []; S.receipts = []; S.receiptOffset = 0; $('da-guidance').value = ''; $('da-inspector').querySelector('.da-detail-scroll').scrollTop = 0; } writeRoute(); renderTask(); openDrawer('da-inspector'); return await refresh(); }
+            if (name === 'tab') { S.tab = data.tab; writeRoute(); $('da-inspector').querySelector('.da-detail-scroll').scrollTop = 0; return await refresh(); }
+            if (name === 'open-finding' || name === 'all-findings') { closeDrawer('da-form-drawer'); closeDrawer('da-inspector'); window.AssessmentFindingLinks?.openFinding(name === 'open-finding' ? data.vulnerability : '', S.id); return; }
+            if (name === 'finding-evidence') { S.originFindingId = data.vulnerability; S.focusStepId = data.step; S.focusedStep = null; S.originFinding = null; S.tab = 'evidence'; S.receiptOffset = 0; writeRoute(); return await refresh(); }
+            if (name === 'clear-source') { S.focusStepId = ''; S.focusedStep = null; S.originFindingId = ''; S.originFinding = null; S.receiptOffset = 0; writeRoute(); return await refresh(); }
+            if (name === 'next-findings' || name === 'previous-findings') { S.findingOffset = Math.max(0, S.findingOffset + (name === 'next-findings' ? 20 : -20)); return await refresh(); }
             if (name === 'step-next' || name === 'step-previous') { S.stepOffset = Math.max(0, S.stepOffset + (name === 'step-next' ? 50 : -50)); return await refresh(); }
             if (name === 'graph-fit') return window.DeepAssessmentGraph?.fit();
             if (name === 'graph-in') return window.DeepAssessmentGraph?.zoomIn();
@@ -244,11 +289,11 @@
             if (name === 'cancel') { if (window.confirm(L('confirmStop'))) return await mutate('cancel'); return; }
             if (name === 'conversation') { closeDrawer('da-form-drawer'); closeDrawer('da-inspector'); if (typeof window.switchPage === 'function') window.switchPage('chat'); if (typeof window.loadConversation === 'function') await window.loadConversation(data.conversation); return; }
 
-            if (name === 'retry') { const step = S.task.steps.find(s => s.id === data.step); const uncertain = ['uncertain', 'cleanup_unconfirmed'].includes(step?.status); if (uncertain && !window.confirm(L('unknown') + '\n\n' + L('reconcile'))) return; return await mutate('retry', { step_id: data.step, reconciled: uncertain, cleanup_confirmed: uncertain }); }
+            if (name === 'retry') { const step = (S.focusedStep?.id === data.step ? S.focusedStep : S.task.steps.find(s => s.id === data.step)); const uncertain = ['uncertain', 'cleanup_unconfirmed'].includes(step?.status); if (uncertain && !window.confirm(L('unknown') + '\n\n' + L('reconcile'))) return; return await mutate('retry', { step_id: data.step, reconciled: uncertain, cleanup_confirmed: uncertain }); }
             if (name === 'report') { const response = await api('/' + encodeURIComponent(S.id) + '/report'); const url = URL.createObjectURL(await response.blob()); const a = document.createElement('a'); a.href = url; a.download = 'assessment-' + S.id + '.md'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); return; }
             if (name === 'delete' && can('delete') && window.confirm(L('confirmDelete'))) { S.busy = true; ++S.epoch; try { await api('/' + encodeURIComponent(S.id), { method: 'DELETE' }); S.id = ''; S.task = null; closeDrawer('da-inspector'); } finally { S.busy = false; } return await refresh(); }
             if (name === 'more-receipts' || name === 'previous-receipts') { S.receiptOffset = Math.max(0, S.receiptOffset + (name === 'more-receipts' ? 50 : -50)); return await refresh(); }
         } catch (error) { notice(error.message, true); }
     }
-    window.DeepAssessments = { init() { mount(); void refresh(); if (!S.timer) S.timer = setInterval(() => { if ($('page-deep-assessments')?.classList.contains('active') && !document.hidden) void refresh(); }, 4000); }, refresh };
+    window.DeepAssessments = { init() { mount(); applyRoute(); void refresh(); if (!S.timer) S.timer = setInterval(() => { if ($('page-deep-assessments')?.classList.contains('active') && !document.hidden) void refresh(); }, 4000); }, fromLocation() { mount(); if (applyRoute()) void refresh(); }, refresh };
 })();

@@ -3016,7 +3016,9 @@
     "detailRetestLog": "Retest log",
     "downloadOkTitle": "Downloaded",
     "exportFailedMessage": "Export failed",
-    "downloadFailed": "Download failed"
+    "downloadFailed": "Download failed",
+    "assessmentTask": "Deep assessment",
+    "assessmentStep": "Assessment step"
   },
   "tasksPage": {
     "statusFilter": "Status filter",
@@ -5373,6 +5375,23 @@
       "note": "Recorded observation",
       "user": "User supplied",
       "folded": "Folded"
-    }
+    },
+    "findings": "Findings",
+    "noFindings": "No registered findings yet.",
+    "openFinding": "Open in vulnerability management",
+    "allFindings": "View this assessment in vulnerability management",
+    "reproduction": "Reproduction steps",
+    "findingEvidence": "Reproduction evidence",
+    "sourceStep": "Source step",
+    "allSteps": "Show all steps and receipts",
+    "sourceFinding": "Related finding"
+  },
+  "assessmentFindingLinks": {
+    "source": "Source assessment",
+    "step": "Source step",
+    "openStep": "Return to assessment step",
+    "evidence": "View step and reproduction evidence",
+    "deleted": "Assessment deleted; finding retained",
+    "unavailable": "This account cannot open the source assessment"
   }
 }

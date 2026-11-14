@@ -3004,7 +3004,9 @@
     "detailRetestLog": "复测记录",
     "downloadOkTitle": "下载成功",
     "exportFailedMessage": "导出失败",
-    "downloadFailed": "下载失败"
+    "downloadFailed": "下载失败",
+    "assessmentTask": "深度测评",
+    "assessmentStep": "测评步骤"
   },
   "tasksPage": {
     "statusFilter": "状态筛选",
@@ -5361,6 +5363,23 @@
       "note": "观察记录",
       "user": "用户提供",
       "folded": "已折叠"
-    }
+    },
+    "findings": "关联漏洞",
+    "noFindings": "暂未登记漏洞。",
+    "openFinding": "在漏洞管理查看",
+    "allFindings": "在漏洞管理查看本次测评",
+    "reproduction": "复现步骤",
+    "findingEvidence": "复现证据",
+    "sourceStep": "来源步骤",
+    "allSteps": "显示全部步骤与回执",
+    "sourceFinding": "关联漏洞"
+  },
+  "assessmentFindingLinks": {
+    "source": "来源深度测评",
+    "step": "来源步骤",
+    "openStep": "返回测评步骤",
+    "evidence": "查看步骤与复现证据",
+    "deleted": "测评已删除，漏洞记录仍保留",
+    "unavailable": "当前账号不能打开关联测评"
   }
 }

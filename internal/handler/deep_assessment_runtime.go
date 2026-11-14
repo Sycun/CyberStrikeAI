@@ -287,7 +287,7 @@ func (r *deepAssessmentRuntime) Run(ctx context.Context, t *deepassessment.Task,
 		return out, err
 	}
 	contract := fmt.Sprintf("Assessment mandate (authoritative user task):\nGoal: %s\nScope: %s\nAcceptance: %s\nThis step [%s]: %s\n%s", t.Objective, t.Scope, t.Criteria, step.ID, step.Title, step.Instruction)
-	message := "继续当前测评步骤，先核对已有结果与未完成项。"
+	message := "继续当前测评步骤，先核对已有结果与未完成项。可用工具和权限允许时，验证出可复现漏洞后及时调用 record_vulnerability 登记完整复现步骤和证据；平台会按本次执行会话自动关联测评与步骤。检查点里的描述不等同于已登记漏洞。"
 	message += "\n\n用 assessment_memory 检索其他步骤的结果和执行过程，复用已有证据。重要进展调用 assessment_checkpoint。最终必须调用 assessment_result 提交 completed 或 blocked、事实结论、证据回执 IDs（工具结果底部 Execution receipt）和未完成项；需要跨段继续时提交 continue。不能把阶段回复当成整个目标完成。"
 	var roleTools []string
 	if t.Role != "" {

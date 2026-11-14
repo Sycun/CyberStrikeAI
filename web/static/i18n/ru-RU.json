@@ -3029,7 +3029,9 @@
     "detailRetestLog": "Журнал повторных проверок",
     "downloadOkTitle": "Скачано",
     "exportFailedMessage": "Экспорт не удался",
-    "downloadFailed": "Загрузка не удалась"
+    "downloadFailed": "Загрузка не удалась",
+    "assessmentTask": "Глубокая оценка",
+    "assessmentStep": "Шаг оценки"
   },
   "tasksPage": {
     "statusFilter": "Фильтр статуса",
@@ -5386,6 +5388,23 @@
       "note": "Наблюдение",
       "user": "От пользователя",
       "folded": "Свернуто"
-    }
+    },
+    "findings": "Уязвимости",
+    "noFindings": "Уязвимости пока не зарегистрированы.",
+    "openFinding": "Открыть управление уязвимостями",
+    "allFindings": "Все уязвимости этой оценки",
+    "reproduction": "Шаги воспроизведения",
+    "findingEvidence": "Доказательства",
+    "sourceStep": "Исходный шаг",
+    "allSteps": "Все шаги и результаты",
+    "sourceFinding": "Связанная уязвимость"
+  },
+  "assessmentFindingLinks": {
+    "source": "Исходная оценка",
+    "step": "Исходный шаг",
+    "openStep": "Открыть шаг оценки",
+    "evidence": "Шаг и доказательства воспроизведения",
+    "deleted": "Оценка удалена; уязвимость сохранена",
+    "unavailable": "Нет доступа к исходной оценке"
   }
 }

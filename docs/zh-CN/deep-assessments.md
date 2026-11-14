@@ -45,6 +45,18 @@ Agent 可调用：
 - `assessment_checkpoint`：保存当前观察，同时保留 Pi 原生自定义条目。
 - `assessment_result`：提交 completed、blocked 或 continue；完成需引用本任务真实成功调用的回执。
 
+## 漏洞管理关联
+
+执行过程中通过 `record_vulnerability` 成功登记的漏洞，按实际执行会话自动关联测评 ID、测评名称、步骤 ID 和步骤标题。只写在检查点或摘要中的观察不会自动生成漏洞。工具和权限沿用当前角色配置。
+
+- **测评 → 漏洞**：在详情抽屉的「关联漏洞」中查看本次测评已登记的漏洞，打开漏洞管理详情，或在测评中查看其复现步骤、证据和来源步骤回执。
+- **漏洞 → 测评**：漏洞详情显示来源测评和步骤，提供「返回测评步骤」「查看步骤与复现证据」入口。链接会定位具体步骤，不受步骤清单当前分页影响。
+- **按任务分组**：漏洞管理的任务视图以测评名称展示，内部以测评 ID 分组；同名测评及相同 ID 的批量任务不会混组。任务名称搜索同时支持测评名称，原 `task_id` 参数仍保留批量任务语义；测评可用 `assessment_id` 筛选。
+
+升级会按已有的可信执行会话补建历史关联，不按标题或标签猜测。关联快照随漏洞保存；删除测评或执行会话后，漏洞及其复现内容仍保留，已删除的测评不提供返回入口。
+
+读取测评和读取漏洞分别检查权限。仅分享测评不会自动分享所有漏洞；仅分享漏洞也不会授予来源测评的访问或执行权限。
+
 ## Pi 与宿主的分工
 
 Pi `SessionManager` 管理会话上下文、原生压缩、工具搜索、Skills、重试和生命周期。固定目标与步骤职责随每段执行保留，最新图态势作为有界自定义消息提供，更多历史通过图工具按需读取。结构化工具桥保留参数/输出 schema、结构化结果、annotations、namespace 和暴露策略，权限与实际执行仍由 Go 宿主处理。
@@ -63,7 +75,7 @@ Pi `SessionManager` 管理会话上下文、原生压缩、工具搜索、Skills
 
 当前调度面向单服务进程。允许范围文字会传给规划与执行，实际工具权限继承角色、平台权限、HITL 和调用拦截；范围文字本身不是网络隔离沙箱。
 
-新数据包括 `deep_assessments`、`deep_assessment_events`、`deep_assessment_calls`、`deep_assessment_nodes`、`deep_assessment_edges` 和 `deep_assessment_sessions`。已有深度测评记录会补建图与会话索引，不恢复已撤回旧模块的 `assessments`/`long_tasks` 历史任务。删除测评按外键清理这些业务记录，执行会话仍按原有会话保留策略处理。
+新数据包括 `deep_assessments`、`deep_assessment_events`、`deep_assessment_calls`、`deep_assessment_nodes`、`deep_assessment_edges`、`deep_assessment_sessions` 和 `vulnerability_assessment_sources`。已有深度测评记录会补建图与会话索引，不恢复已撤回旧模块的 `assessments`/`long_tasks` 历史任务。删除测评会清理其任务、图和调度记录；漏洞来源快照随漏洞保留，执行会话仍按原有会话保留策略处理。
 
 ## API 与权限
 
@@ -78,6 +90,9 @@ Pi `SessionManager` 管理会话上下文、原生压缩、工具搜索、Skills
 | `POST /api/deep-assessments/:id/control/:action` | start、pause、cancel、guidance、answer、retry |
 | `GET /api/deep-assessments/:id/graph?scope=&limit=80&offset=0` | 折叠图或展开指定节点 |
 | `GET /api/deep-assessments/:id/graph/node?node_id=…&offset=0` | 节点原文 |
+| `GET /api/deep-assessments/:id/vulnerabilities?limit=20&offset=0` | 当前账号可读的关联漏洞 |
+| `GET /api/deep-assessments/:id/vulnerabilities/:vulnerabilityId` | 属于该测评的漏洞详情和来源步骤 |
+| `GET /api/deep-assessments/:id/steps/:stepId` | 单个步骤，用于跨分页定位 |
 | `GET /api/deep-assessments/:id/events?after=0` | 增量事件 |
 | `GET /api/deep-assessments/:id/receipts?offset=0` | 工具回执 |
 | `GET /api/deep-assessments/:id/report` | 包含当前状态及缺口的阶段报告 |

@@ -43,7 +43,19 @@ func (h *AgentHandler) DeepAssessmentReceipts(c *gin.Context) {
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := h.db.Query(`SELECT id,step_id,tool,arguments,status,execution_id,result FROM deep_assessment_calls WHERE task_id=? ORDER BY updated_at DESC,id LIMIT 50 OFFSET ?`, c.Param("id"), offset)
+	stepID := c.Query("step_id")
+	if stepID != "" {
+		task, err := h.deepAssessments.Store.Get(c.Param("id"))
+		if err != nil {
+			deepAssessmentError(c, err)
+			return
+		}
+		if task.Step(stepID) == nil {
+			deepAssessmentError(c, sql.ErrNoRows)
+			return
+		}
+	}
+	rows, err := h.db.Query(`SELECT id,step_id,tool,arguments,status,execution_id,result FROM deep_assessment_calls WHERE task_id=? AND (?='' OR step_id=?) ORDER BY updated_at DESC,id LIMIT 50 OFFSET ?`, c.Param("id"), stepID, stepID, offset)
 	if err != nil {
 		deepAssessmentError(c, err)
 		return
