@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -115,4 +116,68 @@ func performConversationRequest(user *database.RBACUser, method, path string, bo
 	})
 	handler(c)
 	return w
+}
+
+func TestListConversationsProjectGroups(t *testing.T) {
+	db, user := setupConversationRBACTest(t)
+	project, err := db.CreateProject(&database.Project{Name: "Project history"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AssignResourceToUser(user.ID, "project", project.ID); err != nil {
+		t.Fatal(err)
+	}
+	unbound, err := db.CreateConversation("history default", database.ConversationCreateMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetResourceOwner("conversation", unbound.ID, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, title := range []string{"history first", "history second", "unrelated"} {
+		if _, err := db.CreateConversation(title, database.ConversationCreateMeta{ProjectID: project.ID}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.CreateConversation("history private", database.ConversationCreateMeta{}); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := NewConversationHandler(db, zap.NewNop())
+	for _, tt := range []struct {
+		name, filter, wantProject string
+		offset, wantTotal         int
+	}{
+		{"default workspace", database.ProjectFilterUnbound, "", 0, 1},
+		{"named project second page", project.ID, project.ID, 1, 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := fmt.Sprintf("/api/conversations?group_by_project=1&search=history&limit=1&offset=%d&project_id=%s", tt.offset, tt.filter)
+			w := performConversationRequest(user, http.MethodGet, path, nil, handler.ListConversations)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+			}
+			var response struct {
+				Conversations []database.Conversation
+				Total         int
+				ProjectGroups []struct {
+					ProjectID string
+					Total     int
+				}
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Total != tt.wantTotal || len(response.Conversations) != 1 || response.Conversations[0].ProjectID != tt.wantProject {
+				t.Fatalf("unexpected project page: %s", w.Body.String())
+			}
+			totals := map[string]int{}
+			for _, group := range response.ProjectGroups {
+				totals[group.ProjectID] = group.Total
+			}
+			if len(response.ProjectGroups) != 2 || totals[""] != 1 || totals[project.ID] != 2 {
+				t.Fatalf("projectGroups = %#v, want default workspace (1) and named project (2)", response.ProjectGroups)
+			}
+		})
+	}
 }
