@@ -1,6 +1,6 @@
 # Pi runtime
 
-CyberStrikeAI uses Pi 1.5.2 as its only runtime. Go owns business state, permissions, MCP execution, evidence, and delivery checks; an isolated Node worker hosts the Pi SDK. The source repository is [Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI). The upstream contribution fork is [CyberStrikeAI-upstream-fork](https://github.com/Sycun/CyberStrikeAI-upstream-fork).
+CyberStrikeAI uses Pi 1.5.2 as its only runtime. Go owns business state, permissions, MCP execution, evidence, and delivery checks; an isolated Node worker hosts the Pi SDK. The source repository is [Sycun/CyberStrikeAI](https://github.com/Sycun/CyberStrikeAI).
 
 Prefer public APIs from the pinned Pi SDK. Add host or worker logic where project permissions, business records, or compatibility require it.
 
