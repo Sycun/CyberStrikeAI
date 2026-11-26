@@ -223,6 +223,8 @@ type AgentTuningConfig struct {
 	RunRetryMaxBackoffSec int `yaml:"run_retry_max_backoff_sec,omitempty" json:"run_retry_max_backoff_sec,omitempty"`
 	// EmptyResponseContinueMaxAttempts Run 成功但未捕获助手正文时 Handler 层退避续跑次数；0=默认 5。
 	EmptyResponseContinueMaxAttempts int `yaml:"empty_response_continue_max_attempts,omitempty" json:"empty_response_continue_max_attempts,omitempty"`
+	// OutputTruncationContinueMaxAttempts 模型输出触达长度上限后的自动续写次数；0=默认 2，小于 0 关闭，大于 5 按 5。
+	OutputTruncationContinueMaxAttempts int `yaml:"output_truncation_continue_max_attempts,omitempty" json:"output_truncation_continue_max_attempts,omitempty"`
 	// TaskToolDescriptionPrefix when non-empty sets deep.Config TaskToolDescriptionGenerator (sub-agent names appended).
 	TaskToolDescriptionPrefix string `yaml:"task_tool_description_prefix,omitempty" json:"task_tool_description_prefix,omitempty"`
 }

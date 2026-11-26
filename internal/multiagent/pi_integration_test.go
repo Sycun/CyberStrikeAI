@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -699,6 +700,7 @@ func TestPiPlanExecuteRetainsSubmittedDraftForUnfinishedPlan(t *testing.T) {
 
 func TestPiReportsTruncatedModelOutput(t *testing.T) {
 	cfg := piTestConfig(t)
+	cfg.MultiAgent.Runtime.OutputTruncationContinueMaxAttempts = -1
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		fmt.Fprint(w, `data: {"id":"fixture","model":"fixture","choices":[{"index":0,"delta":{"role":"assistant","content":"First,"},"finish_reason":"length"}]}`+"\n\ndata: [DONE]\n\n")
@@ -715,6 +717,72 @@ func TestPiReportsTruncatedModelOutput(t *testing.T) {
 	}
 	if result.RuntimeStatus != "blocked" || result.RuntimeCompletionReason != ReasonModelOutputTruncated || result.Response != "First," {
 		t.Fatalf("expected the truncated turn, got %+v", result)
+	}
+}
+
+func TestPiContinuesTruncatedModelOutput(t *testing.T) {
+	cfg := piTestConfig(t)
+	cfg.MultiAgent.Runtime.OutputTruncationContinueMaxAttempts = 2
+	var calls atomic.Int32
+	var requestsMu sync.Mutex
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requestsMu.Lock()
+		requests = append(requests, string(body))
+		n := calls.Add(1)
+		requestsMu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		if n == 1 {
+			fmt.Fprint(w, `data: {"id":"fixture","model":"fixture","choices":[{"index":0,"delta":{"role":"assistant","content":"Alpha-"},"finish_reason":"length"}]}`+"\n\ndata: [DONE]\n\n")
+			return
+		}
+		fmt.Fprint(w, `data: {"id":"fixture","model":"fixture","choices":[{"index":0,"delta":{"role":"assistant","content":"Beta."},"finish_reason":"stop"}]}`+"\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+	cfg.OpenAI.BaseURL = server.URL + "/v1"
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	var continued atomic.Int32
+	var continuationAccumulated []string
+	result, err := RunSingleAgent(ctx, cfg, &cfg.MultiAgent, piTestAgent(cfg, nil), nil, zap.NewNop(), "truncation-continue", "", "Write the notes.", nil, nil,
+		func(kind, _ string, data interface{}) {
+			payload, _ := data.(map[string]any)
+			switch kind {
+			case "agent_output_truncated_continue":
+				continued.Add(1)
+				if payload["attempt"] != 1 || payload["maxAttempts"] != 2 || payload["contextPersisted"] != false {
+					t.Errorf("continue event: %#v", payload)
+				}
+			case "response_delta":
+				if continued.Load() == 0 {
+					return
+				}
+				acc, _ := payload["accumulated"].(string)
+				continuationAccumulated = append(continuationAccumulated, acc)
+			}
+		}, nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RuntimeStatus != "completed" || result.Response != "Alpha-Beta." || continued.Load() != 1 || calls.Load() != 2 {
+		t.Fatalf("result=%+v calls=%d events=%d", result, calls.Load(), continued.Load())
+	}
+	if len(continuationAccumulated) == 0 {
+		t.Fatal("expected continuation response_delta events")
+	}
+	for _, acc := range continuationAccumulated {
+		if acc == "Beta." || !strings.Contains(acc, "Alpha-") {
+			t.Fatalf("continuation accumulated dropped the earlier text: %q (all=%#v)", acc, continuationAccumulated)
+		}
+	}
+	if last := continuationAccumulated[len(continuationAccumulated)-1]; !strings.Contains(last, "Alpha-Beta.") {
+		t.Fatalf("continuation accumulated = %q, want stitched Alpha-Beta.", last)
+	}
+	requestsMu.Lock()
+	defer requestsMu.Unlock()
+	if len(requests) < 2 || !strings.Contains(requests[1], "Alpha-") || !strings.Contains(requests[1], "系统自动续写") {
+		t.Fatalf("continuation request lost the truncated text: %s", requests[1])
 	}
 }
 

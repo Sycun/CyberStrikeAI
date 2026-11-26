@@ -5,7 +5,8 @@ package agent
 const GeneratedContextTypeKey = "_csai_generated_context_type"
 const PlanExecuteExecutorContext = "plan_execute_executor"
 const PlanExecuteReplannerContext = "plan_execute_replanner"
+const OutputTruncationContinueContext = "output_truncation_continue"
 
 func IsGeneratedExecutionContext(kind string) bool {
-	return kind == PlanExecuteExecutorContext || kind == PlanExecuteReplannerContext
+	return kind == PlanExecuteExecutorContext || kind == PlanExecuteReplannerContext || kind == OutputTruncationContinueContext
 }

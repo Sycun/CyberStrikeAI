@@ -190,22 +190,19 @@ func finalizationBlockedMessage(d agentfinalizer.Decision) string {
 	if d.CompletionReason == "workflow_rejected" && strings.TrimSpace(d.FinalText) != "" {
 		return d.FinalText
 	}
-	var notice string
-	switch d.CompletionReason {
-	case agentfinalizer.ReasonPendingToolsCancelled:
-		notice = "收尾时取消了仍在运行的工具，任务未完成。"
-	case multiagent.ReasonUnfinishedPlan:
-		notice = unfinishedPlanNotice(d.UnfinishedPlanSteps)
+	if d.CompletionReason == multiagent.ReasonUnfinishedPlan {
+		notice := unfinishedPlanNotice(d.UnfinishedPlanSteps)
 		if text := strings.TrimSpace(d.FinalText); text != "" {
 			return notice + "\n\n**本轮已生成的内容（阶段性结果）**\n\n" + text
 		}
 		return notice
-	case multiagent.ReasonModelOutputTruncated:
-		notice = "模型输出达到长度上限，本轮回复未完成。"
-	default:
-		notice = "任务尚未达到最终回复条件，暂不生成成功结论。"
 	}
-	parts := []string{notice}
+	notice, keepText := finalizationBlockNotice(d)
+	parts := make([]string, 0, 4)
+	if keepText {
+		parts = append(parts, strings.TrimSpace(d.FinalText), "---")
+	}
+	parts = append(parts, notice)
 	if d.CompletionReason != "" {
 		parts = append(parts, "原因: "+d.CompletionReason)
 	}
@@ -216,6 +213,20 @@ func finalizationBlockedMessage(d agentfinalizer.Decision) string {
 		parts = append(parts, "缺失检查: "+strings.Join(d.MissingChecks, "; "))
 	}
 	return strings.Join(parts, "\n")
+}
+
+func finalizationBlockNotice(d agentfinalizer.Decision) (string, bool) {
+	switch d.CompletionReason {
+	case agentfinalizer.ReasonPendingToolsCancelled:
+		return "收尾时取消了仍在运行的工具，任务未完成。", false
+	case multiagent.ReasonModelOutputTruncated:
+		if strings.TrimSpace(d.FinalText) != "" {
+			return "模型输出达到长度上限，已保留以上已生成内容。本轮回复仍未完成。可发送「继续」接着生成。", true
+		}
+		return "模型输出达到长度上限，本轮回复未完成。", false
+	default:
+		return "任务尚未达到最终回复条件，暂不生成成功结论。", false
+	}
 }
 
 func finalizationResponsePayload(d agentfinalizer.Decision, extra map[string]interface{}) map[string]interface{} {

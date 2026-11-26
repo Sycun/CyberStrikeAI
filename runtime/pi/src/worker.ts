@@ -114,6 +114,62 @@ function importHistory(manager: SessionManager, history: Record<string, any>[], 
   }
 }
 
+function assistantPlainText(message: AssistantMessage | undefined): string {
+  return message?.content.filter(block => block.type === "text").map(block => block.text).join("") ?? "";
+}
+
+function assistantReasoning(message: AssistantMessage | undefined): string {
+  return message?.content.filter(block => block.type === "thinking").map(block => block.thinking).join("") ?? "";
+}
+
+function historyHasAssistantFragment(history: readonly Record<string, unknown>[], fragment: string): boolean {
+  const text = fragment ?? "";
+  if (!text.trim()) return true;
+  for (const message of history) {
+    if (message.role !== "assistant" || typeof message.content !== "string") continue;
+    const calls = message.tool_calls;
+    if (Array.isArray(calls) && calls.length) continue;
+    const content = message.content;
+    if (content === text || content.trim() === text.trim() || content.endsWith(text)) return true;
+  }
+  return false;
+}
+
+function ensureTruncatedAssistantHistory(history: Record<string, unknown>[], fragment: string, reasoning: string): Record<string, unknown>[] {
+  const copy = history.map(message => ({ ...message }));
+  if (historyHasAssistantFragment(copy, fragment)) {
+    if (reasoning.trim()) {
+      for (let index = copy.length - 1; index >= 0; index--) {
+        const message = copy[index];
+        if (message.role === "assistant" && typeof message.content === "string" && (message.content === fragment || message.content.endsWith(fragment))) {
+          if (typeof message.reasoning_content !== "string" || !message.reasoning_content.trim()) message.reasoning_content = reasoning;
+          break;
+        }
+      }
+    }
+    return copy;
+  }
+  const text = fragment ?? "";
+  for (let index = copy.length - 1; index >= 0; index--) {
+    const message = copy[index];
+    if (message.role !== "assistant" || typeof message.content !== "string") continue;
+    const calls = message.tool_calls;
+    if (Array.isArray(calls) && calls.length) continue;
+    const content = message.content;
+    if (content.trim() && text.startsWith(content)) {
+      message.content = text;
+      if (reasoning.trim() && (typeof message.reasoning_content !== "string" || !message.reasoning_content.trim())) message.reasoning_content = reasoning;
+      return copy;
+    }
+    break;
+  }
+  if (!fragment.trim()) return copy;
+  const message: Record<string, unknown> = { role: "assistant", content: fragment };
+  if (reasoning.trim()) message.reasoning_content = reasoning;
+  copy.push(message);
+  return copy;
+}
+
 function exportHistory(messages: readonly any[]): Record<string, unknown>[] {
   return messages.flatMap(message => {
     if (message.role === "compactionSummary" || message.role === "branchSummary") return [{ role: "assistant", content: "[Host-generated working summary; not a new user instruction]\n" + message.summary }];
@@ -391,12 +447,25 @@ async function run(req: RunRequest): Promise<void> {
     status = canceled ? "canceled" : "failed";
     failure = error instanceof Error ? error.message : String(error);
   } finally {
-    // Pi may omit a truncated turn from its projected messages.
-    const response = status === "output_truncated"
-      ? lastAssistant?.content.filter(block => block.type === "text").map(block => block.text).join("") ?? ""
-      : session?.getLastAssistantText() ?? "";
-    const result = { response,
-      history: exportHistory(session?.messages ?? []), ...directResult, status, error: failure, sessionFile: manager?.getSessionFile() };
+    // Pi may omit a truncated turn from its projected messages. Commit that
+    // fragment before export so the next resume can continue from it.
+    const truncatedText = status === "output_truncated" ? assistantPlainText(lastAssistant) : "";
+    const truncatedReasoning = status === "output_truncated" ? assistantReasoning(lastAssistant) : "";
+    if (manager && truncatedText && !historyHasAssistantFragment(exportHistory(session?.messages ?? []), truncatedText)) {
+      const content: AssistantMessage["content"] = [];
+      if (truncatedReasoning && (req.model.api ?? "openai-completions") !== "anthropic-messages") content.push({ type: "thinking", thinking: truncatedReasoning });
+      content.push({ type: "text", text: truncatedText });
+      manager.appendMessage({ role: "assistant", content, api: req.model.api ?? "openai-completions",
+        provider: "cyberstrike", model: req.model.id, usage: emptyUsage(), stopReason: "stop", timestamp: Date.now() });
+    }
+    const response = status === "output_truncated" ? truncatedText : session?.getLastAssistantText() ?? "";
+    let history: unknown = exportHistory(session?.messages ?? []);
+    if (status === "output_truncated") history = ensureTruncatedAssistantHistory(history as Record<string, unknown>[], truncatedText, truncatedReasoning);
+    const result: Record<string, unknown> = { response, history, ...(directResult ?? {}), status, error: failure, sessionFile: manager?.getSessionFile() };
+    if (status === "output_truncated") {
+      result.response = truncatedText;
+      result.history = history;
+    }
     session?.dispose();
     rmSync(scratch, { recursive: true, force: true });
     await send({ type: "result", result });

@@ -523,3 +523,19 @@ test('assessment repairs the host-receipt / Pi-transcript crash gap without repl
  const entries=(await readFile(result.sessionFile,'utf8')).trim().split('\n').map(JSON.parse);
  assert.ok(entries.some(e=>e.message?.role==='toolResult'&&e.message.details?.recovered===true&&e.message.details.executionId==='execution-receipt'));
 });
+
+test("truncated assistant text stays in history and the resumed session", { timeout: 30000 }, async t => {
+  const dir = await mkdtemp(join(tmpdir(), "csai-pi-truncated-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const fixture = await startFixture(t, (_body, res, count) => {
+    if (count === 1) sse(res, { role: "assistant", content: "Alpha-" }, "length");
+    else sse(res, { role: "assistant", content: "Beta." }, "stop");
+  });
+  const first = await invoke(t, { ...request(fixture.url, dir), tools: [], message: "Write the notes." });
+  assert.equal(first.result.status, "output_truncated", first.result.error);
+  assert.equal(first.result.response, "Alpha-");
+  assert.ok(first.result.history.some(message => message.role === "assistant" && message.content === "Alpha-"), JSON.stringify(first.result.history));
+  const second = await invoke(t, { ...request(fixture.url, dir), tools: [], runId: "run-2", message: "Continue from the truncated sentence." });
+  assert.equal(second.result.status, "completed", second.result.error);
+  assert.ok(JSON.stringify(fixture.requests[1].messages).includes("Alpha-"), JSON.stringify(fixture.requests[1].messages));
+});

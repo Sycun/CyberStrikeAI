@@ -469,7 +469,7 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 		progress("tool_result", result.Content, map[string]any{"toolName": call.Name, "toolCallId": call.ID, "executionId": result.ExecutionID, "result": result.Content, "success": !result.IsError, "isError": result.IsError, "agentFacing": true})
 		return result, err
 	}
-	var text, thought string
+	var text, thought, streamPrefix string
 	var modelCalls, promptTokens, completionTokens, cacheRead, cacheWrite, reasoningTokens int
 	reasonID := func() string { return fmt.Sprintf("%s-reasoning-%d", runID, iteration.Load()) }
 	emit := func(e agentruntime.Event) {
@@ -544,11 +544,11 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 				if r.child {
 					return
 				}
-				if text == "" {
+				if streamPrefix == "" && text == "" {
 					progress("response_start", "", map[string]any{})
 				}
 				text += data.Delta.Delta
-				progress("response_delta", data.Delta.Delta, map[string]any{"accumulated": text})
+				progress("response_delta", data.Delta.Delta, map[string]any{"accumulated": stitchOutputSegments(streamPrefix, text)})
 			case "thinking_delta":
 				if thought == "" {
 					progress("reasoning_chain_stream_start", " ", map[string]any{"streamId": reasonID()})
@@ -598,9 +598,57 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 			}
 		}
 	}
-	res, runErr := (agentruntime.Pi{NodePath: r.cfg.AgentRuntime.NodePath, WorkerPath: r.cfg.AgentRuntime.WorkerPath}).Run(ctx, req, invoke, emit, bind)
-	if thought != "" {
-		progress("reasoning_chain_stream_end", thought, map[string]any{"streamId": reasonID()})
+	runSegment := func(segmentCtx context.Context, segmentMessage string, segmentHistory json.RawMessage, continuation bool) (*RunResult, error) {
+		if err := segmentCtx.Err(); err != nil {
+			return nil, err
+		}
+		req.Message = segmentMessage
+		if len(segmentHistory) > 0 {
+			req.History = segmentHistory
+		}
+		if continuation {
+			req.Images = nil
+		}
+		res, runErr := (agentruntime.Pi{NodePath: r.cfg.AgentRuntime.NodePath, WorkerPath: r.cfg.AgentRuntime.WorkerPath}).Run(segmentCtx, req, invoke, emit, bind)
+		reasoning := thought
+		if thought != "" {
+			progress("reasoning_chain_stream_end", thought, map[string]any{"streamId": reasonID()})
+			thought = ""
+		}
+		text = ""
+		if res == nil {
+			return nil, runErr
+		}
+		idsMu.Lock()
+		out := piResultFromRuntime(res, ids, plan)
+		idsMu.Unlock()
+		if strings.TrimSpace(out.Response) != "" || strings.TrimSpace(reasoning) != "" {
+			out.LastAgentTraceInput = ensureTruncatedAssistantHistory(out.LastAgentTraceInput, out.Response, reasoning)
+		}
+		out.LastAgentTraceInput = tagOutputContinuationPrompts(out.LastAgentTraceInput)
+		return out, runErr
+	}
+	out, runErr := runSegment(ctx, message, nil, false)
+	if out != nil && runErr == nil {
+		maxAttempts := OutputTruncationContinueMaxAttemptsFromConfig(&r.cfg.MultiAgent.Runtime)
+		confirmed := out.Response
+		out, runErr = continueAfterOutputTruncation(ctx, maxAttempts, out, func(segmentCtx context.Context, attempt int, history, instruction string) (*RunResult, error) {
+			// 续写段的 delta 只有本段增量；先记下已拼接正文，前端才不会把前半段盖掉。
+			streamPrefix = confirmed
+			seg, err := runSegment(segmentCtx, instruction, json.RawMessage(history), true)
+			if seg != nil {
+				confirmed = stitchOutputSegments(confirmed, seg.Response)
+			}
+			return seg, err
+		}, func(attempt, maxAttempts int) {
+			progress("agent_output_truncated_continue", fmt.Sprintf("模型输出达到长度上限，正在第 %d/%d 次自动续写…", attempt, maxAttempts), map[string]any{
+				"attempt":          attempt,
+				"maxAttempts":      maxAttempts,
+				"completionReason": ReasonModelOutputTruncated,
+				"contextInjection": true,
+				"contextPersisted": false,
+			})
+		})
 	}
 	if modelCalls > 0 {
 		progress("agent_usage_summary", "Pi token usage summary", map[string]any{
@@ -609,10 +657,13 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 			"cachedTokens": cacheRead, "cacheWriteTokens": cacheWrite, "reasoningTokens": reasoningTokens,
 		})
 	}
-	if res == nil {
-		return nil, runErr
+	if r.child && out != nil {
+		progress("agent_reply", out.Response, map[string]any{"agentName": r.agentID})
 	}
-	idsMu.Lock()
+	return out, runErr
+}
+
+func piResultFromRuntime(res *agentruntime.Result, ids []string, plan piRunPlan) *RunResult {
 	out := &RunResult{Response: res.Response, LastAgentTraceInput: string(res.History), LastAgentTraceOutput: res.Response, MCPExecutionIDs: append([]string(nil), ids...), Status: res.Status}
 	switch res.Status {
 	case "completed":
@@ -633,9 +684,5 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 	case "failed":
 		out.RuntimeStatus = "failed"
 	}
-	idsMu.Unlock()
-	if r.child {
-		progress("agent_reply", res.Response, map[string]any{"agentName": r.agentID})
-	}
-	return out, runErr
+	return out
 }

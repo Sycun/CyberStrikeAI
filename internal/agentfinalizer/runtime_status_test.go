@@ -23,3 +23,11 @@ func TestTruncatedOutputRetainsReasonWithoutFinalText(t *testing.T) {
 		t.Fatalf("unexpected delivery: %+v", decision)
 	}
 }
+
+func TestTruncatedOutputKeepsCandidateText(t *testing.T) {
+	result := &multiagent.RunResult{Response: "已生成的前半段", RuntimeStatus: StatusBlocked, RuntimeCompletionReason: multiagent.ReasonModelOutputTruncated}
+	decision := FromRunResult(nil, result, Input{})
+	if decision.Finalizable || decision.Finalized || decision.FinalText != "已生成的前半段" || decision.CompletionReason != multiagent.ReasonModelOutputTruncated {
+		t.Fatalf("unexpected delivery: %+v", decision)
+	}
+}
