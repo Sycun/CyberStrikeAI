@@ -44,6 +44,8 @@ type Decision struct {
 	ConversationID       string   `json:"conversationId,omitempty"`
 	AssistantMessageID   string   `json:"messageId,omitempty"`
 	CandidateResponseLen int      `json:"candidateResponseLen,omitempty"`
+
+	UnfinishedPlanSteps []multiagent.PlanStep `json:"unfinishedPlanSteps,omitempty"`
 }
 
 type Input struct {
@@ -75,6 +77,9 @@ func FromRunResult(db *database.DB, result *multiagent.RunResult, in Input) Deci
 	}
 	d := Decide(db, in)
 	if result != nil {
+		if d.CompletionReason == multiagent.ReasonUnfinishedPlan {
+			d.UnfinishedPlanSteps = result.UnfinishedPlanSteps
+		}
 		result.Finalized = d.Finalized
 		result.Status = d.Status
 		result.CompletionReason = d.CompletionReason
@@ -121,6 +126,10 @@ func Decide(db *database.DB, in Input) Decision {
 		d.EvidenceVerified = false
 		if d.CompletionReason == ReasonVerified {
 			d.CompletionReason = status
+		}
+		if d.CompletionReason == multiagent.ReasonUnfinishedPlan && isEmptyCandidate(text) {
+			d.FinalText = ""
+			d.CandidateResponseLen = 0
 		}
 		d.MissingChecks = append(d.MissingChecks, "agent run status is "+status)
 		return d
@@ -182,6 +191,9 @@ func ResponsePayload(d Decision, extra map[string]interface{}) map[string]interf
 	}
 	if d.AgentMode != "" {
 		out["agentMode"] = d.AgentMode
+	}
+	if len(d.UnfinishedPlanSteps) > 0 {
+		out["unfinishedPlanSteps"] = d.UnfinishedPlanSteps
 	}
 	for k, v := range extra {
 		out[k] = v

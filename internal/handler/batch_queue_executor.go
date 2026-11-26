@@ -382,7 +382,7 @@ func (h *AgentHandler) executeOneBatchSubTask(queueID string, queue *BatchTaskQu
 	if !decision.Finalizable {
 		resText = finalizationBlockedMessage(decision)
 		finishStatus = decision.Status
-		sendEvent("finalization_check", resText, decision)
+		sendEvent("finalization_check", finalizationCheckMessage(decision), decision)
 	}
 	sendEvent("response", resText, finalizationResponsePayload(decision, map[string]interface{}{
 		"conversationId":                   conversationID,

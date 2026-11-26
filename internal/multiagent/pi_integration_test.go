@@ -641,7 +641,7 @@ func TestPiChatCannotCompleteWithCurrentPlanOpen(t *testing.T) {
 			}
 			first := run("Draft the notes.")
 			if finishPlan {
-				if first.RuntimeStatus != "completed" || calls.Load() != 3 {
+				if first.RuntimeStatus != "completed" || len(first.UnfinishedPlanSteps) != 0 || calls.Load() != 3 {
 					t.Fatalf("expected completed plan, got %+v after %d calls", first, calls.Load())
 				}
 				return
@@ -649,10 +649,51 @@ func TestPiChatCannotCompleteWithCurrentPlanOpen(t *testing.T) {
 			if first.RuntimeStatus != "blocked" || first.RuntimeCompletionReason != ReasonUnfinishedPlan || calls.Load() != 2 {
 				t.Fatalf("expected unfinished plan, got %+v after %d calls", first, calls.Load())
 			}
+			if want := (PlanStep{ID: "1", Subject: "Draft notes", Status: "pending"}); len(first.UnfinishedPlanSteps) != 1 || first.UnfinishedPlanSteps[0] != want {
+				t.Fatalf("expected unfinished step %+v, got %+v", want, first.UnfinishedPlanSteps)
+			}
 			if next := run("Please summarize what you have."); next.RuntimeStatus != "completed" {
 				t.Fatalf("old plan state should not block a new reply: %+v", next)
 			}
 		})
+	}
+}
+
+func TestPiPlanExecuteRetainsSubmittedDraftForUnfinishedPlan(t *testing.T) {
+	cfg := piTestConfig(t)
+	cfg.MultiAgent.SubAgents = []config.MultiAgentSubConfig{{ID: "executor", Description: "Draft notes"}}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch calls.Add(1) {
+		case 1:
+			piReply(w, "write_todos", "plan", map[string]any{"todos": []map[string]any{
+				{"content": "Draft notes", "status": "completed"},
+				{"content": "Check figures", "status": "in_progress"},
+				{"content": "Review wording", "status": "pending"},
+			}}, "")
+		case 2:
+			piReply(w, "exit", "submit", map[string]any{"final_result": "Here are the draft notes."}, "")
+		default:
+			t.Error("unexpected request after submitting draft")
+		}
+	}))
+	defer server.Close()
+	cfg.OpenAI.BaseURL = server.URL + "/v1"
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ag := agent.NewAgent(&cfg.OpenAI, &cfg.Agent, mcp.NewServer(zap.NewNop()), nil, zap.NewNop(), 8)
+	result, err := RunMultiAgent(ctx, cfg, &cfg.MultiAgent, ag, nil, zap.NewNop(), "plan-execute-fixture", "", "Draft the notes.", nil, nil, nil, "", "plan_execute", nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RuntimeStatus != "blocked" || result.RuntimeCompletionReason != ReasonUnfinishedPlan || result.Response != "Here are the draft notes." {
+		t.Fatalf("expected a blocked run with the submitted draft, got %+v", result)
+	}
+	steps := result.UnfinishedPlanSteps
+	if len(steps) != 2 ||
+		steps[0] != (PlanStep{ID: "2", Subject: "Check figures", Status: "in_progress"}) ||
+		steps[1] != (PlanStep{ID: "3", Subject: "Review wording", Status: "pending"}) {
+		t.Fatalf("unexpected unfinished plan steps: %+v", steps)
 	}
 }
 

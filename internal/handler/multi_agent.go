@@ -426,7 +426,7 @@ func (h *AgentHandler) MultiAgentLoopStream(c *gin.Context) {
 	responseText := decision.FinalText
 	if !decision.Finalizable {
 		responseText = finalizationBlockedMessage(decision)
-		sendEvent("finalization_check", responseText, decision)
+		sendEvent("finalization_check", finalizationCheckMessage(decision), decision)
 		taskStatus = decision.Status
 		h.tasks.UpdateTaskStatus(conversationID, taskStatus)
 	}

@@ -617,9 +617,10 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 	switch res.Status {
 	case "completed":
 		out.RuntimeStatus = "completed"
-		if plan.unfinished() {
+		if steps := plan.unfinishedSteps(); len(steps) > 0 {
 			out.RuntimeStatus = "blocked"
 			out.RuntimeCompletionReason = ReasonUnfinishedPlan
+			out.UnfinishedPlanSteps = steps
 		}
 	case "output_truncated":
 		out.RuntimeStatus = "blocked"

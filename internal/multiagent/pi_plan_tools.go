@@ -212,17 +212,14 @@ func (r *piRun) executePiPlan(ctx context.Context, call agentruntime.ToolCall) (
 
 // piRunPlan records only plan changes made in this run. Older tasks in
 // the conversation's progress board must not block an unrelated reply.
-type piRunPlan map[string]string
+type piRunPlan map[string]PlanStep
 
 func (plan piRunPlan) observe(call agentruntime.ToolCall, response string) {
 	switch call.Name {
 	case "TaskCreate", "TaskUpdate":
-		var task struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-		}
+		var task PlanStep
 		if json.Unmarshal([]byte(response), &task) == nil && task.ID != "" {
-			plan[task.ID] = task.Status
+			plan[task.ID] = task
 		}
 	case "write_todos":
 		todos, ok := call.Arguments["todos"].([]any)
@@ -232,17 +229,25 @@ func (plan piRunPlan) observe(call agentruntime.ToolCall, response string) {
 		clear(plan)
 		for i, entry := range todos {
 			item, _ := entry.(map[string]any)
+			id := strconv.Itoa(i + 1)
+			subject, _ := item["content"].(string)
 			status, _ := item["status"].(string)
-			plan[strconv.Itoa(i+1)] = status
+			plan[id] = PlanStep{ID: id, Subject: subject, Status: status}
 		}
 	}
 }
 
-func (plan piRunPlan) unfinished() bool {
-	for _, status := range plan {
-		if status == "pending" || status == "in_progress" {
-			return true
+func (plan piRunPlan) unfinishedSteps() []PlanStep {
+	var steps []PlanStep
+	for _, task := range plan {
+		if task.Status == "pending" || task.Status == "in_progress" {
+			steps = append(steps, task)
 		}
 	}
-	return false
+	sort.Slice(steps, func(i, j int) bool {
+		a, _ := strconv.Atoi(steps[i].ID)
+		b, _ := strconv.Atoi(steps[j].ID)
+		return a < b
+	})
+	return steps
 }

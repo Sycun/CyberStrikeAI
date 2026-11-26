@@ -156,7 +156,34 @@ func finalizationCheckMessage(d agentfinalizer.Decision) string {
 	if d.Finalizable {
 		return "已交付本轮回复。"
 	}
+	if d.CompletionReason == multiagent.ReasonUnfinishedPlan {
+		return unfinishedPlanNotice(d.UnfinishedPlanSteps)
+	}
 	return finalizationBlockedMessage(d)
+}
+
+func unfinishedPlanNotice(steps []multiagent.PlanStep) string {
+	if len(steps) == 0 {
+		return "本轮任务未完成，计划中仍有待执行或进行中的步骤。"
+	}
+	var notice strings.Builder
+	fmt.Fprintf(&notice, "本轮任务未完成，还有 %d 个计划步骤未结束。\n", len(steps))
+	escapeTitle := strings.NewReplacer(
+		"\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "~", "\\~",
+		"[", "\\[", "]", "\\]", "<", "\\<", ">", "\\>", "&", "\\&",
+	)
+	for _, step := range steps {
+		status := "待执行"
+		if step.Status == "in_progress" {
+			status = "进行中"
+		}
+		title := strings.Join(strings.Fields(step.Subject), " ")
+		if title == "" {
+			title = "步骤 #" + step.ID
+		}
+		fmt.Fprintf(&notice, "\n- %s · %s", status, escapeTitle.Replace(title))
+	}
+	return notice.String()
 }
 
 func finalizationBlockedMessage(d agentfinalizer.Decision) string {
@@ -168,7 +195,11 @@ func finalizationBlockedMessage(d agentfinalizer.Decision) string {
 	case agentfinalizer.ReasonPendingToolsCancelled:
 		notice = "收尾时取消了仍在运行的工具，任务未完成。"
 	case multiagent.ReasonUnfinishedPlan:
-		notice = "本轮计划仍有标记为「待执行」或「进行中」的步骤，最终回复暂未交付。请核对计划中的步骤状态。"
+		notice = unfinishedPlanNotice(d.UnfinishedPlanSteps)
+		if text := strings.TrimSpace(d.FinalText); text != "" {
+			return notice + "\n\n**本轮已生成的内容（阶段性结果）**\n\n" + text
+		}
+		return notice
 	case multiagent.ReasonModelOutputTruncated:
 		notice = "模型输出达到长度上限，本轮回复未完成。"
 	default:
