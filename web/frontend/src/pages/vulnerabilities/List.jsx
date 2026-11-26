@@ -29,7 +29,7 @@ function SourceCell({ record }) {
 
 export default function VulnTable({
     t, data, loading, page, pageSize, total, selection, onSelectionChange,
-    onOpen, onEdit, onDelete, onDownload, sort, onSort, canWrite, canDelete,
+    onOpen, onEdit, onArchive, onDelete, onDownload, sort, onSort, canWrite, canDelete,
     onPageChange, onPageSizeChange, toolbar, onRefresh
 }) {
     const columns = [
@@ -43,6 +43,7 @@ export default function VulnTable({
                         {record.type || '—'}
                         {record.case_id ? ` · ${t('vulnerabilityPage.mergedRecord', null, '已归并')}` : ''}
                         {record.assessment_id ? ` · ${t('vulnerabilityPage.assessmentTask', null, '深度测评')}` : ''}
+                        {record.archived ? ` · ${t('projects.statusArchived', null, '已归档')}` : ''}
                     </span>
                 </div>
             )
@@ -93,7 +94,7 @@ export default function VulnTable({
         {
             title: t('vulnerabilityPage.tableActions', null, '操作'),
             dataIndex: 'id',
-            width: 200,
+            width: canWrite ? 250 : 200,
             render: (_, record) => (
                 <div className="vulnerability-row-actions">
                     <Button size="small" theme="borderless" onClick={event => { event.stopPropagation(); onOpen(record.id); }}>
@@ -113,6 +114,15 @@ export default function VulnTable({
                             onClick={event => { event.stopPropagation(); onEdit(record); }}
                         >
                             {t('common.edit', null, '编辑')}
+                        </Button>
+                    )}
+                    {canWrite && !record.project_archived && (
+                        <Button
+                            size="small"
+                            theme="borderless"
+                            onClick={event => { event.stopPropagation(); onArchive(record); }}
+                        >
+                            {record.archived ? t('projects.restore', null, '恢复') : t('projects.archiveProject', null, '归档')}
                         </Button>
                     )}
                     {canDelete && (

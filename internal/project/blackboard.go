@@ -41,6 +41,9 @@ func BuildFactIndexBlock(db *database.DB, projectID string, cfg config.ProjectCo
 	if err != nil {
 		return "", err
 	}
+	if proj.Status == database.ProjectStatusArchived {
+		return "", nil
+	}
 
 	conversationID := ""
 	if len(conversationIDs) > 0 {

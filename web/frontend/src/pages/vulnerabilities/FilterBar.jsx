@@ -1,5 +1,5 @@
 /** 漏洞筛选栏：关键词 + 级别/状态/项目/来源/任务标签/深度测评，选项来自 filter-options。 */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button, Input, Select } from '@douyinfe/semi-ui';
 import { IconRefresh, IconSearch } from '@douyinfe/semi-icons';
 import { useDebounced } from '../../components/hooks';
@@ -10,6 +10,7 @@ function withEmpty(label, options) {
 }
 
 export default function FilterBar({ t, filters, options, projectOptions, hasGroupFilters, onChange, onReset }) {
+    const archiveLabel = useId();
     const [keyword, setKeyword] = useState(filters.q);
     const debounced = useDebounced(keyword, 380);
     const lastEmitted = useRef(filters.q);
@@ -56,6 +57,18 @@ export default function FilterBar({ t, filters, options, projectOptions, hasGrou
                 placeholder={t('vulnerabilityPage.status', null, '状态')}
                 optionList={withEmpty(t('dashboard.allStatuses', null, '全部状态'), statusOptions(t))}
                 onChange={value => onChange('status', value || '')}
+            />
+            <span id={archiveLabel} hidden>{t('vulnerabilityPage.archiveStatus', null, '归档状态')}</span>
+            <Select
+                className="vulnerability-filter-select"
+                value={filters.archived}
+                aria-labelledby={archiveLabel}
+                optionList={[
+                    { value: '', label: t('vulnerabilityPage.unarchived', null, '未归档') },
+                    { value: 'true', label: t('projects.statusArchived', null, '已归档') },
+                    { value: 'all', label: t('vulnerabilityPage.allArchiveStates', null, '全部归档状态') }
+                ]}
+                onChange={value => onChange('archived', value || '')}
             />
             <Select
                 className="vulnerability-filter-select vulnerability-filter-select--wide"

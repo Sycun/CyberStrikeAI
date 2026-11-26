@@ -26,6 +26,13 @@ func projectIDFromConversation(db *database.DB, ctx context.Context) (string, er
 	if strings.TrimSpace(pid) == "" {
 		return "", fmt.Errorf("当前对话未绑定项目，请先在对话中选择项目或创建带项目的对话")
 	}
+	p, err := db.GetProject(pid)
+	if err != nil {
+		return "", err
+	}
+	if p.Status == database.ProjectStatusArchived {
+		return "", fmt.Errorf("项目已归档，恢复项目后可在对话中使用项目事实")
+	}
 	return pid, nil
 }
 

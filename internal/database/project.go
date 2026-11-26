@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -11,6 +12,10 @@ import (
 )
 
 var factKeyPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._/-]*$`)
+
+const ProjectStatusArchived = "archived"
+
+var ErrProjectNotFound = errors.New("项目不存在")
 
 // ValidateFactKey 校验事实 key（项目内唯一标识）。
 func ValidateFactKey(key string) error {
@@ -101,7 +106,10 @@ func (db *DB) SaveContextCheckpoint(f *ProjectFact) error {
 	result, err := db.Exec(`INSERT INTO project_facts
 		(id, project_id, fact_key, category, summary, body, confidence, source_conversation_id, pinned, created_at, updated_at)
 		SELECT ?, ?, ?, 'note', ?, ?, 'tentative', ?, 0, ?, ?
-		WHERE EXISTS (SELECT 1 FROM conversations WHERE id = ? AND project_id = ?)
+		WHERE EXISTS (
+			SELECT 1 FROM conversations c JOIN projects p ON p.id = c.project_id
+			WHERE c.id = ? AND c.project_id = ? AND p.status != 'archived'
+		)
 		ON CONFLICT(project_id, fact_key) DO UPDATE SET
 		category = 'note', summary = excluded.summary, body = excluded.body,
 		confidence = 'tentative', source_conversation_id = excluded.source_conversation_id,
@@ -116,7 +124,7 @@ func (db *DB) SaveContextCheckpoint(f *ProjectFact) error {
 		return err
 	}
 	if changed == 0 {
-		return fmt.Errorf("checkpoint project does not match current conversation binding")
+		return fmt.Errorf("checkpoint requires a matching project that is not archived")
 	}
 	return nil
 }
@@ -165,7 +173,7 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	).Scan(&p.ID, &p.Name, &p.Description, &p.ScopeJSON, &p.Status, &pinned, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("项目不存在")
+			return nil, ErrProjectNotFound
 		}
 		return nil, fmt.Errorf("获取项目失败: %w", err)
 	}
@@ -327,17 +335,33 @@ func (db *DB) ListProjectsForAccess(status, search string, limit, offset int, us
 	return out, rows.Err()
 }
 
-// UpdateProject 更新项目。
-func (db *DB) UpdateProject(p *Project) error {
-	p.UpdatedAt = time.Now()
-	_, err := db.Exec(
-		`UPDATE projects SET name = ?, description = ?, scope_json = ?, status = ?, pinned = ?, updated_at = ? WHERE id = ?`,
-		p.Name, p.Description, p.ScopeJSON, p.Status, boolToInt(p.Pinned), p.UpdatedAt, p.ID,
+// ProjectUpdate contains only the fields supplied for a partial update.
+type ProjectUpdate struct {
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	ScopeJSON   *string `json:"scope_json"`
+	Status      *string `json:"status"`
+	Pinned      *bool   `json:"pinned"`
+}
+
+func (db *DB) UpdateProject(id string, update ProjectUpdate) (*Project, error) {
+	result, err := db.Exec(
+		`UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description),
+		 scope_json = COALESCE(?, scope_json), status = COALESCE(NULLIF(?, ''), status),
+		 pinned = COALESCE(?, pinned), updated_at = ? WHERE id = ?`,
+		update.Name, update.Description, update.ScopeJSON, update.Status, update.Pinned, time.Now(), id,
 	)
 	if err != nil {
-		return fmt.Errorf("更新项目失败: %w", err)
+		return nil, fmt.Errorf("更新项目失败: %w", err)
 	}
-	return nil
+	count, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if count == 0 {
+		return nil, ErrProjectNotFound
+	}
+	return db.GetProject(id)
 }
 
 // DeleteProject 删除项目（级联删除事实；对话 project_id 置空由 FK 处理；其他资源 project_id 置空）。

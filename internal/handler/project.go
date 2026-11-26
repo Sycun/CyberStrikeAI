@@ -43,15 +43,6 @@ type createProjectRequest struct {
 	Status      string `json:"status"`
 }
 
-// updateProjectRequest 部分更新：字段省略表示不修改；传 null 或 "" 可清空字符串字段。
-type updateProjectRequest struct {
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	ScopeJSON   *string `json:"scope_json"`
-	Status      *string `json:"status"`
-	Pinned      *bool   `json:"pinned"`
-}
-
 // CreateProject POST /api/projects
 func (h *ProjectHandler) CreateProject(c *gin.Context) {
 	var req createProjectRequest
@@ -186,13 +177,7 @@ func (h *ProjectHandler) GetProject(c *gin.Context) {
 
 // UpdateProject PUT /api/projects/:id
 func (h *ProjectHandler) UpdateProject(c *gin.Context) {
-	id := c.Param("id")
-	p, err := h.db.GetProject(id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
-		return
-	}
-	var req updateProjectRequest
+	var req database.ProjectUpdate
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -203,23 +188,22 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "项目名称不能为空"})
 			return
 		}
-		p.Name = s
+		req.Name = &s
 	}
 	if req.Description != nil {
-		p.Description = clampProjectDescription(*req.Description)
-	}
-	if req.ScopeJSON != nil {
-		p.ScopeJSON = *req.ScopeJSON
+		s := clampProjectDescription(*req.Description)
+		req.Description = &s
 	}
 	if req.Status != nil {
-		if s := strings.TrimSpace(*req.Status); s != "" {
-			p.Status = s
-		}
+		s := strings.TrimSpace(*req.Status)
+		req.Status = &s
 	}
-	if req.Pinned != nil {
-		p.Pinned = *req.Pinned
+	p, err := h.db.UpdateProject(c.Param("id"), req)
+	if err == database.ErrProjectNotFound {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
 	}
-	if err := h.db.UpdateProject(p); err != nil {
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

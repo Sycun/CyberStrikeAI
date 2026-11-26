@@ -1820,6 +1820,11 @@ test('project: compact pagination supports selection, filtering and a shrinking 
     const rows = list.locator('.semi-table-tbody > tr');
     const next = pager.getByRole('button', { name: 'Next', exact: true });
     const previous = pager.getByRole('button', { name: 'Previous', exact: true });
+    const status = list.locator('.project-toolbar .semi-select');
+    await expect(status).toContainText(label('projects.statusActive', '进行中'));
+    await expect(pager).toContainText('1/1');
+    await status.click();
+    await page.getByRole('option').filter({ hasText: label('projects.all', '全部') }).click();
     await expect(rows).toHaveCount(10);
     await expect(pager).toContainText('1/2');
     const listBox = await list.boundingBox();
@@ -1843,7 +1848,6 @@ test('project: compact pagination supports selection, filtering and a shrinking 
     await expect(rows).toHaveCount(10);
     await expect(pager).toContainText('1/2');
     await next.click();
-    const status = list.locator('.project-toolbar .semi-select');
     await status.click();
     await page.getByRole('option').filter({ hasText: label('projects.statusActive', '进行中') }).click();
     await expect(rows).toHaveCount(10);

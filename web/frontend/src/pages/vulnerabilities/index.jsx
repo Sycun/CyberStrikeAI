@@ -39,6 +39,7 @@ export default function VulnerabilitiesPage() {
         q: params.get('q') || '',
         severity: params.get('severity') || '',
         status: params.get('status') || '',
+        archived: ['true', 'all'].includes(params.get('archived')) ? params.get('archived') : '',
         project_id: params.get('project_id') || '',
         conversation_tag: params.get('conversation_tag') || '',
         task_tag: params.get('task_tag') || '',
@@ -129,7 +130,10 @@ export default function VulnerabilitiesPage() {
     const stats = useResource(() => api.get('/vulnerabilities/stats', statQuery), [statKey]);
 
     const [optionsVersion, setOptionsVersion] = useState(0);
-    const options = useResource(() => api.get('/vulnerabilities/filter-options'), [optionsVersion]);
+    const options = useResource(
+        () => api.get('/vulnerabilities/filter-options', filters.archived ? { archived: filters.archived } : {}),
+        [optionsVersion, filters.archived]
+    );
 
     const projects = useResource(async () => {
         try {
@@ -205,6 +209,19 @@ export default function VulnerabilitiesPage() {
         setOptionsVersion(value => value + 1);
         reloadList({ silent: true });
         reloadStats({ silent: true });
+    }, [reloadList, reloadStats, t]);
+
+    const handleArchive = useCallback(async record => {
+        try {
+            await api.put(`/vulnerabilities/${encodeURIComponent(record.id)}/archive`, { archived: !record.archived });
+            toastSuccess(t('vulnerabilityPage.saveSuccess', null, '已保存'));
+            setSelection(previous => previous.filter(id => id !== record.id));
+            setDetailVersion(value => value + 1);
+            setOptionsVersion(value => value + 1);
+            await Promise.all([reloadList({ silent: true }), reloadStats({ silent: true })]);
+        } catch (error) {
+            toastError(error, t('vulnerabilityPage.archiveFailed', null, '更新归档状态失败'));
+        }
     }, [reloadList, reloadStats, t]);
 
     const handleDelete = useCallback(record => {
@@ -505,6 +522,7 @@ export default function VulnerabilitiesPage() {
                             onSelectionChange={setSelection}
                             onOpen={openDetail}
                             onEdit={openEditor}
+                            onArchive={handleArchive}
                             onDelete={handleDelete}
                             onDownload={handleDownload}
                             sort={filters.sort}
@@ -527,6 +545,7 @@ export default function VulnerabilitiesPage() {
                 onClose={closeDetail}
                 onOpenVuln={openDetail}
                 onEdit={openEditor}
+                onArchive={handleArchive}
                 onDelete={handleDelete}
                 canWrite={canWrite}
                 canDelete={canDelete}

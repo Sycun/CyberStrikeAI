@@ -43,7 +43,7 @@ export default function ProjectsPage() {
 
     const [search, setSearch] = useState('');
     const debounced = useDebounced(search, 250);
-    const [statusFilter, setStatusFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('active');
     const [listPage, setListPage] = useState(1);
     const [modal, setModal] = useState({ visible: false, project: null });
     const [detailRev, setDetailRev] = useState(0);
@@ -126,8 +126,8 @@ export default function ProjectsPage() {
         confirmAction({
             title: archived ? t('projects.restoreProjectActive', null, '恢复为进行中') : t('projects.archiveProject', null, '归档'),
             content: archived
-                ? t('projects.confirmRestoreProjectActive', null, '恢复为 active？')
-                : t('projects.confirmArchiveProject', null, '归档后默认不再出现在活跃列表，是否继续？'),
+                ? t('projects.confirmRestoreProjectActive', null, '恢复后，项目记忆与随项目归档的漏洞将重新启用。单独归档的漏洞仍保留在归档列表。')
+                : t('projects.confirmArchiveProject', null, '项目记忆和关联漏洞将随项目归档，可从已归档项目中查阅。是否继续？'),
             okText: t('common.confirm', null, '确认'),
             danger: !archived,
             onOk: async () => {
@@ -253,7 +253,7 @@ export default function ProjectsPage() {
                         rowKey="id"
                         loading={overview.loading}
                         pagination={false}
-                        emptyText={search || statusFilter !== 'all'
+                        emptyText={search || projects.length > 0
                             ? t('projects.noMatchingProjects', null, '无匹配项目')
                             : t('projects.noProjects', null, '暂无项目')}
                         onRow={record => ({

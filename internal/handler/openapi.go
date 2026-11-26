@@ -45,6 +45,12 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 			},
 		},
 	}
+	vulnerabilityArchiveParameter := map[string]interface{}{
+		"name":        "archived",
+		"in":          "query",
+		"description": "false 仅查看未归档漏洞，true 仅查看已归档漏洞，all 查看全部。",
+		"schema":      map[string]interface{}{"type": "string", "enum": []string{"false", "true", "all"}, "default": "false"},
+	}
 
 	spec := map[string]interface{}{
 		"openapi": "3.0.0",
@@ -310,6 +316,8 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 							"description": "状态",
 							"enum":        []string{"open", "confirmed", "fixed", "false_positive", "ignored"},
 						},
+						"archived":         map[string]interface{}{"type": "boolean", "description": "漏洞已单独归档或随所属项目归档"},
+						"project_archived": map[string]interface{}{"type": "boolean", "description": "所属项目处于归档状态"},
 						"target": map[string]interface{}{
 							"type":        "string",
 							"description": "受影响的目标",
@@ -2448,6 +2456,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					"description": "获取漏洞列表，支持分页和筛选",
 					"operationId": "listVulnerabilities",
 					"parameters": []map[string]interface{}{
+						vulnerabilityArchiveParameter,
 						{
 							"name":        "limit",
 							"in":          "query",
@@ -2586,6 +2595,7 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					"summary":     "获取漏洞统计",
 					"description": "获取漏洞统计信息",
 					"operationId": "getVulnerabilityStats",
+					"parameters":  []map[string]interface{}{vulnerabilityArchiveParameter},
 					"responses": map[string]interface{}{
 						"200": map[string]interface{}{
 							"description": "获取成功",
@@ -2600,6 +2610,32 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						"401": map[string]interface{}{
 							"description": "未授权",
 						},
+					},
+				},
+			},
+			"/api/vulnerabilities/{id}/archive": map[string]interface{}{
+				"put": map[string]interface{}{
+					"tags":        []string{"漏洞管理"},
+					"summary":     "归档或恢复单条漏洞",
+					"description": "更新漏洞的单独归档状态。所属项目归档时，漏洞随项目保持归档。",
+					"operationId": "setVulnerabilityArchived",
+					"parameters": []map[string]interface{}{{
+						"name": "id", "in": "path", "required": true,
+						"schema": map[string]interface{}{"type": "string"},
+					}},
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{"application/json": map[string]interface{}{
+							"schema": map[string]interface{}{
+								"type": "object", "required": []string{"archived"},
+								"properties": map[string]interface{}{"archived": map[string]interface{}{"type": "boolean"}},
+							},
+						}},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{"description": "归档状态已保存"},
+						"400": map[string]interface{}{"description": "缺少有效的 archived 字段"},
+						"404": map[string]interface{}{"description": "漏洞不存在"},
 					},
 				},
 			},

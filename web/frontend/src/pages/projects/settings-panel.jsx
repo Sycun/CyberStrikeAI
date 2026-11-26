@@ -65,7 +65,7 @@ export default function SettingsPanel({ project, canWrite, canDelete, onChanged,
                 name,
                 description: form.description,
                 scope_json: scopeRaw,
-                status: form.status,
+                ...(form.status !== (project.status || 'active') ? { status: form.status } : {}),
                 pinned: Boolean(form.pinned)
             });
             toastSuccess(t('projects.saved', null, '已保存'));
@@ -83,8 +83,8 @@ export default function SettingsPanel({ project, canWrite, canDelete, onChanged,
         confirmAction({
             title: archived ? t('projects.restoreProjectActive', null, '恢复为进行中') : t('projects.archiveProject', null, '归档'),
             content: archived
-                ? t('projects.confirmRestoreProjectActive', null, '恢复为 active？')
-                : t('projects.confirmArchiveProject', null, '归档后默认不再出现在活跃列表，是否继续？'),
+                ? t('projects.confirmRestoreProjectActive', null, '恢复后，项目记忆与随项目归档的漏洞将重新启用。单独归档的漏洞仍保留在归档列表。')
+                : t('projects.confirmArchiveProject', null, '项目记忆和关联漏洞将随项目归档，可从已归档项目中查阅。是否继续？'),
             okText: t('common.confirm', null, '确认'),
             danger: !archived,
             onOk: async () => {
@@ -196,7 +196,7 @@ export default function SettingsPanel({ project, canWrite, canDelete, onChanged,
                     <Text strong>{t('projects.dangerZoneTitle', null, '危险操作')}</Text>
                     <div>
                         <Text type="tertiary" size="small">
-                            {t('projects.dangerZoneHint', null, '归档后需在列表勾选「显示已归档」才能查看；删除将清除全部事实且不可恢复。')}
+                            {t('projects.dangerZoneHint', null, '在项目列表选择「已归档」可查看归档项目。删除项目会永久删除项目记忆。')}
                         </Text>
                     </div>
                 </div>

@@ -1,7 +1,7 @@
 /** 漏洞详情抽屉：概览 / 复现与证据 / 关联 / 下载报告（GET /:id/context 提供上下文）。 */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Collapse, Radio, RadioGroup, SideSheet, Space, Spin, Tabs, Timeline, Typography } from '@douyinfe/semi-ui';
+import { Button, Collapse, Radio, RadioGroup, SideSheet, Space, Spin, Tabs, Tag, Timeline, Typography } from '@douyinfe/semi-ui';
 import { IconDelete, IconEdit, IconPlay, IconRefresh } from '@douyinfe/semi-icons';
 import { api, downloadFile } from '../../lib/http';
 import { formatDateTime } from '../../lib/format';
@@ -79,7 +79,7 @@ function Narrative({ title, content, code }) {
 }
 
 export default function DetailDrawer({
-    visible, vulnId, refreshKey, onClose, onEdit, onDelete, onOpenVuln,
+    visible, vulnId, refreshKey, onClose, onEdit, onArchive, onDelete, onOpenVuln,
     canWrite, canDelete, t, projectNames
 }) {
     const navigate = useNavigate();
@@ -181,13 +181,20 @@ export default function DetailDrawer({
                         <span className="vulnerability-drawer-meta">
                             <SeverityTag severity={vuln.severity} />
                             <StatusTag status={vuln.status} label={statusText(t, vuln.status)} />
+                            {vuln.archived && (
+                                <Tag size="small" color="grey">
+                                    {vuln.project_archived
+                                        ? t('vulnerabilityPage.archivedWithProject', null, '随项目归档')
+                                        : t('projects.statusArchived', null, '已归档')}
+                                </Tag>
+                            )}
                             {vuln.type ? <Text type="tertiary">{vuln.type}</Text> : null}
                         </span>
                     )}
                 </div>
             )}
             footer={(
-                <Space>
+                <Space wrap>
                     <Button onClick={onClose}>{t('common.close', null, '关闭')}</Button>
                     <Button icon={<IconRefresh />} onClick={() => context.reload()} loading={context.loading}>
                         {t('common.refresh', null, '刷新')}
@@ -206,6 +213,11 @@ export default function DetailDrawer({
                     {canWrite && (
                         <Button icon={<IconEdit />} disabled={!vuln} onClick={() => onEdit(vuln)}>
                             {t('common.edit', null, '编辑')}
+                        </Button>
+                    )}
+                    {canWrite && vuln && !vuln.project_archived && (
+                        <Button onClick={() => onArchive(vuln)}>
+                            {vuln.archived ? t('projects.restore', null, '恢复') : t('projects.archiveProject', null, '归档')}
                         </Button>
                     )}
                     {canDelete && (

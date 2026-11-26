@@ -528,6 +528,7 @@ CREATE TABLE vulnerabilities (
     description TEXT,
     severity TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'open',
+    manually_archived INTEGER NOT NULL DEFAULT 0,
     vulnerability_type TEXT,
     target TEXT,
     targets_json TEXT NOT NULL DEFAULT '[]',

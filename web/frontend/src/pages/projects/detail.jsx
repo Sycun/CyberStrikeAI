@@ -64,6 +64,7 @@ export default function ProjectDetail({ projectId, tab, refreshToken = 0, onTabC
     ];
 
     const current = project.data;
+    const archived = current?.status === 'archived';
 
     return (
         <div className="project-detail">
@@ -76,8 +77,8 @@ export default function ProjectDetail({ projectId, tab, refreshToken = 0, onTabC
                                 {current?.name || t('projects.projectNotFound', null, '项目不存在')}
                             </Title>
                             {current?.pinned ? <Tag size="small" color="blue">{t('projects.pinned', null, '置顶')}</Tag> : null}
-                            <Tag size="small" color={(current?.status || 'active') === 'archived' ? 'grey' : 'green'}>
-                                {(current?.status || 'active') === 'archived'
+                            <Tag size="small" color={archived ? 'grey' : 'green'}>
+                                {archived
                                     ? t('projects.statusArchived', null, '已归档')
                                     : t('projects.statusActive', null, '进行中')}
                             </Tag>
@@ -91,6 +92,11 @@ export default function ProjectDetail({ projectId, tab, refreshToken = 0, onTabC
                         </Text>
                     </div>
                     <Space wrap>
+                        {current && hasPermission('vulnerability:read') && (
+                            <Button onClick={() => navigate(`/vulnerabilities?project_id=${encodeURIComponent(projectId)}&archived=${archived ? 'true' : 'all'}`)}>
+                                {t('projects.projectVulnerabilities', null, '项目漏洞')}
+                            </Button>
+                        )}
                         {current && hasPermission('asset:write') && (
                             <Button onClick={() => setAddingAsset(true)}>{t('assets.addAsset', null, '新增资产')}</Button>
                         )}

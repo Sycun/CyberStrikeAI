@@ -88,6 +88,9 @@ func BuildProjectBlackboardBlock(db *database.DB, projectID string, cfg config.P
 	if scope := strings.TrimSpace(BuildScopeBlock(proj)); scope != "" {
 		parts = append(parts, scope)
 	}
+	if proj.Status == database.ProjectStatusArchived {
+		return strings.Join(append(parts, "项目已归档。项目事实和续接记忆可从控制台查阅。"), "\n\n"), nil
+	}
 	index, err := BuildFactIndexBlock(db, projectID, cfg, conversationIDs...)
 	if err != nil {
 		return "", err
