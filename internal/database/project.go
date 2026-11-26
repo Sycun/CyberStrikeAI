@@ -361,7 +361,28 @@ func (db *DB) UpdateProject(id string, update ProjectUpdate) (*Project, error) {
 	if count == 0 {
 		return nil, ErrProjectNotFound
 	}
+	if update.Status != nil {
+		db.refreshAssetRiskCacheForProjectBestEffort(id)
+	}
 	return db.GetProject(id)
+}
+
+func (db *DB) refreshAssetRiskCacheForProjectBestEffort(projectID string) {
+	rows, err := db.Query(`SELECT DISTINCT COALESCE(conversation_id,'') FROM vulnerabilities WHERE project_id = ? AND conversation_id IS NOT NULL AND conversation_id <> ''`, projectID)
+	if err != nil {
+		return
+	}
+	var convIDs []string
+	for rows.Next() {
+		var cid string
+		if err := rows.Scan(&cid); err == nil && strings.TrimSpace(cid) != "" {
+			convIDs = append(convIDs, cid)
+		}
+	}
+	_ = rows.Close()
+	if len(convIDs) > 0 {
+		db.refreshAssetRiskCacheForConversationsBestEffort(convIDs...)
+	}
 }
 
 // DeleteProject 删除项目（级联删除事实；对话 project_id 置空由 FK 处理；其他资源 project_id 置空）。
@@ -402,7 +423,7 @@ func (db *DB) GetConversationProjectID(conversationID string) (string, error) {
 	return "", nil
 }
 
-// SetConversationProjectID 设置对话所属项目（空字符串表示解除绑定）。
+// SetConversationProjectID 设置对话所属项目（空字符串表示解除绑定），并同步该对话下继承原项目归属的漏洞记录。
 func (db *DB) SetConversationProjectID(conversationID, projectID string) error {
 	projectID = strings.TrimSpace(projectID)
 	if projectID != "" {
@@ -416,9 +437,52 @@ func (db *DB) SetConversationProjectID(conversationID, projectID string) error {
 	} else {
 		val = projectID
 	}
-	_, err := db.Exec(`UPDATE conversations SET project_id = ?, updated_at = ? WHERE id = ?`, val, time.Now(), conversationID)
+	tx, err := db.Begin()
 	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var oldProjectID string
+	_ = tx.QueryRow(`SELECT COALESCE(project_id, '') FROM conversations WHERE id = ?`, conversationID).Scan(&oldProjectID)
+	oldProjectID = strings.TrimSpace(oldProjectID)
+
+	if _, err := tx.Exec(`UPDATE conversations SET project_id = ?, updated_at = ? WHERE id = ?`, val, time.Now(), conversationID); err != nil {
 		return fmt.Errorf("设置对话项目失败: %w", err)
+	}
+	if oldProjectID != projectID {
+		rows, err := tx.Query(`SELECT id FROM vulnerabilities WHERE conversation_id = ? AND COALESCE(project_id, '') = ?`, conversationID, oldProjectID)
+		if err != nil {
+			return fmt.Errorf("查询对话关联漏洞失败: %w", err)
+		}
+		var vulnIDs []string
+		for rows.Next() {
+			var vid string
+			if err := rows.Scan(&vid); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			vulnIDs = append(vulnIDs, vid)
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for _, vid := range vulnIDs {
+			if err := detachVulnerabilityCaseOnProjectChange(tx, vid, projectID); err != nil {
+				return err
+			}
+		}
+		if len(vulnIDs) > 0 {
+			if _, err := tx.Exec(`UPDATE vulnerabilities SET project_id = ? WHERE conversation_id = ? AND COALESCE(project_id, '') = ?`, val, conversationID, oldProjectID); err != nil {
+				return fmt.Errorf("同步对话漏洞项目归属失败: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if oldProjectID != projectID {
+		db.refreshAssetRiskCacheForConversationsBestEffort(conversationID)
 	}
 	return nil
 }

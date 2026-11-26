@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Banner, Button, Form, Space } from '@douyinfe/semi-ui';
 import { api, errorMessage } from '../../../lib/http';
 import { useT } from '../../../lib/i18n';
+import { activeProjectOptions } from '../../../lib/project-options';
 import { Drawer, toastSuccess, toastWarning } from '../../../components/ui';
 import {
     CRITICALITY_OPTIONS, ENVIRONMENT_OPTIONS, STATUS_OPTIONS
@@ -55,8 +56,8 @@ export default function AssetEditorModal({ visible, asset, defaultProjectId = ''
     }, [visible, asset]);
 
     const projectOptions = useMemo(
-        () => (projects || []).map(project => ({ value: project.id, label: project.name || project.id })),
-        [projects]
+        () => activeProjectOptions(projects, t, { currentId: values.project_id }),
+        [projects, t, values.project_id]
     );
 
     const applyTarget = (showError) => {

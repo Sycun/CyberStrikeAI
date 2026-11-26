@@ -6,6 +6,7 @@ import {
 import { IconChevronDown, IconDelete, IconEdit, IconFolder, IconPlus, IconRefresh, IconSearch, IconStar } from '@douyinfe/semi-icons';
 import { ErrorBanner } from '../../components/ui';
 import { useT } from '../../lib/i18n';
+import { formatProjectOptionLabel } from '../../lib/project-options';
 import { formatDateTime } from '../../lib/format';
 
 const { Text } = Typography;
@@ -101,6 +102,7 @@ export default function ConversationList({
     const t = useT();
     const list = items;
     const groupContentId = useId();
+    const filterProjectLabelId = useId();
     const [editingId, setEditingId] = useState('');
     const [editingTitle, setEditingTitle] = useState('');
     const [batchMode, setBatchMode] = useState(false);
@@ -117,7 +119,7 @@ export default function ConversationList({
         { value: '', label: t('chat.filterAllProjects', null, '全部项目') },
         ...(Array.isArray(projects) ? projects : []).map(project => ({
             value: project.id,
-            label: project.name || project.id
+            label: formatProjectOptionLabel(project, t)
         }))
     ]), [projects, t]);
 
@@ -193,12 +195,13 @@ export default function ConversationList({
                     onChange={onSearch}
                     showClear
                 />
+                <span id={filterProjectLabelId} hidden>{t('chat.filterByProject', null, '按项目过滤')}</span>
                 <Select
                     value={projectId}
                     optionList={projectOptions}
                     onChange={onProjectChange}
                     className="chat-sidebar-project"
-                    aria-label={t('chat.filterByProject', null, '按项目过滤')}
+                    aria-labelledby={filterProjectLabelId}
                     placeholder={t('chat.filterByProject', null, '按项目过滤')}
                 />
             </div>

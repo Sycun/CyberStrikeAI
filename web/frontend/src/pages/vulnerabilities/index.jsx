@@ -163,14 +163,6 @@ export default function VulnerabilitiesPage() {
         return [...seen.entries()].map(([value, label]) => ({ value, label }));
     }, [options.data, projectNames, filters.project_id]);
 
-    const formProjectOptions = useMemo(() => {
-        const seen = new Map();
-        (projects.data || []).forEach(project => {
-            if (project?.id) seen.set(project.id, project.name || project.id);
-        });
-        return [...seen.entries()].map(([value, label]) => ({ value, label }));
-    }, [projects.data]);
-
     const [selection, setSelection] = useState([]);
     const [editor, setEditor] = useState({ visible: false, id: '' });
     const [detailVersion, setDetailVersion] = useState(0);
@@ -557,7 +549,7 @@ export default function VulnerabilitiesPage() {
                 visible={editor.visible}
                 vulnId={editor.id}
                 t={t}
-                projectOptions={formProjectOptions}
+                projects={projects.data}
                 onClose={() => setEditor({ visible: false, id: '' })}
                 onSaved={handleSaved}
             />

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Checkbox, Input, Select, TextArea, Typography } from '@douyinfe/semi-ui';
 import { api } from '../../lib/http';
 import { useT } from '../../lib/i18n';
+import { activeProjectOptions } from '../../lib/project-options';
 import { useAuth } from '../../lib/auth';
 import { Drawer, toastError, toastSuccess } from '../../components/ui';
 import { AGENT_MODES, HITL_POLICIES, SCHEDULE_MODES, errText } from './helpers';
@@ -156,7 +157,7 @@ export default function QueueFormModal({ visible, onCancel, onCreated }) {
                         value={form.projectId}
                         style={{ width: '100%' }}
                         optionList={[{ value: '', label: t('batchImportModal.projectNone', null, '（未绑定）') },
-                            ...projects.map(item => ({ value: item.id, label: item.name || item.id }))]}
+                            ...activeProjectOptions(projects, t, { currentId: form.projectId })]}
                         onChange={value => update({ projectId: value || '', collectionId: '' })}
                     />
                 </div>

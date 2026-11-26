@@ -2,6 +2,7 @@ import { useId, useMemo, useRef } from 'react';
 import { Banner, Button, Popover, Select, Tag, TextArea, Tooltip, Typography } from '@douyinfe/semi-ui';
 import { IconArrowUp, IconChevronDown, IconDesktop, IconFolder, IconPaperclip, IconPlus, IconShield, IconStop, IconUser } from '@douyinfe/semi-icons';
 import { useT } from '../../lib/i18n';
+import { activeProjectOptions } from '../../lib/project-options';
 import { modelChannelName } from '../../lib/model-channel';
 import { ModelSettings } from './ChatSettings';
 import { reasoningSummary } from './useModelPreferences';
@@ -79,10 +80,11 @@ export default function Composer({
     })), [t]);
     const projectOptions = [
         { value: '', label: t('chat.defaultWorkspace', null, '默认工作区') },
-        ...(Array.isArray(projects) ? projects : []).map(project => ({
-            value: project.id,
-            label: project.name || t('chat.boundProject', null, '已绑定项目')
-        }))
+        ...activeProjectOptions(projects, t, {
+            currentId: projectId,
+            disableCurrentArchived: true,
+            fallbackLabel: t('chat.boundProject', null, '已绑定项目')
+        })
     ];
     if (projectId && !projectOptions.some(option => option.value === projectId)) {
         projectOptions.push({ value: projectId, label: t('chat.boundProject', null, '已绑定项目') });

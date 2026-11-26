@@ -619,12 +619,20 @@ const assetVulnerabilityMatchExpr = `(
 	))
 )`
 
-const assetVulnerabilityCountExpr = `(SELECT COUNT(DISTINCT v.id) FROM vulnerabilities v WHERE ` + assetVulnerabilityMatchExpr + `)`
+const assetActiveVulnerabilityExpr = `(
+	v.manually_archived = 0
+	AND NOT EXISTS (
+		SELECT 1 FROM projects archive_project
+		WHERE archive_project.id = v.project_id AND archive_project.status = 'archived'
+	)
+)`
+
+const assetVulnerabilityCountExpr = `(SELECT COUNT(DISTINCT v.id) FROM vulnerabilities v WHERE ` + assetActiveVulnerabilityExpr + ` AND ` + assetVulnerabilityMatchExpr + `)`
 
 const assetRiskScoreQueryExpr = `COALESCE((
 	SELECT MAX(CASE LOWER(COALESCE(v.severity,'')) WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'info' THEN 1 ELSE 0 END)
 	FROM vulnerabilities v
-	WHERE LOWER(COALESCE(v.status,'open')) NOT IN ('fixed','false_positive','ignored') AND ` + assetVulnerabilityMatchExpr + `
+	WHERE LOWER(COALESCE(v.status,'open')) NOT IN ('fixed','false_positive','ignored') AND ` + assetActiveVulnerabilityExpr + ` AND ` + assetVulnerabilityMatchExpr + `
 ),0)`
 
 const assetRiskLevelQueryExpr = `(CASE WHEN ` + assetEffectiveLastScanExpr + ` IS NULL THEN 'unassessed' ELSE CASE ` + assetRiskScoreQueryExpr + `
@@ -1459,7 +1467,7 @@ func (db *DB) GetAssetStats(access RBACListAccess, requestedDays ...int) (map[st
 	}
 
 	riskDaily := map[string]map[string]int{}
-	riskWhere, riskArgs := appendVulnerabilityAccessFilter(" WHERE datetime(created_at)>=datetime('now',?)", []interface{}{fmt.Sprintf("-%d days", days-1)}, access)
+	riskWhere, riskArgs := appendVulnerabilityAccessFilter(" WHERE datetime(created_at)>=datetime('now',?) AND NOT "+vulnerabilityArchivedSQL, []interface{}{fmt.Sprintf("-%d days", days-1)}, access)
 	riskRows, err := db.Query(`SELECT date(created_at), COUNT(*),
 		COALESCE(SUM(CASE WHEN LOWER(severity) IN ('critical','high') THEN 1 ELSE 0 END),0)
 		FROM vulnerabilities`+riskWhere+` GROUP BY date(created_at) ORDER BY date(created_at)`, riskArgs...)

@@ -90,6 +90,17 @@ func (h *ConversationHandler) CreateConversation(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问目标项目"})
 		return
 	}
+	if meta.ProjectID != "" {
+		proj, err := h.db.GetProject(meta.ProjectID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if proj.Status == database.ProjectStatusArchived {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "项目已归档，恢复项目后可绑定对话"})
+			return
+		}
+	}
 	conv, err := h.db.CreateConversation(title, meta)
 	if err != nil {
 		h.logger.Error("创建对话失败", zap.Error(err))
@@ -123,6 +134,17 @@ func (h *ConversationHandler) SetConversationProject(c *gin.Context) {
 	if !h.conversationProjectAllowed(c, projectID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问目标项目"})
 		return
+	}
+	if projectID != "" {
+		proj, err := h.db.GetProject(projectID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if proj.Status == database.ProjectStatusArchived {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "项目已归档，恢复项目后可绑定对话"})
+			return
+		}
 	}
 	if err := h.db.SetConversationProjectID(id, projectID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

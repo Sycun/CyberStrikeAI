@@ -186,9 +186,20 @@ func (h *AgentHandler) CreateDeepAssessment(c *gin.Context) {
 		deepAssessmentError(c, err)
 		return
 	}
-	if req.ProjectID != "" && (!security.SessionHasPermission(c, "project:read") || !h.db.UserCanAccessResource(session.UserID, session.ScopeFor("project:read"), "project", req.ProjectID)) {
-		c.JSON(403, gin.H{"error": "无权访问项目"})
-		return
+	if req.ProjectID != "" {
+		if !security.SessionHasPermission(c, "project:read") || !h.db.UserCanAccessResource(session.UserID, session.ScopeFor("project:read"), "project", req.ProjectID) {
+			c.JSON(403, gin.H{"error": "无权访问项目"})
+			return
+		}
+		proj, err := h.db.GetProject(req.ProjectID)
+		if err != nil {
+			deepAssessmentError(c, err)
+			return
+		}
+		if proj.Status == database.ProjectStatusArchived {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "项目已归档，请先恢复项目后再创建深度测评"})
+			return
+		}
 	}
 	req.CollectionID = strings.TrimSpace(req.CollectionID)
 	if err := h.validateAssessmentAssetScope(assessmentActorFromSession(session), req.ProjectID, req.CollectionID); err != nil {

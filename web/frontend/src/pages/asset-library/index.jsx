@@ -6,6 +6,7 @@ import { IconPlus, IconRefresh, IconCloudUploadStroked } from '@douyinfe/semi-ic
 import { api } from '../../lib/http';
 import { useAuth } from '../../lib/auth';
 import { useT } from '../../lib/i18n';
+import { formatProjectOptionLabel } from '../../lib/project-options';
 import { useDebounced, useResource } from '../../components/hooks';
 import {
     ErrorBanner, PageHeader, SectionCard, confirmAction, toastError, toastSuccess, toastWarning
@@ -114,7 +115,7 @@ function AssetLibraryWorkspace({ projectId, scope, projectResource, searchParams
     const scopeOptions = [
         { value: 'all', label: t('assets.scopeAll', null, '全部资产') },
         { value: 'unassigned', label: t('assets.scopeUnassigned', null, '未归属项目') },
-        ...projects.map(project => ({ value: `project:${project.id}`, label: project.name || project.id }))
+        ...projects.map(project => ({ value: `project:${project.id}`, label: formatProjectOptionLabel(project, t) }))
     ];
     if (projectId && !scopeOptions.some(option => option.value === scope)) {
         scopeOptions.push({ value: scope, label: projectId });

@@ -8,6 +8,7 @@ import { IconRefresh, IconSearch, IconCloudUploadStroked } from '@douyinfe/semi-
 import { api } from '../../lib/http';
 import { useAuth } from '../../lib/auth';
 import { useT } from '../../lib/i18n';
+import { activeProjectOptions } from '../../lib/project-options';
 import { useLocalStorage } from '../../components/hooks';
 import {
     ErrorBanner, JsonViewer, KeyValueList, PageHeader, SectionCard,
@@ -294,7 +295,7 @@ export default function InfoCollectPage() {
                     <Space className="info-collect-form-row">
                         <Select
                             value={projectId}
-                            optionList={[{ value: '', label: '不归入项目集合' }, ...projects.map(item => ({ value: item.id, label: item.name || item.id }))]}
+                            optionList={[{ value: '', label: '不归入项目集合' }, ...activeProjectOptions(projects, t, { currentId: projectId })]}
                             placeholder="归入项目"
                             style={{ width: 220 }}
                             onChange={value => setProjectId(value || '')}

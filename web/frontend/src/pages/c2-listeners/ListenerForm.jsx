@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Button, Form, Space, Typography } from '@douyinfe/semi-ui';
 import { Drawer } from '../../components/ui';
 import { useT } from '../../lib/i18n';
+import { activeProjectOptions } from '../../lib/project-options';
 import { LISTENER_TYPES } from '../c2-sessions/components/c2-shared';
 
 const { Text } = Typography;
@@ -132,7 +133,7 @@ export default function ListenerForm({ visible, record, projects, profiles, subm
                         field="project_id"
                         label={t('c2.listeners.project', null, '所属项目')}
                         optionList={[{ value: '', label: t('c2.listeners.projectNone', null, '不绑定项目') },
-                            ...projects.map(item => ({ value: item.id, label: item.name || item.id }))]}
+                            ...activeProjectOptions(projects, t, { currentId: record?.project_id || '' })]}
                         style={{ width: '100%' }}
                     />
                     <Form.Input field="remark" label={t('c2.listeners.remark', null, '备注')} placeholder={t('c2.listeners.placeholderRemarkLong', null, '可选的备注说明')} />

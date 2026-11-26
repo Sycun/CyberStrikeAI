@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Form, Spin, Typography } from '@douyinfe/semi-ui';
 import { api, errorMessage } from '../../lib/http';
+import { activeProjectOptions } from '../../lib/project-options';
 import { Drawer, toastError } from '../../components/ui';
 import { severityOptions, statusOptions } from './shared';
 
@@ -52,7 +53,7 @@ function trim(value) {
     return String(value ?? '').trim();
 }
 
-export default function EditModal({ visible, vulnId, t, projectOptions, onClose, onSaved }) {
+export default function EditModal({ visible, vulnId, t, projects, onClose, onSaved }) {
     const editing = Boolean(vulnId);
     const [formApi, setFormApi] = useState(null);
     const [saving, setSaving] = useState(false);
@@ -81,6 +82,7 @@ export default function EditModal({ visible, vulnId, t, projectOptions, onClose,
 
     const ready = !editing || loadedFor === vulnId;
     const formValues = editing ? initial : { ...EMPTY_VALUES };
+    const projectOptions = activeProjectOptions(projects, t, { currentId: formValues.project_id });
 
     const submit = async () => {
         if (!formApi || saving) return;

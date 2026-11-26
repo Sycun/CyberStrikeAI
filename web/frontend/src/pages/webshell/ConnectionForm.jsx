@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Form, Button, Space, Typography } from '@douyinfe/semi-ui';
 import { useT } from '../../lib/i18n';
+import { activeProjectOptions } from '../../lib/project-options';
 import { Drawer, toastError, toastSuccess, toastWarning } from '../../components/ui';
 import { probeConnection, MASKED_SECRET } from './api';
 
@@ -153,7 +154,7 @@ export default function ConnectionForm({ visible, record, projects, submitting, 
                     <Form.Select
                         field="project_id"
                         label={t('webshell.project', null, '所属项目')}
-                        optionList={projects.map(item => ({ value: item.id, label: item.name || item.id }))}
+                        optionList={activeProjectOptions(projects, t, { currentId: record?.project_id || '' })}
                         showClear
                         style={{ width: '100%' }}
                         placeholder="可选"
