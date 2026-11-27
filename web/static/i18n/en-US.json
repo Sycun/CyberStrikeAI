@@ -757,6 +757,22 @@
     "formatJson": "Format",
     "example": "Example",
     "scopeJsonLabel": "Scope JSON",
+    "scopeStructuredHint": "Targets, exclusions and constraints share this JSON. Added targets need explicit authorization.",
+    "scopeStructuredInvalid": "Fix the scope object and constraints list in the JSON editor.",
+    "scopeConstraints": "Operation constraints",
+    "constraintKind": "Constraint type",
+    "constraintText": "Constraint text",
+    "constraintAllow": "Allow",
+    "constraintDeny": "Deny",
+    "constraintGoals": "Goal suggestion pending confirmation",
+    "constraintHuman": "Human",
+    "addScopeConstraint": "Add constraint",
+    "noiseProfile": "Noise profile",
+    "noiseOff": "Off",
+    "noiseQuiet": "Quiet",
+    "noiseBalanced": "Balanced",
+    "noiseAggressive": "Maintenance window",
+    "lessonsMode": "Disposition shadow audit",
     "scopeFootnote": "Supports targets, exclude, notes and more. Empty means no scope limit.",
     "dangerZoneTitle": "Danger zone",
     "dangerZoneHint": "Select Archived in the project list to find archived projects. Deleting a project permanently removes its project memory.",
@@ -5473,6 +5489,43 @@
     "invalidNumber": "Enter valid attempt and timing values"
   },
   "deepAssessments": {
+    "coverage": {
+      "title": "Coverage ledger",
+      "view": "View coverage and gaps",
+      "loading": "Loading coverage ledger…",
+      "summary": "{{records}} coverage records and {{gaps}} open gaps.",
+      "surface": "Surface",
+      "riskArea": "Risk area",
+      "outcome": "Outcome",
+      "evidence": "Evidence reference",
+      "reason": "Notes",
+      "gap": "Gap",
+      "goalRef": "Goal ID",
+      "goals": "Acceptance goals",
+      "constraints": "Assessment constraints",
+      "gaps": "Open gaps",
+      "gapHint": "Gaps indicate where a record, evidence, or a reason is still needed.",
+      "emptyRecords": "No coverage records.",
+      "emptyGaps": "The current ledger has no open gaps.",
+      "reportDescription": "The report includes the saved acceptance matrix, coverage ledger, open gaps, and run history.",
+      "outcomes": {
+        "reported": "Reported",
+        "no_issue_found": "No issue found",
+        "ruled_out": "Ruled out",
+        "not_applicable": "Not applicable",
+        "needs_follow_up": "Needs follow-up"
+      },
+      "gapKinds": {
+        "needs_follow_up": "Follow-up needed",
+        "missing_risk_class": "No coverage record for the goal’s risk class",
+        "missing_evidence": "Valid original receipt or observed fact missing",
+        "missing_reason": "Reason for exclusion or inapplicability missing"
+      },
+      "constraintKinds": {
+        "allow": "Allow",
+        "deny": "Deny"
+      }
+    },
     "acceptance": {
       "title": "Acceptance evidence",
       "has_evidence": "Evidence linked",

@@ -141,28 +141,93 @@ func acceptanceGate(db acceptanceQueryer, t *Task) (AcceptanceGate, error) {
 	if err != nil {
 		return AcceptanceGate{}, err
 	}
-	gate := AcceptanceGate{Legacy: t.AcceptanceMode != AcceptanceModePerItem && saved == 0, Version: acceptanceVersion(t, matrix)}
+	missingGoals, goalVersion, err := requiredGoalCoverageGaps(db, t.ID)
+	if err != nil {
+		return AcceptanceGate{}, err
+	}
+	hasGoals := goalVersion != ""
+	gate := AcceptanceGate{Legacy: t.AcceptanceMode != AcceptanceModePerItem && saved == 0 && !hasGoals, Version: acceptanceVersion(t, matrix, goalVersion)}
 	if gate.Legacy {
 		return gate, nil
 	}
-	for _, row := range matrix {
-		switch row.Status {
-		case "missing":
-			gate.Blocking = true
-			gate.Reason = "仍有必验项没有对应证据"
-		case "needs_review":
-			gate.Blocking = true
-			if gate.Reason == "" {
-				gate.Reason = "仍有必验项待复核"
+	if t.AcceptanceMode == AcceptanceModePerItem || saved > 0 {
+		for _, row := range matrix {
+			switch row.Status {
+			case "missing":
+				gate.Blocking = true
+				gate.Reason = "仍有必验项没有对应证据"
+			case "needs_review":
+				gate.Blocking = true
+				if gate.Reason == "" {
+					gate.Reason = "仍有必验项待复核"
+				}
 			}
+		}
+	}
+	if len(missingGoals) > 0 {
+		gate.Blocking = true
+		if gate.Reason == "" {
+			gate.Reason = "仍有拆解目标的必测风险类别缺少有效覆盖证据: " + strings.Join(missingGoals, ", ")
 		}
 	}
 	return gate, nil
 }
 
-func acceptanceVersion(t *Task, rows []AcceptanceRow) string {
+func requiredGoalCoverageGaps(db acceptanceQueryer, taskID string) ([]string, string, error) {
+	rows, err := db.Query(`SELECT goal_id, risk_class FROM deep_assessment_goals WHERE task_id=? ORDER BY goal_id`, taskID)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	type goalRow struct{ id, risk string }
+	var goals []goalRow
+	var ver strings.Builder
+	for rows.Next() {
+		var g goalRow
+		if err = rows.Scan(&g.id, &g.risk); err != nil {
+			return nil, "", err
+		}
+		goals = append(goals, g)
+		fmt.Fprintf(&ver, "goal:%s=%s\n", g.id, g.risk)
+	}
+	if err = rows.Err(); err != nil || len(goals) == 0 {
+		return nil, "", err
+	}
+	var missing []string
+	seen := map[string]bool{}
+	for _, g := range goals {
+		risk := strings.TrimSpace(g.risk)
+		if risk == "" {
+			continue
+		}
+		key := strings.ToLower(risk)
+		var validCount, openFollowUp int
+		err = db.QueryRow(`SELECT
+			COALESCE(SUM(CASE
+				WHEN l.outcome='reported' THEN 1
+				WHEN l.outcome IN ('ruled_out','not_applicable') AND trim(l.reason)<>'' THEN 1
+				WHEN l.outcome='no_issue_found' AND (
+					EXISTS(SELECT 1 FROM deep_assessment_calls c WHERE c.id=l.evidence AND c.task_id=l.task_id AND c.status='completed' AND c.`+originalEvidenceTool+`) OR
+					EXISTS(SELECT 1 FROM deep_assessment_facts f WHERE f.id=l.evidence AND f.task_id=l.task_id AND `+trustedObservation+`)
+				) THEN 1
+				ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN l.outcome='needs_follow_up' THEN 1 ELSE 0 END), 0)
+			FROM deep_assessment_coverage l WHERE l.task_id=? AND lower(l.risk_area)=?`, taskID, key).Scan(&validCount, &openFollowUp)
+		if err != nil {
+			return nil, "", err
+		}
+		fmt.Fprintf(&ver, "cov:%s=%d/%d\n", key, validCount, openFollowUp)
+		if (validCount == 0 || openFollowUp > 0) && !seen[key] {
+			seen[key] = true
+			missing = append(missing, risk)
+		}
+	}
+	return missing, ver.String(), nil
+}
+
+func acceptanceVersion(t *Task, rows []AcceptanceRow, extra ...string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n%s\n", t.AcceptanceMode, t.Criteria)
+	fmt.Fprintf(&b, "%s\n%s\n%s\n", t.AcceptanceMode, t.Criteria, strings.Join(extra, "\n"))
 	for _, row := range rows {
 		fmt.Fprintf(&b, "%d\t%s\t%d\t%t\t%s\t%s\t%s\n", row.Number, row.Status, row.Revision, row.NeedsReview, strings.Join(row.FactIDs, ","), strings.Join(row.ReceiptIDs, ","), row.ReviewNote)
 	}

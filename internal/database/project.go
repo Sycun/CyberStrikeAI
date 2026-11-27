@@ -40,6 +40,7 @@ type Project struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description,omitempty"`
 	ScopeJSON   string    `json:"scope_json,omitempty"`
+	LessonsMode string    `json:"lessons_mode"`
 	Status      string    `json:"status"` // active | archived
 	Pinned      bool      `json:"pinned"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -145,6 +146,9 @@ func (db *DB) CreateProject(p *Project) (*Project, error) {
 	if strings.TrimSpace(p.Status) == "" {
 		p.Status = "active"
 	}
+	if p.LessonsMode == "" {
+		p.LessonsMode = ProjectLessonsOff
+	}
 	now := time.Now()
 	if p.CreatedAt.IsZero() {
 		p.CreatedAt = now
@@ -152,9 +156,9 @@ func (db *DB) CreateProject(p *Project) (*Project, error) {
 	p.UpdatedAt = now
 
 	_, err := db.Exec(
-		`INSERT INTO projects (id, name, description, scope_json, status, pinned, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.Name, p.Description, p.ScopeJSON, p.Status, boolToInt(p.Pinned), p.CreatedAt, p.UpdatedAt,
+		`INSERT INTO projects (id, name, description, scope_json, lessons_mode, status, pinned, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.ID, p.Name, p.Description, p.ScopeJSON, p.LessonsMode, p.Status, boolToInt(p.Pinned), p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("创建项目失败: %w", err)
@@ -168,9 +172,9 @@ func (db *DB) GetProject(id string) (*Project, error) {
 	var pinned int
 	var createdAt, updatedAt string
 	err := db.QueryRow(
-		`SELECT id, name, COALESCE(description,''), COALESCE(scope_json,''), status, pinned, created_at, updated_at
+		`SELECT id, name, COALESCE(description,''), COALESCE(scope_json,''), lessons_mode, status, pinned, created_at, updated_at
 		 FROM projects WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Description, &p.ScopeJSON, &p.Status, &pinned, &createdAt, &updatedAt)
+	).Scan(&p.ID, &p.Name, &p.Description, &p.ScopeJSON, &p.LessonsMode, &p.Status, &pinned, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProjectNotFound
@@ -270,7 +274,7 @@ func (db *DB) ListProjects(status, search string, limit, offset int) ([]*Project
 	if limit <= 0 {
 		limit = 50
 	}
-	query := `SELECT id, name, COALESCE(description,''), COALESCE(scope_json,''), status, pinned, created_at, updated_at
+	query := `SELECT id, name, COALESCE(description,''), COALESCE(scope_json,''), lessons_mode, status, pinned, created_at, updated_at
 		FROM projects WHERE 1=1`
 	args := []interface{}{}
 	query, args = appendProjectListFilters(query, args, status, search)
@@ -288,7 +292,7 @@ func (db *DB) ListProjects(status, search string, limit, offset int) ([]*Project
 		var p Project
 		var pinned int
 		var createdAt, updatedAt string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.ScopeJSON, &p.Status, &pinned, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.ScopeJSON, &p.LessonsMode, &p.Status, &pinned, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		p.Pinned = pinned != 0
@@ -306,7 +310,7 @@ func (db *DB) ListProjectsForAccess(status, search string, limit, offset int, us
 	if limit <= 0 {
 		limit = 50
 	}
-	query := `SELECT id, name, COALESCE(description,''), COALESCE(scope_json,''), status, pinned, created_at, updated_at
+	query := `SELECT id, name, COALESCE(description,''), COALESCE(scope_json,''), lessons_mode, status, pinned, created_at, updated_at
 		FROM projects WHERE 1=1`
 	args := []interface{}{}
 	query, args = appendProjectListFilters(query, args, status, search)
@@ -324,7 +328,7 @@ func (db *DB) ListProjectsForAccess(status, search string, limit, offset int, us
 		var p Project
 		var pinned int
 		var createdAt, updatedAt string
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.ScopeJSON, &p.Status, &pinned, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.ScopeJSON, &p.LessonsMode, &p.Status, &pinned, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		p.Pinned = pinned != 0
@@ -340,6 +344,7 @@ type ProjectUpdate struct {
 	Name        *string `json:"name"`
 	Description *string `json:"description"`
 	ScopeJSON   *string `json:"scope_json"`
+	LessonsMode *string `json:"lessons_mode"`
 	Status      *string `json:"status"`
 	Pinned      *bool   `json:"pinned"`
 }
@@ -347,9 +352,9 @@ type ProjectUpdate struct {
 func (db *DB) UpdateProject(id string, update ProjectUpdate) (*Project, error) {
 	result, err := db.Exec(
 		`UPDATE projects SET name = COALESCE(?, name), description = COALESCE(?, description),
-		 scope_json = COALESCE(?, scope_json), status = COALESCE(NULLIF(?, ''), status),
+		 scope_json = COALESCE(?, scope_json), lessons_mode = COALESCE(?, lessons_mode), status = COALESCE(NULLIF(?, ''), status),
 		 pinned = COALESCE(?, pinned), updated_at = ? WHERE id = ?`,
-		update.Name, update.Description, update.ScopeJSON, update.Status, update.Pinned, time.Now(), id,
+		update.Name, update.Description, update.ScopeJSON, update.LessonsMode, update.Status, update.Pinned, time.Now(), id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("更新项目失败: %w", err)
@@ -475,6 +480,11 @@ func (db *DB) SetConversationProjectID(conversationID, projectID string) error {
 		if len(vulnIDs) > 0 {
 			if _, err := tx.Exec(`UPDATE vulnerabilities SET project_id = ? WHERE conversation_id = ? AND COALESCE(project_id, '') = ?`, val, conversationID, oldProjectID); err != nil {
 				return fmt.Errorf("同步对话漏洞项目归属失败: %w", err)
+			}
+			for _, id := range vulnIDs {
+				if err := syncProjectLesson(tx, id); err != nil {
+					return err
+				}
 			}
 		}
 	}

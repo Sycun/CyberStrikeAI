@@ -46,6 +46,56 @@ func reportLiteral(b *strings.Builder, text string) {
 	fmt.Fprintf(b, "\n%s\n%s\n%s\n", fence, text, fence)
 }
 
+func (h *AgentHandler) appendCoverageLedgerReport(task string, b *strings.Builder) error {
+	ledger, err := h.deepAssessments.Store.Coverage(task)
+	if err != nil {
+		return err
+	}
+	outcomes := []struct{ key, label string }{
+		{"reported", "已报告"},
+		{"no_issue_found", "未发现问题"},
+		{"ruled_out", "已排除"},
+		{"not_applicable", "不适用"},
+		{"needs_follow_up", "待跟进"},
+	}
+	b.WriteString("\n## 覆盖账本与待补缺口\n\n")
+	fmt.Fprintf(b, "覆盖记录 %d 条，待补缺口 %d 项。缺口表示仍需补齐记录、证据或理由。\n\n", len(ledger.Records), len(ledger.Gaps))
+	if len(ledger.Records) > 0 {
+		labels := make(map[string]string, len(outcomes))
+		for _, outcome := range outcomes {
+			labels[outcome.key] = outcome.label
+			fmt.Fprintf(b, "- %s %d 条\n", outcome.label, ledger.Counts[outcome.key])
+		}
+		for _, record := range ledger.Records {
+			text := fmt.Sprintf("检查范围：%s\n风险域：%s\n结果：%s", record.Surface, record.RiskArea, labels[record.Outcome])
+			if record.Evidence != "" {
+				text += "\n证据引用：" + record.Evidence
+			}
+			if record.Reason != "" {
+				text += "\n说明：" + record.Reason
+			}
+			reportLiteral(b, text)
+		}
+	}
+	if len(ledger.Gaps) > 0 {
+		b.WriteString("\n### 待补缺口\n")
+		labels := map[string]string{
+			"needs_follow_up": "需要跟进", "missing_risk_class": "子目标的风险类别缺少覆盖记录",
+			"missing_evidence": "缺少有效原始回执或观察事实", "missing_reason": "缺少排除或不适用理由",
+		}
+		for _, gap := range ledger.Gaps {
+			text := fmt.Sprintf("%s · %s", labels[gap.Kind], gap.RiskArea)
+			if gap.GoalID != "" {
+				text += " · 子目标 " + gap.GoalID
+			} else {
+				text += " · " + gap.Surface
+			}
+			reportLiteral(b, text)
+		}
+	}
+	return nil
+}
+
 func (h *AgentHandler) appendAssessmentCoverageReport(c *gin.Context, t *deepassessment.Task, b *strings.Builder) error {
 	if !security.SessionHasPermission(c, "asset:read") {
 		return nil

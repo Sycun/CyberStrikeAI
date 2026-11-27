@@ -155,6 +155,8 @@ func (c MultiAgentConfig) SubAgentUserContextMaxRunesEffective() int {
 
 // AgentTuningConfig optional Pi middleware and Deep / supervisor tuning.
 type AgentTuningConfig struct {
+	// PromptCachePrefixSplit sends the stable role prompt and per-run context in separate Pi request fields.
+	PromptCachePrefixSplit bool `yaml:"prompt_cache_prefix_split,omitempty" json:"prompt_cache_prefix_split,omitempty"`
 	// PatchToolCalls inserts placeholder tool results for dangling assistant tool_calls (nil = enabled).
 	PatchToolCalls *bool `yaml:"patch_tool_calls,omitempty" json:"patch_tool_calls,omitempty"`
 	// ToolSearch enables dynamictool/toolsearch: hide tail tools until model calls tool_search (reduces prompt tools).
@@ -169,6 +171,9 @@ type AgentTuningConfig struct {
 	PlantaskEnable bool `yaml:"plantask_enable,omitempty" json:"plantask_enable,omitempty"`
 	// PlantaskRelDir relative to skills_dir for per-conversation task boards (default .pi/plantask).
 	PlantaskRelDir string `yaml:"plantask_rel_dir,omitempty" json:"plantask_rel_dir,omitempty"`
+	// PromptGuardToolResults frames untrusted tool output with a per-message nonce.
+	// Nil or false keeps the existing result text, including spill notices.
+	PromptGuardToolResults *bool `yaml:"prompt_guard_tool_results,omitempty" json:"prompt_guard_tool_results,omitempty"`
 	// Reduction truncates/offloads large tool outputs (uses the host output store).
 	ReductionEnable            bool     `yaml:"reduction_enable,omitempty" json:"reduction_enable,omitempty"`
 	ReductionRootDir           string   `yaml:"reduction_root_dir,omitempty" json:"reduction_root_dir,omitempty"`                         // 非空：落盘根目录（默认 tmp/reduction）；其下按 projects/{id} 或 conversations/{id} 隔离
@@ -332,6 +337,10 @@ func (c AgentTuningConfig) PlanExecuteKeepLastStepsEffective() int {
 		return c.PlanExecuteKeepLastSteps
 	}
 	return 8
+}
+
+func (c AgentTuningConfig) PromptGuardToolResultsEnabled() bool {
+	return c.PromptGuardToolResults != nil && *c.PromptGuardToolResults
 }
 
 func (c AgentTuningConfig) ReductionMaxLengthForTruncEffective() int {

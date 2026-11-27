@@ -86,6 +86,22 @@ type ExecutionService struct {
 	maxInMemory    int
 	resultMaxBytes int
 	spillRootDir   string
+	surfaceIngest  SurfaceIngestFunc
+}
+
+// SurfaceIngestFunc observes one successful MCP result. Deep assessment and a
+// later chat/batch writer share it. The callback must claim the execution ID
+// before writing so a second observer of the same receipt does not write again.
+type SurfaceIngestFunc func(ctx context.Context, toolName, executionID, content string)
+
+// SetSurfaceIngest installs the shared ingest callback. Nil disables it.
+func (s *ExecutionService) SetSurfaceIngest(fn SurfaceIngestFunc) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.surfaceIngest = fn
+	s.mu.Unlock()
 }
 
 func NewExecutionService(storage MonitorStorage, logger *zap.Logger) *ExecutionService {
@@ -349,6 +365,14 @@ func (s *ExecutionService) finishEntry(ctx context.Context, entry *executionEntr
 	if s.storage != nil {
 		if saveErr := s.storage.SaveToolExecution(finalExec); saveErr != nil {
 			s.logger.Warn("保存执行记录到数据库失败", zap.Error(saveErr), zap.String("executionId", id))
+		}
+	}
+	s.mu.Lock()
+	ingest := s.surfaceIngest
+	s.mu.Unlock()
+	if ingest != nil && entry.exec.Status == ToolExecutionStatusCompleted && result != nil && !result.IsError {
+		if text := strings.TrimSpace(ToolResultPlainText(result)); text != "" {
+			ingest(ctx, entry.exec.ToolName, id, text)
 		}
 	}
 	if onDone != nil {

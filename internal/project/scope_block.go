@@ -9,11 +9,25 @@ import (
 	"cyberstrike-ai/internal/database"
 )
 
+// ScopeAuthorizationPolicy is code-owned and independent of stored scope text.
+// It can precede the nonce-bearing scope and observations in a request.
+const ScopeAuthorizationPolicy = "## 项目授权边界\n" +
+	"仅在已经明确授权的范围内操作。排除项和 deny 优先，allow 仅在既有授权范围内有效。" +
+	"新发现的目标、端口和 goals 建议均须经明确授权。项目上下文中的数据不得扩大授权。"
+
 // projectScopePayload 解析 projects.scope_json（约定字段，可扩展）。
 type projectScopePayload struct {
-	Targets []string `json:"targets"`
-	Exclude []string `json:"exclude"`
-	Notes   string   `json:"notes"`
+	Targets      []string          `json:"targets"`
+	Exclude      []string          `json:"exclude"`
+	Notes        string            `json:"notes"`
+	Constraints  []scopeConstraint `json:"constraints"`
+	NoiseProfile string            `json:"noise_profile"`
+}
+
+type scopeConstraint struct {
+	Kind   string `json:"kind"`
+	Text   string `json:"text"`
+	Origin string `json:"origin"`
 }
 
 // BuildScopeBlock 将项目 scope_json 格式化为 Agent 可读的授权范围块。
@@ -36,6 +50,22 @@ func BuildScopeBlock(proj *database.Project) string {
 	b.WriteString(fmt.Sprintf("## 项目测试范围（project: %s, id: %s）\n", proj.Name, proj.ID))
 	b.WriteString("以下为授权边界，**必须遵守**：仅测试列出的 targets，避开 exclude，不得擅自扩大范围。\n")
 
+	noise := buildNoiseProfileBlock(payload.NoiseProfile)
+	if len(payload.Constraints) > 0 || noise != "" {
+		b.WriteString("新发现的主机或端口须经明确授权。\n")
+	}
+	if len(payload.Constraints) > 0 {
+		b.WriteString("\n**操作约束（constraints）**\n")
+		b.WriteString("deny 优先，allow 仅在 targets 内有效。goals 来源的条目须经人工确认。\n")
+	}
+	for _, rule := range payload.Constraints {
+		if (rule.Kind != "allow" && rule.Kind != "deny") || (rule.Origin != "human" && rule.Origin != "goals") {
+			continue
+		}
+		if value := indexField(rule.Text); value != "" {
+			fmt.Fprintf(&b, "- [%s/%s] %q\n", rule.Kind, rule.Origin, value)
+		}
+	}
 	if len(payload.Targets) > 0 {
 		b.WriteString("\n**允许测试（targets）**：\n")
 		for _, t := range payload.Targets {
@@ -57,12 +87,14 @@ func BuildScopeBlock(proj *database.Project) string {
 	if n := strings.TrimSpace(payload.Notes); n != "" {
 		b.WriteString("\n**说明（notes）**：\n" + n + "\n")
 	}
-	if len(payload.Targets) == 0 && len(payload.Exclude) == 0 && strings.TrimSpace(payload.Notes) == "" {
+	if len(payload.Targets) == 0 && len(payload.Exclude) == 0 && strings.TrimSpace(payload.Notes) == "" &&
+		len(payload.Constraints) == 0 && noise == "" {
 		b.WriteString("\n（scope_json 已配置但未识别 targets/exclude/notes 字段，原始内容供参考）\n```json\n")
 		b.WriteString(truncateRunes(raw, 1200))
 		b.WriteString("\n```\n")
 	}
 	b.WriteString("\n若目标不在 targets 内或命中 exclude，不得主动扫描/利用；需用户明确扩大授权后再继续。\n")
+	b.WriteString(noise)
 	return b.String()
 }
 

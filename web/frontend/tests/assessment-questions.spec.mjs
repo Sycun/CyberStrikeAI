@@ -1,5 +1,31 @@
 import { test, expect, ready, visit, label, ASSESSMENT, PROJECT, UI_PERMISSIONS } from './fixtures.mjs';
 
+test('assessment coverage is readable from overview, acceptance and report', async ({ page, mockApi }) => {
+    const base = `/api/deep-assessments/${ASSESSMENT.id}`;
+    mockApi.respond('GET', `${base}/events`, { json: { events: [] } });
+    mockApi.respond('GET', `${base}/acceptance`, { json: { rows: [] } });
+    mockApi.respond('GET', `${base}/coverage`, { json: {
+        records: [{ surface: '本地样本', risk_area: 'CWE-20', outcome: 'needs_follow_up' }],
+        gaps: [{ surface: '本地样本', risk_area: 'CWE-20', kind: 'needs_follow_up' }],
+        counts: { needs_follow_up: 1 },
+        goals: [{ goal_id: 'goal', text: '核对本地已归档记录', risk_class: 'CWE-20' }],
+        constraints: [{ constraint_id: 'boundary', kind: 'deny', text: '仅处理本地样本', origin: 'user' }]
+    } });
+    mockApi.respond('GET', `${base}/report`, { contentType: 'text/markdown', body: '## 覆盖账本与待补缺口\n\n本地样本 · CWE-20' });
+    await page.goto(`/static/app/#/deep-assessments?id=${ASSESSMENT.id}`);
+    const main = await ready(page);
+    await expect(main.getByText('覆盖记录 1 条，待补缺口 1 项。')).toBeVisible();
+    await expect(main.getByText('核对本地已归档记录')).toBeVisible();
+    await expect(main.getByText('仅处理本地样本')).toBeVisible();
+    await main.getByRole('button', { name: '查看覆盖与缺口' }).click();
+    await expect(main.getByRole('gridcell', { name: '本地样本', exact: true })).toHaveCount(2);
+    await expect(main.getByRole('gridcell', { name: '需要跟进', exact: true })).toBeVisible();
+    await main.getByRole('tab', { name: label('deepAssessments.reportTab', '报告'), exact: true }).click();
+    await expect(main.getByRole('heading', { name: '覆盖账本与待补缺口' })).toBeVisible();
+    expect(mockApi.unexpected).toEqual([]);
+    expect(mockApi.writes()).toEqual([]);
+});
+
 test('assessment questions keep follow-ups across tabs and pause only the selected intent', async ({ page, mockApi }) => {
     const base = `/api/deep-assessments/${ASSESSMENT.id}`;
     const step = { id: 'record', title: '核对记录', status: 'running' };

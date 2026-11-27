@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,9 +44,7 @@ func (r *piRun) piLocalCatalog(ctx context.Context) ([]agentruntime.Tool, map[st
 		if err != nil && !os.IsNotExist(err) {
 			return nil, nil, "", err
 		}
-		for _, s := range skills {
-			fmt.Fprintf(&catalog, "- %s: %s\n", s.ID, s.Description)
-		}
+		skillPrompt := compactSkillIndexBlock(skills)
 		if len(skills) > 0 {
 			name := r.cfg.MultiAgent.Skills.SkillToolName
 			if name == "" {
@@ -54,6 +53,7 @@ func (r *piRun) piLocalCatalog(ctx context.Context) ([]agentruntime.Tool, map[st
 			tools = append(tools, agentruntime.Tool{Name: name, Description: "Load the instructions and resource paths of an available skill", Parameters: piToolSchema(map[string]any{"name": str}, "name")})
 			names[name] = true
 		}
+		catalog.WriteString(skillPrompt)
 	}
 	if r.cfg.MultiAgent.Skills.FilesystemToolsEffective() && !localToolPermissionDenied(ctx, "execute") {
 		for _, t := range []agentruntime.Tool{
@@ -70,9 +70,51 @@ func (r *piRun) piLocalCatalog(ctx context.Context) ([]agentruntime.Tool, map[st
 		}
 	}
 	if catalog.Len() > 0 {
-		return tools, names, "\n\nAvailable skills (load a matching skill before using its resources):\n" + catalog.String(), nil
+		return tools, names, catalog.String(), nil
 	}
 	return tools, names, "", nil
+}
+
+const compactSkillIndexLimit = 1200
+
+func compactSkillIndexBlock(skills []skillpackage.SkillSummary) string {
+	if len(skills) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(skills))
+	seen := map[string]bool{}
+	for _, s := range skills {
+		id := strings.TrimSpace(s.ID)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return ""
+	}
+	sort.Strings(ids)
+	var list strings.Builder
+	shown := 0
+	for _, id := range ids {
+		sep := 0
+		if shown > 0 {
+			sep = 2
+		}
+		if list.Len()+sep+len(id) > compactSkillIndexLimit {
+			break
+		}
+		if shown > 0 {
+			list.WriteString(", ")
+		}
+		list.WriteString(id)
+		shown++
+	}
+	tail := ""
+	if hidden := len(ids) - shown; hidden > 0 {
+		tail = fmt.Sprintf(" (+%d more via skill tool)", hidden)
+	}
+	return "\n\nAvailable skills (load a matching skill with the skill tool before testing a weakness class):\n" + list.String() + tail
 }
 
 type piBoundedOutput struct {

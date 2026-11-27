@@ -463,3 +463,10 @@
 .assessment-question-form > button { justify-self: end; }
 .assessment-question-turn { padding: 12px 0; border-top: 1px solid var(--semi-color-border); }
 .assessment-question-turn p { margin: 4px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assessment-coverage {
+    overflow-wrap: anywhere;
+}
+
+.assessment-coverage .semi-table-cell {
+    overflow-wrap: anywhere;
+}

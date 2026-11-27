@@ -307,7 +307,8 @@ func (e *Engine) run(parent context.Context, id string) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	workers := map[string]bool{}
-	planning, reviewing, needPlan := false, false, true
+	planning, reviewing, decomposing, needPlan := false, false, false, true
+	decomposer, hasDecomposer := e.Runtime.(GoalDecomposer)
 	lastChange, changeErr := e.Store.ChangeVersion(id)
 	if changeErr != nil {
 		return
@@ -486,31 +487,45 @@ func (e *Engine) run(parent context.Context, id string) {
 				return result{kind: "worker", id: step.ID, err: persistErr}
 			})
 		}
-		if needPlan && !planning && !reviewing {
-			err = e.Store.Change(id, "", "planning", "根据最新结果更新计划。", func(current *Task) error {
-				if current.Status != "running" {
-					return ErrConflict
+		if needPlan && !planning && !reviewing && !decomposing {
+			if hasDecomposer && t.DecomposeGoals && !t.GoalsDecomposed && len(t.Steps) == 0 {
+				snapshot, err := e.Store.Get(id)
+				if err != nil {
+					return
 				}
-				current.Rounds++
-				return nil
-			})
-			if err != nil {
-				return
+				decomposing = true
+				e.setPhase(id, "planning", true)
+				launch(func() result {
+					defer e.setPhase(id, "planning", false)
+					q, err := decomposer.Decompose(ctx, snapshot)
+					return result{kind: "decompose", proposal: Proposal{Question: q}, err: err}
+				})
+			} else {
+				err = e.Store.Change(id, "", "planning", "根据最新结果更新计划。", func(current *Task) error {
+					if current.Status != "running" {
+						return ErrConflict
+					}
+					current.Rounds++
+					return nil
+				})
+				if err != nil {
+					return
+				}
+				snapshot, err := e.Store.Get(id)
+				if err != nil {
+					return
+				}
+				planning = true
+				e.setPhase(id, "planning", true)
+				needPlan = false
+				launch(func() result {
+					defer e.setPhase(id, "planning", false)
+					p, err := e.Runtime.Plan(ctx, snapshot)
+					return result{kind: "plan", proposal: p, err: err, guidance: len(snapshot.Guidance), revision: snapshot.Revision, changeVersion: change}
+				})
 			}
-			snapshot, err := e.Store.Get(id)
-			if err != nil {
-				return
-			}
-			planning = true
-			e.setPhase(id, "planning", true)
-			needPlan = false
-			launch(func() result {
-				defer e.setPhase(id, "planning", false)
-				p, err := e.Runtime.Plan(ctx, snapshot)
-				return result{kind: "plan", proposal: p, err: err, guidance: len(snapshot.Guidance), revision: snapshot.Revision, changeVersion: change}
-			})
 		}
-		if len(workers) == 0 && !planning && !reviewing && !needPlan {
+		if len(workers) == 0 && !planning && !reviewing && !decomposing && !needPlan {
 			if t.Question != "" {
 				stop("waiting_input", t.Question)
 				return
@@ -568,6 +583,35 @@ func (e *Engine) run(parent context.Context, id string) {
 					stop("blocked", "保存执行结果失败: "+r.err.Error())
 					return
 				}
+			case "decompose":
+				decomposing = false
+				if r.err != nil {
+					stop("blocked", "目标拆解失败: "+r.err.Error())
+					return
+				}
+				q := strings.TrimSpace(r.proposal.Question)
+				kind, msg := "goals_decomposed", "已完成验收子目标与任务操作边界拆解。"
+				if q != "" {
+					kind, msg = "waiting_input", q
+				}
+				if err = e.Store.Change(id, "", kind, msg, func(current *Task) error {
+					if current.Status != "running" {
+						return ErrConflict
+					}
+					current.GoalsDecomposed = true
+					if q != "" {
+						current.Question = q
+						current.Status = "waiting_input"
+						current.Summary = Clip(q, 12000)
+					}
+					return nil
+				}); err != nil {
+					return
+				}
+				if q != "" {
+					return
+				}
+				needPlan = true
 			case "plan":
 				planning = false
 				if r.err != nil {

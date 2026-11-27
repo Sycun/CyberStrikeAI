@@ -17,6 +17,13 @@ const HITL_OPTIONS = [
     { value: 'audit_agent', label: '审计代理审批' },
     { value: 'review_edit', label: '复核并允许编辑' }
 ];
+const NOISE_PROFILE_OPTIONS = [
+    { value: '', label: '继承项目设置 / 默认不限速' },
+    { value: 'off', label: '关闭限速提示（off）' },
+    { value: 'quiet', label: '低噪串行（quiet · 2 RPS）' },
+    { value: 'balanced', label: '均衡速率（balanced · 5 RPS）' },
+    { value: 'aggressive', label: '维护窗口高吞吐（aggressive · 20 RPS）' }
+];
 const DEFAULT_ROLE = '默认';
 
 function assessmentRoleRecord(item) {
@@ -119,6 +126,7 @@ export default function CreateAssessmentDrawer({ visible, onCancel, onCreated })
                 role: values.role || '',
                 model: values.model || '',
                 hitl_policy: values.hitl_policy || '',
+                noise_profile: values.noise_profile || '',
                 concurrency: Number(values.concurrency) || 2,
                 auto_resume: values.auto_resume !== false
             };
@@ -184,7 +192,7 @@ export default function CreateAssessmentDrawer({ visible, onCancel, onCreated })
                 <Form
                     id={formId}
                     getFormApi={instance => { formApi.current = instance; }}
-                    initValues={{ concurrency: 2, auto_resume: true, hitl_policy: '', role: '' }}
+                    initValues={{ concurrency: 2, auto_resume: true, hitl_policy: '', noise_profile: '', role: '' }}
                     labelPosition="top"
                     autoScrollToError
                     onSubmit={submit}
@@ -266,12 +274,20 @@ export default function CreateAssessmentDrawer({ visible, onCancel, onCreated })
                             style={{ width: '100%' }}
                         />
                     </div>
-                    <Form.Select
-                        field="hitl_policy"
-                        label="人工审批策略"
-                        optionList={HITL_OPTIONS}
-                        style={{ width: '100%' }}
-                    />
+                    <div className="assessment-form-grid">
+                        <Form.Select
+                            field="hitl_policy"
+                            label="人工审批策略"
+                            optionList={HITL_OPTIONS}
+                            style={{ width: '100%' }}
+                        />
+                        <Form.Select
+                            field="noise_profile"
+                            label={t('deepAssessments.noiseProfile', null, '任务速率/噪音档位')}
+                            optionList={NOISE_PROFILE_OPTIONS}
+                            style={{ width: '100%' }}
+                        />
+                    </div>
                     <Form.Switch
                         field="auto_resume"
                         label={t('deepAssessments.autoResume', null, '服务重启后自动恢复结果明确的步骤')}

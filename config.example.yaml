@@ -16,7 +16,7 @@ update:
 
 # 前端显示的版本号（可选，不填则显示默认版本）。一键更新完成后，会用新代码里这个文件的值
 # 同步更新你的 config.yaml 的 version 字段（页头版本号与静态资源缓存随代码走）。
-version: "v1.8.1"
+version: "v1.8.2"
 # 服务器配置
 server:
   host: 0.0.0.0 # 监听地址，0.0.0.0 表示监听所有网络接口
@@ -370,6 +370,7 @@ multi_agent:
   # Pi 原生 中间件与 Deep/Supervisor/plan_execute Executor 调参（结构体见 internal/config/config.go → MultiAgentPiMiddlewareConfig）
   # plan_execute：下列 patch/reduction/tool_search/plantask 等同样作用于 Executor（经 ExecPreMiddlewares）；Planner/Replanner 不挂 MCP 前置中间件。
   runtime:
+    prompt_cache_prefix_split: false # keep the Pi role prompt separate from per-run context
     tool_search_enable: true
     tool_search_min_tools: 20
     tool_search_always_visible: 12

@@ -7,6 +7,7 @@ import (
 
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/projectprompt"
+	"cyberstrike-ai/internal/promptguard"
 )
 
 // The continuation supplement has a fixed ceiling within the configurable
@@ -20,7 +21,7 @@ func resumeJSON(v any) string {
 }
 
 func resumePreview(s string, max int) string {
-	s = strings.Join(strings.Fields(s), " ")
+	s = promptguard.Neutralize(strings.Join(strings.Fields(s), " "))
 	return truncateRunes(s, max)
 }
 

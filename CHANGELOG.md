@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-27 · v1.8.2 全局安全底座融合与深度测评增强
+
+- **全局非受信数据隔离与扫描面收敛**：新增 `internal/promptguard` 随机 16 字节（32 位十六进制）Nonce 包络（`[[CSAI_DATA nonce=... field=...]]`），自动中性化目标可控标记词干并支持可选工具回执隔离（`multi_agent.runtime.prompt_guard_tool_results`）；新增 `internal/surfaceingest` 结构化解析 `nmap`、`nuclei`、`httpx`、`ffuf` 输出，剥离 URL 凭据、过滤排除范围并通过 `Claim(executionID)` 跨普通 MCP 与深度测评幂等去重入库。
+- **确定性漏洞指纹去重与五维对抗复核**：`record_vulnerability`、状态流转、一键复测与深度测评独立复核共享同一套确定性三轴指纹（规范化位置 + 漏洞机制类 + 参数/组件锚点，按 `project_id` / `assessment_id` / `conversation_id` 作用域合并并保留 `force_distinct_reason` 显式拆分）与五维质量校验（可达性、前置条件、可复现性、授权范围、真实影响，区分控制有效拦截与机制不成立），漏洞详情抽屉同步展示结构化复核字段。
+- **项目级结构化约束、扫描噪声档位与经验沉淀**：项目 `scope_json` 扩展结构化 `constraints`（`allow` / `deny`）与 `noise_profile`（`off` / `quiet` / `balanced` / `aggressive`），为常用扫描器提供具体速率/并发参数及 `429`/`503` `Retry-After` 退避指引；新增基于回执证据的项目级经验库（`off` / `shadow` / `inject` 三态切换，规则失败时自动撤回淘汰，`inject` 模式下按 `CSAI_DATA` 包络安全注入）。
+- **离线安全分类标准与 Pi 提示词缓存前缀拆分**：内置离线 `lookup_security_taxonomy` 工具（打包 OWASP WSTG v4.2、核心 CWE 与 MITRE ATT&CK 技术摘要及来源许可说明）；Pi 运行时支持紧凑排序技能索引与 `prompt_cache_prefix_split` 静态角色前缀 / 动态上下文拆分。
+- **深度测评目标拆解、覆盖率账本与分段优雅收尾**：新增规划前 `set_goals` / `set_constraints` 控制会话（拦截过程性伪目标、消解指代目标，弱模型解析失败自动单次重试并平滑回退，支持任务级噪声档位覆盖）；新增持久化覆盖率账本与计划笔记工具（`record_coverage`、`assessment_coverage_ledger`、`assessment_plan_notes`），识别四类覆盖缺口并在验收门禁（`AcceptanceGate`）阻断未覆盖必测风险类的过早结项（历史无目标任务完全兼容）；Pi 执行分段耗尽前提供只读优雅收尾轮次（`WrapupPrompt`），服务端 `BeforeTool` 同步拦截收尾期新扫描与外部命令。
+
 ## 2026-11-19 · 前端整体迁移到 React + Semi Design
 
 - Web 界面重写为 Vite 构建的 React 19 单页应用，组件统一使用 Semi Design；页面按 `#/<页面 id>` 路由，

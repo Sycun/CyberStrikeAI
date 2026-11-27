@@ -6,6 +6,7 @@ import (
 
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
+	"cyberstrike-ai/internal/promptguard"
 )
 
 // AppendSystemPromptBlock 将附加块追加到 system prompt。
@@ -157,7 +158,7 @@ func FilterCheckpointEdges(edges []*database.ProjectFactEdge, visibleFacts []*da
 
 // indexField 压平自由文本事实字段：换行能伪造索引行，宿主定界符能提前闭合索引块。
 func indexField(s string) string {
-	return factIndexSafeText(strings.Join(strings.Fields(s), " "))
+	return factIndexSafeText(promptguard.Neutralize(strings.Join(strings.Fields(s), " ")))
 }
 
 func truncateIndexSummary(s string, maxRunes int) string {

@@ -2303,9 +2303,10 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 								"schema": map[string]interface{}{
 									"type": "object",
 									"properties": map[string]interface{}{
-										"name":        map[string]interface{}{"type": "string"},
-										"description": map[string]interface{}{"type": "string"},
-										"scope_json":  map[string]interface{}{"type": "string"},
+										"name":         map[string]interface{}{"type": "string"},
+										"description":  map[string]interface{}{"type": "string"},
+										"scope_json":   map[string]interface{}{"type": "string"},
+										"lessons_mode": map[string]interface{}{"type": "string", "enum": []string{"off", "shadow", "inject"}, "default": "off"},
 									},
 									"required": []string{"name"},
 								},
@@ -2339,6 +2340,34 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 						{"name": "id", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}},
 					},
 					"responses": map[string]interface{}{"200": map[string]interface{}{"description": "删除成功"}},
+				},
+			},
+			"/api/projects/{id}/lessons": map[string]interface{}{
+				"get": map[string]interface{}{
+					"tags": []string{"项目管理"}, "summary": "列出项目处置经验", "operationId": "listProjectLessons",
+					"description": "具备相关漏洞读取权限时，响应包含可读证据支持的 vulnerability_type 和 summary 字段。",
+					"parameters": []map[string]interface{}{
+						{"name": "id", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{"description": "项目经验及当前记录模式"},
+						"403": map[string]interface{}{"description": "缺少项目读取权限"},
+						"404": map[string]interface{}{"description": "项目不存在"},
+					},
+				},
+			},
+			"/api/projects/{id}/lessons/extract": map[string]interface{}{
+				"post": map[string]interface{}{
+					"tags": []string{"项目管理"}, "summary": "提炼或更新项目处置经验", "operationId": "extractProjectLessons",
+					"parameters": []map[string]interface{}{
+						{"name": "id", "in": "path", "required": true, "schema": map[string]interface{}{"type": "string"}},
+					},
+					"responses": map[string]interface{}{
+						"204": map[string]interface{}{"description": "提炼完成"},
+						"403": map[string]interface{}{"description": "缺少项目编辑权限"},
+						"404": map[string]interface{}{"description": "项目不存在"},
+						"409": map[string]interface{}{"description": "项目经验记录已关闭"},
+					},
 				},
 			},
 			"/api/projects/{id}/facts": map[string]interface{}{

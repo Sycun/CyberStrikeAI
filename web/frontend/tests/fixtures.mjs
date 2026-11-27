@@ -149,6 +149,7 @@ function makeReads(session) {
         [`/api/conversations/${CONVERSATION.id}/plan-tasks`]: { tasks: [], total: 0, completed: 0, running: false },
         '/api/deep-assessments': { tasks: [ASSESSMENT], has_more: false },
         [`/api/deep-assessments/${ASSESSMENT.id}`]: { task: ASSESSMENT, intent_counts: {}, step_total: 0 },
+        [`/api/deep-assessments/${ASSESSMENT.id}/coverage`]: { records: [], gaps: [], counts: {}, goals: [], constraints: [] },
         [`/api/deep-assessments/${ASSESSMENT.id}/surface-items`]: { items: [], has_more: false },
         '/api/deep-assessments/options': { models: [], roles: [], projects: [PROJECT] },
         '/api/assets': { assets: [], total: 0, page: 1, page_size: 20 },

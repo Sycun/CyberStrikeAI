@@ -19,6 +19,7 @@ import (
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/project"
+	"cyberstrike-ai/internal/promptguard"
 	"cyberstrike-ai/internal/reasoning"
 	"cyberstrike-ai/internal/tooloutput"
 
@@ -32,6 +33,7 @@ type piRun struct {
 	db                                                *database.DB
 	projectID                                         string
 	conversationID, agentID, systemPrompt, sessionKey string
+	systemPromptPrefix                                string
 	history                                           []agent.ChatMessage
 	roleTools                                         []string
 	catalogAllow                                      map[string]bool
@@ -59,10 +61,11 @@ func runPiSingle(ctx context.Context, cfg *config.Config, ag *agent.Agent, db *d
 	if ag == nil {
 		return nil, fmt.Errorf("Pi agent is nil")
 	}
-	prompt := project.AppendSystemPromptBlock(ag.SystemInstruction(), extra)
+	instruction := ag.SystemInstruction()
+	prompt := project.AppendSystemPromptBlock(instruction, extra)
 	prompt = project.AppendVisionImageAnalysisIfReady(prompt, cfg.Vision.Ready())
 	return (&piRun{cfg: cfg, ag: ag, db: db, projectID: projectID, conversationID: conversationID, agentID: "main", systemPrompt: prompt,
-		history: history, roleTools: roleTools, progress: progress, reasoning: intent}).run(ctx, message)
+		systemPromptPrefix: instruction, history: history, roleTools: roleTools, progress: progress, reasoning: intent}).run(ctx, message)
 }
 
 func piToolSchema(properties map[string]any, required ...string) map[string]any {
@@ -119,13 +122,13 @@ func runPiMulti(ctx context.Context, cfg *config.Config, ma *config.MultiAgentCo
 		registry[id] = sub
 		catalog = append(catalog, id+": "+sub.Description)
 	}
-	prompt, _ := resolveMainOrchestratorInstruction(mode, ma, loaded)
-	prompt = project.AppendSystemPromptBlock(prompt, extra)
+	instruction, _ := resolveMainOrchestratorInstruction(mode, ma, loaded)
+	prompt := project.AppendSystemPromptBlock(instruction, extra)
 	prompt += "\n\nAvailable specialists:\n" + strings.Join(catalog, "\n") + "\nUse task to delegate a concrete objective. Each child receives only the tools permitted for it and this conversation. Verify evidence before reporting completion."
 	if mode == "plan_execute" {
 		prompt += "\nCreate a concrete plan using the available task-board tools or a concise plan in text. Delegate one step at a time to executor using task, examine the result, update the plan, and replan when evidence requires it. Finish with the verified deliverable."
 	}
-	main := &piRun{cfg: cfg, ag: ag, db: db, projectID: projectID, conversationID: conversationID, agentID: "main", systemPrompt: prompt, history: history, roleTools: roleTools, progress: progress, reasoning: intent, sessionKey: mode}
+	main := &piRun{cfg: cfg, ag: ag, db: db, projectID: projectID, conversationID: conversationID, agentID: "main", systemPrompt: prompt, systemPromptPrefix: instruction, history: history, roleTools: roleTools, progress: progress, reasoning: intent, sessionKey: mode}
 	str := map[string]any{"type": "string"}
 	main.extraTools = []agentruntime.Tool{
 		{Name: "task", Description: "Delegate a concrete task to a named specialist and return its evidence-backed result", Parameters: piToolSchema(map[string]any{"subagent_type": str, "description": str}, "subagent_type", "description")},
@@ -206,7 +209,7 @@ func runPiMulti(ctx context.Context, cfg *config.Config, ma *config.MultiAgentCo
 		// A child may narrow its parent's catalog, never expand it.
 		parentNames := main.availableCatalog
 		childPrompt := project.AppendSystemPromptBlock(sub.Instruction, extra) + "\n\nOriginal user task:\n" + message
-		child := &piRun{cfg: cfg, ag: ag, db: db, projectID: projectID, conversationID: conversationID, agentID: id, systemPrompt: childPrompt, roleTools: tools, catalogAllow: parentNames, progress: progress, reasoning: intent, child: true, sessionKey: call.ID, maxTurns: sub.MaxIterations}
+		child := &piRun{cfg: cfg, ag: ag, db: db, projectID: projectID, conversationID: conversationID, agentID: id, systemPrompt: childPrompt, systemPromptPrefix: sub.Instruction, roleTools: tools, catalogAllow: parentNames, progress: progress, reasoning: intent, child: true, sessionKey: call.ID, maxTurns: sub.MaxIterations}
 		res, err := child.run(callCtx, task)
 		if res == nil {
 			return agentruntime.ToolResult{}, err
@@ -233,6 +236,24 @@ func runPiMulti(ctx context.Context, cfg *config.Config, ma *config.MultiAgentCo
 	return res, err
 }
 
+func piSystemPromptParts(full, instruction string, split, projectScope bool) (string, string) {
+	if !split {
+		return full, ""
+	}
+	prefix := strings.TrimSpace(instruction)
+	tail, ok := strings.CutPrefix(full, prefix)
+	if !ok || strings.Contains(prefix, "CSAI_DATA") {
+		prefix, tail = "", full
+	}
+	if projectScope {
+		if prefix == "" && tail != "" {
+			tail = "\n\n" + tail
+		}
+		prefix = project.AppendSystemPromptBlock(prefix, project.ScopeAuthorizationPolicy)
+	}
+	return prefix, tail
+}
+
 func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 	if extra, ok := ctx.Value(taskToolsKey{}).(taskTools); ok && !r.child {
 		r.extraTools = append(r.extraTools, extra.definitions...)
@@ -249,7 +270,16 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.systemPrompt += skillPrompt
+	if skillPrompt != "" {
+		if idx := strings.Index(r.systemPrompt, "[Data envelope (code-owned)]:"); idx > 0 {
+			r.systemPrompt = strings.TrimRight(r.systemPrompt[:idx], "\n") + skillPrompt + "\n\n" + r.systemPrompt[idx:]
+		} else {
+			r.systemPrompt += skillPrompt
+		}
+		if r.systemPromptPrefix != "" && !strings.Contains(r.systemPromptPrefix, "CSAI_DATA") {
+			r.systemPromptPrefix = strings.TrimSpace(r.systemPromptPrefix) + skillPrompt
+		}
+	}
 	allowed := map[string]bool{}
 	tools := make([]agentruntime.Tool, 0, len(defs)+len(r.extraTools))
 	for _, d := range defs {
@@ -306,7 +336,9 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 		max = agentMaxIterations(r.cfg)
 	}
 	runID := uuid.NewString()
-	req := agentruntime.Request{RunID: runID, ConversationID: r.conversationID, SystemPrompt: r.systemPrompt, Message: message, History: history,
+	prefix, dynamic := piSystemPromptParts(r.systemPrompt, r.systemPromptPrefix,
+		r.cfg.MultiAgent.Runtime.PromptCachePrefixSplit, r.cfg.Project.Enabled && strings.TrimSpace(r.projectID) != "")
+	req := agentruntime.Request{RunID: runID, ConversationID: r.conversationID, SystemPrompt: prefix, SystemPromptDynamic: dynamic, Message: message, History: history,
 		Model: piModelConfig(oa, r.reasoning, r.conversationID),
 		Tools: tools, SessionDir: filepath.Join(root, agentruntime.ConversationStorageKey(r.conversationID), key), MaxTurns: max}
 	if !r.child {
@@ -465,6 +497,9 @@ func (r *piRun) run(ctx context.Context, message string) (*RunResult, error) {
 			} else {
 				result.Content = tooloutput.BoundWithSpill(result.Content, limit, opts)
 			}
+		}
+		if r.cfg != nil {
+			result.Content = promptguard.FrameToolResult(r.cfg.MultiAgent.Runtime.PromptGuardToolResultsEnabled(), result.Content)
 		}
 		progress("tool_result", result.Content, map[string]any{"toolName": call.Name, "toolCallId": call.ID, "executionId": result.ExecutionID, "result": result.Content, "success": !result.IsError, "isError": result.IsError, "agentFacing": true})
 		return result, err

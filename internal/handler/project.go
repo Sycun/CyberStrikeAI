@@ -40,6 +40,7 @@ type createProjectRequest struct {
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
 	ScopeJSON   string `json:"scope_json"`
+	LessonsMode string `json:"lessons_mode" binding:"omitempty,oneof=off shadow inject"`
 	Status      string `json:"status"`
 }
 
@@ -54,6 +55,7 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 		Name:        strings.TrimSpace(req.Name),
 		Description: clampProjectDescription(req.Description),
 		ScopeJSON:   req.ScopeJSON,
+		LessonsMode: req.LessonsMode,
 		Status:      strings.TrimSpace(req.Status),
 	}
 	created, err := h.db.CreateProject(p)
@@ -197,6 +199,10 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 	if req.Status != nil {
 		s := strings.TrimSpace(*req.Status)
 		req.Status = &s
+	}
+	if req.LessonsMode != nil && *req.LessonsMode != database.ProjectLessonsOff && *req.LessonsMode != database.ProjectLessonsShadow && *req.LessonsMode != database.ProjectLessonsInject {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "lessons_mode 必须为 off、shadow 或 inject"})
+		return
 	}
 	p, err := h.db.UpdateProject(c.Param("id"), req)
 	if err == database.ErrProjectNotFound {

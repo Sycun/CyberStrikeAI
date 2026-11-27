@@ -7,6 +7,7 @@ import { once } from "node:events";
 import { mkdtemp, rm, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { RecordReader } from "../dist/protocol.js";
 
@@ -43,9 +44,10 @@ function sse(res, delta, reason) {
 }
 
 const fixtureEnv = { ...process.env, NO_PROXY: "127.0.0.1", no_proxy: "127.0.0.1" };
+const workerPath = fileURLToPath(new URL("../dist/worker.js", import.meta.url));
 
 async function invoke(t, request, onRecord = () => {}, env = fixtureEnv) {
-  const worker = spawn(process.execPath, ["dist/worker.js"], { stdio: ["pipe", "pipe", "pipe"], env });
+  const worker = spawn(process.execPath, [workerPath], { stdio: ["pipe", "pipe", "pipe"], env });
   t.after(() => { worker.kill(); });
   const exit = once(worker, "exit");
   const records = [];
@@ -78,6 +80,23 @@ function userTexts(body) {
   return body.messages.filter(m => m.role === "user").map(m =>
     typeof m.content === "string" ? m.content : m.content.map(block => block.text).join(""));
 }
+
+test("split and legacy requests send the same system text", { timeout: 30000 }, async t => {
+  const fixture = await startFixture(t, (_body, res) => sse(res, { content: "done" }, "stop"));
+  const dir = await mkdtemp(join(tmpdir(), "csai-pi-prompt-test-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const req = { ...request(fixture.url), workingDir: dir };
+  const dynamic = "\n\n[[CSAI_DATA:fixture field=project_blackboard]]\nReviewed project notes\n";
+  for (const generateOnly of [false, true]) {
+    const legacy = { ...req, generateOnly, systemPrompt: req.systemPrompt + dynamic };
+    await invoke(t, legacy);
+    await invoke(t, { ...req, generateOnly, systemPromptDynamic: dynamic });
+    const [before, after] = fixture.requests.slice(-2);
+    const systemMessages = body => body.messages.filter(m => m.role === "system" || m.role === "developer");
+    assert.ok(JSON.stringify(systemMessages(after)).includes("Reviewed project notes"));
+    assert.deepEqual(systemMessages(after), systemMessages(before));
+  }
+});
 
 test("native chat images reach image-capable models without appearing in host events", { timeout: 30000 }, async t => {
   const fixture = await startFixture(t, (_body, res) => {
@@ -271,7 +290,7 @@ test("process loss preserves the session and marks uncertain tools without repla
   });
   const dir = await mkdtemp(join(tmpdir(), "csai-pi-crash-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const worker = spawn(process.execPath, ["dist/worker.js"], { stdio: ["pipe", "pipe", "ignore"], env: fixtureEnv });
+  const worker = spawn(process.execPath, [workerPath], { stdio: ["pipe", "pipe", "ignore"], env: fixtureEnv });
   t.after(() => worker.kill());
   const ended = once(worker, "exit");
   const reader = new RecordReader();
@@ -511,7 +530,7 @@ test('assessment repairs the host-receipt / Pi-transcript crash gap without repl
   sse(res,{role:'assistant',tool_calls:[{index:0,id:'finish',type:'function',function:{name:'assessment_result',arguments:'{}'}}]},'tool_calls');
  });
  const req=request(fixture.url,dir);req.nativeWorkflow={completionTool:'assessment_result'};req.tools.push({name:'assessment_result',description:'Finish',parameters:{type:'object',properties:{}}});
- const worker=spawn(process.execPath,['dist/worker.js'],{stdio:['pipe','pipe','pipe'],env:fixtureEnv});
+ const worker=spawn(process.execPath,[workerPath],{stdio:['pipe','pipe','pipe'],env:fixtureEnv});
  t.after(()=>worker.kill());const exited=once(worker,'exit');const reader=new RecordReader();let call;
  worker.stdout.on('data',chunk=>{for(const r of reader.push(chunk)){if(r.type==='ready')worker.stdin.write(JSON.stringify({type:'run',version:1,request:req})+'\n');if(r.type==='tool_call'){call=r.call;worker.kill('SIGKILL');}}});
  await exited;assert.ok(call?.sessionEntryId,'missing native assistant entry identity');
@@ -538,4 +557,37 @@ test("truncated assistant text stays in history and the resumed session", { time
   const second = await invoke(t, { ...request(fixture.url, dir), tools: [], runId: "run-2", message: "Continue from the truncated sentence." });
   assert.equal(second.result.status, "completed", second.result.error);
   assert.ok(JSON.stringify(fixture.requests[1].messages).includes("Alpha-"), JSON.stringify(fixture.requests[1].messages));
+});
+
+test("assessment segment wrapup steers writeback before yielding", { timeout: 30000 }, async t => {
+  const dir = await mkdtemp(join(tmpdir(), "csai-assessment-wrapup-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const fixture = await startFixture(t, (body, res, count) => {
+    if (count === 1) {
+      sse(res, { role: "assistant", tool_calls: [{ index: 0, id: "t1", type: "function", function: { name: "echo", arguments: '{"text":"obs-1"}' } }] }, "tool_calls");
+    } else if (count === 2) {
+      sse(res, { role: "assistant", tool_calls: [{ index: 0, id: "t2", type: "function", function: { name: "echo", arguments: '{"text":"obs-2"}' } }] }, "tool_calls");
+    } else {
+      assert.ok(JSON.stringify(body.messages).includes("WRAPUP_WRITEBACK_NOW"), "missing wrapup prompt in steered turn");
+      sse(res, { role: "assistant", tool_calls: [{ index: 0, id: "finish", type: "function", function: { name: "assessment_result", arguments: "{}" } }] }, "tool_calls");
+    }
+  });
+  const req = request(fixture.url, dir);
+  req.maxTurns = 2;
+  req.nativeWorkflow = {
+    completionTool: "assessment_result",
+    wrapupPrompt: "WRAPUP_WRITEBACK_NOW",
+    wrapupTurns: 1,
+  };
+  req.tools.push({ name: "assessment_result", description: "Finish", parameters: { type: "object", properties: {} } });
+  let sawWrapupEvent = false;
+  const out = await invoke(t, req, (r, send) => {
+    if (r.type === "event" && r.event?.type === "segment_wrapup_start") sawWrapupEvent = true;
+    if (r.type === "tool_call") {
+      send({ type: "tool_result", id: r.call.id, result: { content: "ok", terminate: r.call.name === "assessment_result" } });
+    }
+  });
+  assert.equal(out.result.status, "completed", out.result.error);
+  assert.equal(sawWrapupEvent, true, "expected segment_wrapup_start event");
+  assert.equal(fixture.requests.length, 3);
 });

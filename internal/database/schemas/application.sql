@@ -390,12 +390,50 @@ CREATE TABLE projects (
     name TEXT NOT NULL,
     description TEXT,
     scope_json TEXT,
+    lessons_mode TEXT NOT NULL DEFAULT 'off' CHECK(lessons_mode IN ('off','shadow','inject')),
     status TEXT NOT NULL DEFAULT 'active',
     pinned INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,
     owner_user_id TEXT
 );
+
+CREATE TABLE project_lessons (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK(kind IN ('positive','negative','caution')),
+    cue TEXT NOT NULL,
+    action TEXT NOT NULL,
+    vulnerability_type TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    dedupe_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'retired' CHECK(status IN ('active','retired')),
+    support INTEGER NOT NULL DEFAULT 0 CHECK(support >= 0),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, dedupe_key)
+);
+
+CREATE TABLE project_lesson_evidence (
+    lesson_id TEXT NOT NULL REFERENCES project_lessons(id) ON DELETE CASCADE,
+    source_kind TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    vulnerability_id TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    withdrawn_at DATETIME,
+    PRIMARY KEY(lesson_id, source_kind, source_id)
+);
+CREATE INDEX idx_project_lesson_evidence_finding ON project_lesson_evidence(vulnerability_id, withdrawn_at);
+
+CREATE TABLE project_lesson_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    lesson_id TEXT NOT NULL REFERENCES project_lessons(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL CHECK(mode IN ('shadow','inject')),
+    conversation_id TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_project_lesson_usage_project ON project_lesson_usage(project_id, created_at);
 
 CREATE TABLE rbac_permissions (
     key TEXT PRIMARY KEY,
@@ -545,6 +583,7 @@ CREATE TABLE vulnerabilities (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     project_id TEXT,
     owner_user_id TEXT,
+    fingerprint TEXT NOT NULL DEFAULT '',
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL
 );
 
@@ -611,6 +650,20 @@ CREATE TABLE vulnerability_retest_results (
 );
 
 CREATE INDEX idx_vulnerability_case ON vulnerabilities(case_id);
+CREATE INDEX IF NOT EXISTS idx_vulnerabilities_fingerprint ON vulnerabilities(fingerprint);
+
+CREATE TABLE IF NOT EXISTS vulnerability_quality (
+    vulnerability_id TEXT PRIMARY KEY REFERENCES vulnerabilities(id) ON DELETE CASCADE,
+    reachability TEXT NOT NULL DEFAULT '',
+    preconditions TEXT NOT NULL DEFAULT '',
+    reproducibility TEXT NOT NULL DEFAULT '',
+    scope_check TEXT NOT NULL DEFAULT '',
+    impact_check TEXT NOT NULL DEFAULT '',
+    control_reachable INTEGER NOT NULL DEFAULT 0,
+    mechanism_invalid INTEGER NOT NULL DEFAULT 0,
+    blocked_by TEXT NOT NULL DEFAULT '',
+    updated_at DATETIME NOT NULL
+);
 CREATE INDEX idx_vulnerability_case_events ON vulnerability_case_events(case_id);
 CREATE INDEX idx_vulnerability_retest_results ON vulnerability_retest_results(vulnerability_id, created_at);
 
@@ -997,6 +1050,37 @@ CREATE TABLE IF NOT EXISTS deep_assessment_acceptance (
  task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
  criterion INTEGER NOT NULL, revision INTEGER NOT NULL, mapping TEXT NOT NULL,
  PRIMARY KEY(task_id,criterion)
+);
+CREATE TABLE IF NOT EXISTS deep_assessment_goals (
+ task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ goal_id TEXT NOT NULL, text TEXT NOT NULL, risk_class TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(task_id,goal_id)
+);
+CREATE TABLE IF NOT EXISTS deep_assessment_constraints (
+ task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ constraint_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('allow','deny')),
+ text TEXT NOT NULL, origin TEXT NOT NULL,
+ PRIMARY KEY(task_id,constraint_id)
+);
+CREATE TABLE IF NOT EXISTS deep_assessment_coverage (
+ task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ surface TEXT NOT NULL, risk_area TEXT NOT NULL,
+ outcome TEXT NOT NULL CHECK(outcome IN ('reported','no_issue_found','ruled_out','not_applicable','needs_follow_up')),
+ evidence TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', step_id TEXT NOT NULL DEFAULT '',
+ updated_at DATETIME NOT NULL,
+ PRIMARY KEY(task_id,surface,risk_area)
+);
+CREATE TABLE IF NOT EXISTS deep_assessment_coverage_history (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ task_id TEXT NOT NULL REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ surface TEXT NOT NULL, risk_area TEXT NOT NULL,
+ outcome TEXT NOT NULL CHECK(outcome IN ('reported','no_issue_found','ruled_out','not_applicable','needs_follow_up')),
+ evidence TEXT NOT NULL, reason TEXT NOT NULL, step_id TEXT NOT NULL, updated_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_deep_assessment_coverage_history_task ON deep_assessment_coverage_history(task_id,id);
+CREATE TABLE IF NOT EXISTS deep_assessment_plan_notes (
+ task_id TEXT PRIMARY KEY REFERENCES deep_assessments(id) ON DELETE CASCADE,
+ revision INTEGER NOT NULL, body TEXT NOT NULL, updated_at DATETIME NOT NULL
 );
 CREATE TABLE IF NOT EXISTS asset_endpoints (
  id TEXT PRIMARY KEY, asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,

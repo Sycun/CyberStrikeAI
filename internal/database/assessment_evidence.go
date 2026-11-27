@@ -20,6 +20,19 @@ type AssessmentFindingReview struct {
 }
 type assessmentQuery interface{ QueryRow(string, ...any) *sql.Row }
 
+// AssessmentIDForConversation reports the single deep-assessment task bound to
+// a conversation. Batch-task conversations and ambiguous sessions return false.
+func (db *DB) AssessmentIDForConversation(conversation string) (string, bool, error) {
+	task, _, err := assessmentSession(db, conversation)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return task, task != "", nil
+}
+
 func assessmentSession(q assessmentQuery, conversation string) (string, string, error) {
 	var task, step string
 	err := q.QueryRow("SELECT task_id,step_id FROM deep_assessment_sessions s WHERE conversation_id=? AND (SELECT COUNT(*) FROM deep_assessment_sessions x WHERE x.conversation_id=s.conversation_id)=1 AND NOT EXISTS(SELECT 1 FROM batch_tasks b WHERE b.conversation_id=s.conversation_id)", conversation).Scan(&task, &step)
@@ -109,6 +122,21 @@ func recordAssessmentReport(tx *sql.Tx, v *Vulnerability) error {
 	return findingGraph(tx, v.ID, task, step, v.Title, "查看关联漏洞中的复现步骤、证据及独立复核记录。", state, refs)
 }
 func (db *DB) ReviewAssessmentFinding(task, step, id, verdict, reason string, refs []string, requestIDs ...string) error {
+	return db.reviewAssessmentFinding(task, step, id, verdict, reason, refs, nil, requestIDs...)
+}
+
+// ReviewAssessmentFindingWithQuality keeps the independent-intent and receipt
+// rules, and records the shared five-dimension review on the same transaction.
+func (db *DB) ReviewAssessmentFindingWithQuality(task, step, id, verdict, reason string, refs []string, review *AdversarialReview, requestIDs ...string) error {
+	if review != nil {
+		if err := review.Validate(verdict); err != nil {
+			return err
+		}
+	}
+	return db.reviewAssessmentFinding(task, step, id, verdict, reason, refs, review, requestIDs...)
+}
+
+func (db *DB) reviewAssessmentFinding(task, step, id, verdict, reason string, refs []string, review *AdversarialReview, requestIDs ...string) error {
 	if !map[string]bool{"confirmed": true, "refuted": true, "inconclusive": true}[verdict] || strings.TrimSpace(reason) == "" || len(reason) > 8000 {
 		return fmt.Errorf("invalid independent review")
 	}
@@ -160,7 +188,27 @@ func (db *DB) ReviewAssessmentFinding(task, step, id, verdict, reason string, re
 	if err = findingGraph(tx, id, task, origin, title, reason, verdict, canonical); err != nil {
 		return err
 	}
+	if review != nil {
+		if _, err = tx.Exec(`INSERT INTO vulnerability_quality(
+			vulnerability_id, reachability, preconditions, reproducibility, scope_check, impact_check,
+			control_reachable, mechanism_invalid, blocked_by, updated_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(vulnerability_id) DO UPDATE SET
+			reachability=excluded.reachability, preconditions=excluded.preconditions,
+			reproducibility=excluded.reproducibility, scope_check=excluded.scope_check,
+			impact_check=excluded.impact_check, control_reachable=excluded.control_reachable,
+			mechanism_invalid=excluded.mechanism_invalid, blocked_by=excluded.blocked_by,
+			updated_at=excluded.updated_at`,
+			id, strings.TrimSpace(review.Reachability), strings.TrimSpace(review.Preconditions), strings.TrimSpace(review.Reproducibility),
+			strings.TrimSpace(review.Scope), strings.TrimSpace(review.Impact), boolToInt(review.ControlReachable), boolToInt(review.MechanismInvalid),
+			strings.TrimSpace(review.BlockedBy), time.Now().UTC()); err != nil {
+			return err
+		}
+	}
 	if _, err = tx.Exec("INSERT OR IGNORE INTO deep_assessment_edges(task_id,source_id,target_id,relation) VALUES(?,?,?,'reviews')", task, "step:"+step, "finding:"+id); err != nil {
+		return err
+	}
+	if err = syncProjectLesson(tx, id); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {

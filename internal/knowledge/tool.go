@@ -7,8 +7,10 @@ import (
 	"sort"
 	"strings"
 
+	"cyberstrike-ai/internal/knowledge/taxonomy"
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
+	"cyberstrike-ai/internal/promptguard"
 
 	"go.uber.org/zap"
 )
@@ -20,6 +22,8 @@ func RegisterKnowledgeTool(
 	manager *Manager,
 	logger *zap.Logger,
 ) {
+	RegisterTaxonomyTool(mcpServer, logger)
+
 	// 注册第一个工具：获取所有可用的风险类型列表
 	listRiskTypesTool := mcp.Tool{
 		Name:             builtin.ToolListKnowledgeRiskTypes,
@@ -272,6 +276,62 @@ func RegisterKnowledgeTool(
 
 	mcpServer.RegisterTool(searchTool, searchHandler)
 	logger.Debug("知识检索工具已注册", zap.String("toolName", searchTool.Name))
+}
+
+// RegisterTaxonomyTool is independent of vector search and its configuration.
+func RegisterTaxonomyTool(server *mcp.Server, logger *zap.Logger) {
+	server.RegisterTool(mcp.Tool{
+		Name:             builtin.ToolLookupSecurityTaxonomy,
+		Description:      "离线查询 WSTG、CWE 或 MITRE ATT&CK 分类编号与简述，用于标注和核对报告。",
+		ShortDescription: "查询安全分类编号与简述",
+		Annotations:      map[string]bool{"readOnlyHint": true, "destructiveHint": false, "openWorldHint": false},
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"source": map[string]any{"type": "string", "enum": []string{"wstg", "cwe", "attack"}},
+				"query":  map[string]any{"type": "string", "description": "完整编号或以空格分隔的关键词"},
+				"limit":  map[string]any{"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+			},
+			"required": []string{"source", "query"},
+		},
+	}, func(_ context.Context, args map[string]any) (*mcp.ToolResult, error) {
+		result := func(text string, isError bool) *mcp.ToolResult {
+			return &mcp.ToolResult{Content: []mcp.Content{{Type: "text", Text: text}}, IsError: isError}
+		}
+		source, _ := args["source"].(string)
+		source = strings.ToLower(strings.TrimSpace(source))
+		if source != "wstg" && source != "cwe" && source != "attack" {
+			return result("source 必须为 wstg、cwe 或 attack。", true), nil
+		}
+		query, _ := args["query"].(string)
+		if strings.TrimSpace(query) == "" {
+			return result("query 不能为空。", true), nil
+		}
+		pack, err := taxonomy.Default()
+		if err != nil {
+			logger.Error("加载离线分类失败", zap.Error(err))
+			return result("离线分类暂不可用。", true), nil
+		}
+		var limit int
+		switch n := args["limit"].(type) {
+		case float64:
+			if n > 0 {
+				limit = int(min(n, 20))
+			}
+		case int:
+			limit = n
+		}
+		entries := pack.Search(source, query, limit)
+		if len(entries) == 0 {
+			return result("没有匹配的分类条目。", false), nil
+		}
+		var body strings.Builder
+		for _, entry := range entries {
+			fmt.Fprintf(&body, "- %s · %s\n  %s\n", entry.ID, entry.Title, entry.Summary)
+		}
+		env := promptguard.NewEnvelope()
+		return result(env.Intro()+"\n"+env.Wrap("security_taxonomy", strings.TrimSpace(body.String())), false), nil
+	})
 }
 
 // contains 检查切片是否包含元素

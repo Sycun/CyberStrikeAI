@@ -236,6 +236,24 @@ export default function DetailDrawer({
                 <Tabs type="line" activeKey={tab} onChange={key => setTab(key)}>
                     <Tabs.TabPane tab={t('vulnerabilityPage.inspector_overview', null, '概览')} itemKey="overview">
                         <KeyValueList items={overviewItems} columns={2} />
+                        {vuln.fingerprint ? (
+                            <Narrative title={t('vulnerabilityPage.fingerprint', null, '确定性指纹')} content={vuln.fingerprint} code />
+                        ) : null}
+                        {vuln.quality ? (
+                            <Narrative
+                                title={t('vulnerabilityPage.qualityReview', null, '五维对抗复核')}
+                                content={[
+                                    `可达性：${vuln.quality.reachability || '—'}`,
+                                    `前置条件：${vuln.quality.preconditions || '—'}`,
+                                    `可复现性：${vuln.quality.reproducibility || '—'}`,
+                                    `范围：${vuln.quality.scope || '—'}`,
+                                    `影响：${vuln.quality.impact || '—'}`,
+                                    `对照组可达：${vuln.quality.control_reachable ? '是' : '否'}`,
+                                    `机理已失效：${vuln.quality.mechanism_invalid ? '是' : '否'}`,
+                                    vuln.quality.blocked_by ? `受阻：${vuln.quality.blocked_by}` : ''
+                                ].filter(Boolean).join('\n')}
+                            />
+                        ) : null}
                         <Narrative title={t('vulnerabilityMd.headingDescription', null, '描述')} content={vuln.description} />
                         <Narrative title={t('vulnerabilityPage.detailImpact', null, '影响')} content={vuln.impact} />
                         <Narrative title={t('vulnerabilityPage.detailRecommendation', null, '修复建议')} content={vuln.recommendation} />

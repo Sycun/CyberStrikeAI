@@ -162,9 +162,11 @@ func (h *AgentHandler) CreateDeepAssessment(c *gin.Context) {
 		CollectionID string `json:"collection_id"`
 		Role         string `json:"role"`
 		Model        string `json:"model"`
-		HITLPolicy   string `json:"hitl_policy"`
-		Concurrency  int    `json:"concurrency"`
-		AutoResume   *bool  `json:"auto_resume"`
+		HITLPolicy     string `json:"hitl_policy"`
+		NoiseProfile   string `json:"noise_profile"`
+		DecomposeGoals *bool  `json:"decompose_goals"`
+		Concurrency    int    `json:"concurrency"`
+		AutoResume     *bool  `json:"auto_resume"`
 	}
 	if !deepAssessmentBody(c, &req) {
 		return
@@ -217,8 +219,12 @@ func (h *AgentHandler) CreateDeepAssessment(c *gin.Context) {
 	if req.AutoResume != nil {
 		autoResume = *req.AutoResume
 	}
+	decomposeGoals := true
+	if req.DecomposeGoals != nil {
+		decomposeGoals = *req.DecomposeGoals
+	}
 	now := time.Now().UTC()
-	t := &deepassessment.Task{ID: uuid.NewString(), AutoResume: autoResume, OwnerID: session.UserID, ExecutorID: session.UserID, Name: req.Name, Objective: req.Objective, Scope: strings.TrimSpace(req.Scope), Criteria: strings.TrimSpace(req.Criteria), ProjectID: req.ProjectID, CollectionID: strings.TrimSpace(req.CollectionID), Role: req.Role, Model: req.Model, HITLPolicy: req.HITLPolicy, Concurrency: req.Concurrency, Status: "draft", Steps: []deepassessment.Step{}, Guidance: []string{}, CreatedAt: now, UpdatedAt: now}
+	t := &deepassessment.Task{ID: uuid.NewString(), AutoResume: autoResume, DecomposeGoals: decomposeGoals, NoiseProfile: strings.TrimSpace(req.NoiseProfile), OwnerID: session.UserID, ExecutorID: session.UserID, Name: req.Name, Objective: req.Objective, Scope: strings.TrimSpace(req.Scope), Criteria: strings.TrimSpace(req.Criteria), ProjectID: req.ProjectID, CollectionID: strings.TrimSpace(req.CollectionID), Role: req.Role, Model: req.Model, HITLPolicy: req.HITLPolicy, Concurrency: req.Concurrency, Status: "draft", Steps: []deepassessment.Step{}, Guidance: []string{}, CreatedAt: now, UpdatedAt: now}
 	if suppliedCriteria != "" && suppliedCriteria != strings.TrimSpace(req.Objective) {
 		t.AcceptanceMode = deepassessment.AcceptanceModePerItem
 	}
@@ -630,6 +636,10 @@ func (h *AgentHandler) DeepAssessmentReport(c *gin.Context) {
 	fmt.Fprintf(&b, "# %s\n\n状态：%s\n\n## 目标\n%s\n\n## 范围\n%s\n\n## 验收条件\n%s\n\n## 当前结论\n%s\n\n## 路线\n%s\n", t.Name, t.Status, t.Objective, t.Scope, t.Criteria, t.Summary, t.Strategy)
 	fmt.Fprintf(&b, "\n## 运行记录\n\n类型：长程测评（当前状态见上方）\n\n累计规划：%d\n\n累计 Token：%d\n", t.Rounds, t.TokensUsed)
 	if err = h.appendAssessmentCoverageReport(c, t, &b); err != nil {
+		deepAssessmentError(c, err)
+		return
+	}
+	if err = h.appendCoverageLedgerReport(t.ID, &b); err != nil {
 		deepAssessmentError(c, err)
 		return
 	}

@@ -129,7 +129,10 @@ Agent 可调用：
 | `assessment_fact` / `assessment_facts` | 写入不可变事实 / 分页读取事实 |
 | `assessment_endpoint` | 用本意图的原始回执登记服务端点，需要资产写权限 |
 | `assessment_findings` | 读取本测评可访问的漏洞及复现、复核记录 |
-| `assessment_review_finding` | 记录另一意图实际复现后的 confirmed/refuted/inconclusive 结论 |
+| `assessment_review_finding` | 记录另一意图实际复现后的 confirmed/refuted/inconclusive 结论（判 refuted 需给齐五维反证与正常对照组验证） |
+| `record_coverage` / `assessment_coverage_ledger` | Worker 记录测试面与风险类别的覆盖结果（含阴性证据与排除理由）/ 读取结构化覆盖账本与待补缺口 |
+| `assessment_plan_notes` | 规划器跨轮读写多步串行验证路线草稿（带 revision 乐观锁，Worker 只读） |
+| `set_goals` / `set_constraints` | 首次启动前拆解可独立核验的交付子目标与去指代化的任务操作边界（失败自动降级沿用原目标） |
 
 新资产登记继续复用 `create_asset`，写入的是资产库中的项目资产，并自动关联到本次测评。漏洞登记继续复用 `record_vulnerability`。深度测评登记漏洞须传 `evidence_receipt_ids`；普通对话与批量任务保持原来的字段要求。新的测评漏洞先显示已登记、待独立复核；独立复核不能由原报告意图自证，也不能引用原意图回执冒充自己的复现。确认或否定结果同步现有漏洞状态，并保留追加的复核历史。尚有待复核或复核未定的新增漏洞时，测评不能自动验收完成。
 

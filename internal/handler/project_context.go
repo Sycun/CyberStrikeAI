@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"cyberstrike-ai/internal/project"
+	"cyberstrike-ai/internal/promptguard"
 	"go.uber.org/zap"
 )
 
@@ -65,7 +66,25 @@ func (h *AgentHandler) projectBlackboardBlock(conversationID string) string {
 		h.logger.Warn("构建项目黑板索引失败", zap.String("conversationId", conversationID), zap.Error(err))
 		return ""
 	}
-	return strings.TrimSpace(block)
+	block = strings.TrimSpace(block)
+	lessons, lessonErr := h.db.BuildProjectLessonsPrompt(projectID, conversationID)
+	if lessonErr != nil && h.logger != nil {
+		h.logger.Warn("构建项目经验块失败", zap.String("projectId", projectID), zap.Error(lessonErr))
+	}
+	lessons = strings.TrimSpace(lessons)
+	if block == "" && lessons == "" {
+		return ""
+	}
+	env := promptguard.NewEnvelope()
+	var parts []string
+	parts = append(parts, env.Intro())
+	if block != "" {
+		parts = append(parts, env.Wrap("project_blackboard", block))
+	}
+	if lessons != "" {
+		parts = append(parts, env.Wrap("project_lessons", lessons))
+	}
+	return strings.Join(parts, "\n")
 }
 
 // conversationProjectID 返回对话绑定的项目 ID；未绑定或查询失败时返回空字符串。

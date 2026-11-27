@@ -5,10 +5,16 @@ import (
 	"errors"
 	"strings"
 
+	"context"
+
+	"cyberstrike-ai/internal/agentruntime"
 	"cyberstrike-ai/internal/authctx"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/deepassessment"
+	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/security"
+	"cyberstrike-ai/internal/surfaceingest"
+	"go.uber.org/zap"
 )
 
 const assessmentAssetLimit = 5000
@@ -133,6 +139,32 @@ func (h *AgentHandler) assessmentSurfaceSeeds(actor assessmentAssetActor, t *dee
 		seeds = append(seeds, deepassessment.SeedsFromHits(h.declaredAssessmentHits(t))...)
 	}
 	return seeds, nil
+}
+
+// IngestMCPSurface is the execution-service entry for a successful MCP result.
+// It claims the execution ID before writing. Deep assessment AfterTool uses the
+// same claim, so one receipt is parsed once. Conversations that are not a
+// single assessment task are left unclaimed for a later chat or batch writer.
+// Local tool output never reaches this hook and is still ingested by AfterTool,
+// which also keeps the asset-library Signal wake.
+func (h *AgentHandler) IngestMCPSurface(ctx context.Context, tool, executionID, content string) {
+	if h == nil || h.db == nil || h.deepAssessments == nil || h.deepAssessmentRuntime == nil {
+		return
+	}
+	taskID, ok, err := h.db.AssessmentIDForConversation(mcp.MCPConversationIDFromContext(ctx))
+	if err != nil || !ok {
+		return
+	}
+	task, err := h.deepAssessments.Store.Get(taskID)
+	if err != nil || task == nil {
+		return
+	}
+	if !surfaceingest.Claim(executionID) {
+		return
+	}
+	if err = h.deepAssessmentRuntime.ingestToolSurface(task, tool, agentruntime.ToolResult{Content: content, ExecutionID: executionID}); err != nil && h.logger != nil {
+		h.logger.Warn("自动写入资产库失败", zap.String("task", task.ID), zap.String("tool", tool), zap.Error(err))
+	}
 }
 
 // ingestAssessmentSurface writes in-scope discoveries back to the shared

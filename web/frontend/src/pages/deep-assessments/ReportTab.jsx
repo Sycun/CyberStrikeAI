@@ -36,7 +36,7 @@ export default function ReportTab({ id, task, reloadToken }) {
         <div className="assessment-tab">
             <SectionCard
                 title={t('deepAssessments.reportTitle', null, '测评报告')}
-                description="报告按当前已保存状态生成，包含验收矩阵、证据对照与运行记录。"
+                description={t('deepAssessments.coverage.reportDescription')}
                 extra={(
                     <Space>
                         <CopyButton text={content} label="复制 Markdown" />

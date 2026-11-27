@@ -26,6 +26,88 @@ func schemaExec(t *testing.T, db *DB, statement string) {
 	}
 }
 
+func TestReconcileSchemaUpgradesLegacyAssessmentCoverage(t *testing.T) {
+	db := rawSchemaDB(t)
+	schemaExec(t, db, `CREATE TABLE deep_assessments (
+		id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, project_id TEXT NOT NULL DEFAULT '',
+		name TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL, updated_at DATETIME NOT NULL
+	);
+	INSERT INTO deep_assessments(id,owner_user_id,name,status,payload,updated_at)
+		VALUES('legacy','owner','Saved assessment','paused','{"criteria":"Original criteria"}',CURRENT_TIMESTAMP);`)
+	for i := 0; i < 2; i++ {
+		if err := db.reconcileSchema(applicationSchema); err != nil {
+			t.Fatal(err)
+		}
+		var criteria, status string
+		var tables int
+		if err := db.QueryRow(`SELECT json_extract(payload,'$.criteria'),status,
+			(SELECT COUNT(*) FROM sqlite_master WHERE name IN ('deep_assessment_goals','deep_assessment_constraints',
+			'deep_assessment_coverage','deep_assessment_coverage_history','idx_deep_assessment_coverage_history_task','deep_assessment_plan_notes'))
+			FROM deep_assessments WHERE id='legacy'`).Scan(&criteria, &status, &tables); err != nil ||
+			criteria != "Original criteria" || status != "paused" || tables != 6 {
+			t.Fatalf("legacy assessment: criteria=%q status=%q objects=%d err=%v", criteria, status, tables, err)
+		}
+	}
+}
+
+func TestReconcileSchemaUpgradesLegacyProjectLessons(t *testing.T) {
+	db := rawSchemaDB(t)
+	schemaExec(t, db, `CREATE TABLE projects (
+		id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, scope_json TEXT,
+		status TEXT NOT NULL DEFAULT 'active', pinned INTEGER NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, owner_user_id TEXT
+	);
+	INSERT INTO projects(id,name,scope_json,created_at,updated_at) VALUES
+		('old','Legacy project','{"targets":["example.com"]}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);`)
+	for i := 0; i < 2; i++ {
+		if err := db.reconcileSchema(applicationSchema); err != nil {
+			t.Fatal(err)
+		}
+		project, err := db.GetProject("old")
+		if err != nil || project.LessonsMode != ProjectLessonsOff || project.ScopeJSON != `{"targets":["example.com"]}` {
+			t.Fatalf("legacy project: %+v, %v", project, err)
+		}
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN
+			('project_lessons','project_lesson_evidence','project_lesson_usage',
+			'idx_project_lesson_evidence_finding','idx_project_lesson_usage_project')`).Scan(&count); err != nil || count != 5 {
+			t.Fatalf("lessons schema: %d, %v", count, err)
+		}
+	}
+}
+
+func TestReconcileSchemaKeepsExistingLessonAuditHistory(t *testing.T) {
+	db := rawSchemaDB(t)
+	if err := db.reconcileSchema(applicationSchema); err != nil {
+		t.Fatal(err)
+	}
+	schemaExec(t, db, `ALTER TABLE project_lessons DROP COLUMN vulnerability_type;
+		ALTER TABLE project_lessons DROP COLUMN summary;
+		INSERT INTO projects(id,name,lessons_mode,created_at,updated_at)
+		VALUES('p','Audit','shadow',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+		INSERT INTO project_lessons(id,project_id,kind,cue,action,dedupe_key,status,support)
+		VALUES('lesson','p','positive','fixed','review remediation','fixed','active',1);
+		INSERT INTO project_lesson_evidence(lesson_id,source_kind,source_id,vulnerability_id,detail)
+		VALUES('lesson','vulnerability','finding','finding','fixed');
+		INSERT INTO project_lesson_usage(project_id,lesson_id,mode) VALUES('p','lesson','shadow');`)
+	for i := 0; i < 2; i++ {
+		if err := db.reconcileSchema(applicationSchema); err != nil {
+			t.Fatal(err)
+		}
+		var kind, summary string
+		var support, events, evidence int
+		if err := db.QueryRow(`SELECT l.vulnerability_type,l.summary,l.support,
+			(SELECT count(*) FROM project_lesson_usage WHERE lesson_id=l.id),
+			(SELECT count(*) FROM project_lesson_evidence WHERE lesson_id=l.id)
+			FROM project_lessons l WHERE id='lesson'`).Scan(&kind, &summary, &support, &events, &evidence); err != nil {
+			t.Fatal(err)
+		}
+		if kind != "" || summary != "" || support != 1 || events != 1 || evidence != 1 {
+			t.Fatalf("legacy audit history: %q %q %d %d %d", kind, summary, support, events, evidence)
+		}
+	}
+}
+
 func TestReconcileSchemaUsesDefinitionsWithoutMigrationList(t *testing.T) {
 	db := rawSchemaDB(t)
 	schemaExec(t, db, `CREATE TABLE "future's (table)" (id INTEGER PRIMARY KEY, payload TEXT, extra TEXT);

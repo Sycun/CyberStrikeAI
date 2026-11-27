@@ -47,6 +47,8 @@ type NativeWorkflow struct {
 	CompletionTool string          `json:"completionTool"`
 	CheckpointTool string          `json:"checkpointTool,omitempty"`
 	SegmentSeconds int             `json:"segmentSeconds,omitempty"`
+	WrapupPrompt   string          `json:"wrapupPrompt,omitempty"`
+	WrapupTurns    int             `json:"wrapupTurns,omitempty"`
 	SkillPaths     []string        `json:"skillPaths,omitempty"`
 }
 
@@ -56,25 +58,27 @@ type Image struct {
 }
 
 type Request struct {
-	NativeWorkflow     *NativeWorkflow `json:"nativeWorkflow,omitempty"`
-	GenerateOnly       bool            `json:"generateOnly,omitempty"`
-	RunID              string          `json:"runId"`
-	ConversationID     string          `json:"conversationId"`
-	WorkingDir         string          `json:"workingDir,omitempty"`
-	SystemPrompt       string          `json:"systemPrompt"`
-	Message            string          `json:"message"`
-	Images             []Image         `json:"images,omitempty"`
-	History            json.RawMessage `json:"history,omitempty"`
-	Model              Model           `json:"model"`
-	FallbackModels     []Model         `json:"fallbackModels,omitempty"`
-	RetryMax           int             `json:"retryMax,omitempty"`
-	RetryMaxDelayMS    int             `json:"retryMaxDelayMs,omitempty"`
-	Tools              []Tool          `json:"tools"`
-	ToolSearch         bool            `json:"toolSearch"`
-	ToolSearchMinTools int             `json:"toolSearchMinTools,omitempty"`
-	AlwaysVisibleTools []string        `json:"alwaysVisibleTools,omitempty"`
-	SessionDir         string          `json:"sessionDir,omitempty"`
-	MaxTurns           int             `json:"maxTurns"`
+	NativeWorkflow *NativeWorkflow `json:"nativeWorkflow,omitempty"`
+	GenerateOnly   bool            `json:"generateOnly,omitempty"`
+	RunID          string          `json:"runId"`
+	ConversationID string          `json:"conversationId"`
+	WorkingDir     string          `json:"workingDir,omitempty"`
+	SystemPrompt   string          `json:"systemPrompt"`
+	// SystemPromptDynamic is appended verbatim, including its leading separator.
+	SystemPromptDynamic string          `json:"systemPromptDynamic,omitempty"`
+	Message             string          `json:"message"`
+	Images              []Image         `json:"images,omitempty"`
+	History             json.RawMessage `json:"history,omitempty"`
+	Model               Model           `json:"model"`
+	FallbackModels      []Model         `json:"fallbackModels,omitempty"`
+	RetryMax            int             `json:"retryMax,omitempty"`
+	RetryMaxDelayMS     int             `json:"retryMaxDelayMs,omitempty"`
+	Tools               []Tool          `json:"tools"`
+	ToolSearch          bool            `json:"toolSearch"`
+	ToolSearchMinTools  int             `json:"toolSearchMinTools,omitempty"`
+	AlwaysVisibleTools  []string        `json:"alwaysVisibleTools,omitempty"`
+	SessionDir          string          `json:"sessionDir,omitempty"`
+	MaxTurns            int             `json:"maxTurns"`
 }
 
 type Event struct {

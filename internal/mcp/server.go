@@ -164,6 +164,15 @@ func (s *Server) ConfigureToolResultSpillRoot(rootDir string) {
 	}
 }
 
+// SetSurfaceIngest installs the shared scanner ingest callback for this server's
+// execution records. A nil callback leaves tool results unchanged.
+func (s *Server) SetSurfaceIngest(fn SurfaceIngestFunc) {
+	if s == nil || s.executionService == nil {
+		return
+	}
+	s.executionService.SetSurfaceIngest(fn)
+}
+
 // ConfigureHTTPToolCallTimeoutFromAgentMinutes 将 agent.tool_timeout_minutes 同步到经 HTTP POST /api/mcp 触发的 tools/call。
 // minutes<=0 表示不设置硬性截止时间（与配置「0 不限制」一致）；minutes>0 为该次调用的最长等待时间。
 // 未调用前对 tools/call 使用默认 30 分钟（与历史硬编码一致）。

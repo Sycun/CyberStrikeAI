@@ -40,6 +40,9 @@ type Task struct {
 	// AcceptanceMode is "per_item" only when this task was created with its own
 	// acceptance lines. Older tasks leave it empty and keep the previous verdict rule.
 	AcceptanceMode   string     `json:"acceptance_mode,omitempty"`
+	NoiseProfile     string     `json:"noise_profile,omitempty"`
+	DecomposeGoals   bool       `json:"decompose_goals,omitempty"`
+	GoalsDecomposed  bool       `json:"goals_decomposed,omitempty"`
 	Role             string     `json:"role"`
 	Model            string     `json:"model"`
 	HITLPolicy       string     `json:"hitl_policy"`
@@ -116,6 +119,12 @@ type Runtime interface {
 	Review(context.Context, *Task) (Verdict, error)
 }
 
+// GoalDecomposer is an optional Runtime extension executed once before the
+// first planning round on tasks opted into structured goal decomposition.
+type GoalDecomposer interface {
+	Decompose(context.Context, *Task) (question string, err error)
+}
+
 func (t *Task) Validate() error {
 	criteriaLimit := 8000
 	// Inheriting the objective must not truncate or reject an otherwise valid goal.
@@ -135,6 +144,12 @@ func (t *Task) Validate() error {
 	}
 	if t.Concurrency < 1 || t.Concurrency > 4 {
 		return fmt.Errorf("invalid concurrency")
+	}
+	switch strings.TrimSpace(t.NoiseProfile) {
+	case "", "off", "quiet", "balanced", "aggressive":
+		t.NoiseProfile = strings.TrimSpace(t.NoiseProfile)
+	default:
+		return fmt.Errorf("invalid noise_profile")
 	}
 	return nil
 }

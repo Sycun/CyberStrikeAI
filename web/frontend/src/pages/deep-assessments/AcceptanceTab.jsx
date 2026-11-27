@@ -10,6 +10,7 @@ import {
 } from '../../components/ui';
 import { formatDateTime } from '../../lib/format';
 import { ACCEPTANCE_COLOR, acceptanceText, stateText, truncateText } from './labels';
+import CoverageLedger from './CoverageLedger';
 
 const { Text, Paragraph } = Typography;
 
@@ -339,6 +340,8 @@ export default function AcceptanceTab({ id, criterion, canWrite, reloadToken }) 
                     emptyText="没有符合筛选条件的验收项。"
                 />
             </SectionCard>
+
+            <CoverageLedger key={id} id={id} reloadToken={reloadToken} />
 
             <SourceBrowser visible={sourcesOpen} id={id} onCancel={closeSources} edit={edit}
                 onEdit={(key, value) => setEdit(previous => ({ ...previous, [key]: value }))}

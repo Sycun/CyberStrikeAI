@@ -223,6 +223,9 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	var knowledgeHandler *handler.KnowledgeHandler
 
 	var knowledgeDBConn *database.DB
+	if !cfg.Knowledge.Enabled {
+		knowledge.RegisterTaxonomyTool(mcpServer, log.Logger)
+	}
 	log.Logger.Debug("检查知识库配置", zap.Bool("enabled", cfg.Knowledge.Enabled))
 	if cfg.Knowledge.Enabled {
 		// 确定知识库数据库路径
@@ -478,6 +481,8 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	if err := agentHandler.InitDeepAssessments(configHandler.RuntimeConfigSnapshot); err != nil {
 		return nil, fmt.Errorf("initialize deep assessments: %w", err)
 	}
+	mcpServer.SetSurfaceIngest(agentHandler.IngestMCPSurface)
+	externalMCPMgr.SetSurfaceIngest(agentHandler.IngestMCPSurface)
 	configHandler.SetDB(db)
 	configHandler.SetToolGuard(toolGuard)
 	configHandler.SetAudit(auditSvc)
@@ -1128,6 +1133,7 @@ func setupRoutes(
 		protected.PUT("/deep-assessments/:id/surface-items/:itemId", agentHandler.DeepAssessmentSurfaceItems)
 		protected.GET("/deep-assessments/:id/facts", agentHandler.DeepAssessmentFacts)
 		protected.GET("/deep-assessments/:id/acceptance", agentHandler.DeepAssessmentAcceptance)
+		protected.GET("/deep-assessments/:id/coverage", agentHandler.DeepAssessmentCoverage)
 		protected.GET("/deep-assessments/:id/acceptance/sources", agentHandler.DeepAssessmentAcceptanceSources)
 		protected.PUT("/deep-assessments/:id/acceptance/:criterion", agentHandler.SaveDeepAssessmentAcceptance)
 		protected.GET("/deep-assessments/:id/evidence-path", agentHandler.DeepAssessmentEvidencePath)
@@ -1415,6 +1421,8 @@ func setupRoutes(
 		protected.GET("/projects/:id/conversations", projectHandler.ListProjectConversations)
 		protected.GET("/projects/:id", projectHandler.GetProject)
 		protected.PUT("/projects/:id", projectHandler.UpdateProject)
+		protected.GET("/projects/:id/lessons", projectHandler.ListLessons)
+		protected.POST("/projects/:id/lessons/extract", projectHandler.ExtractLessons)
 		protected.DELETE("/projects/:id", projectHandler.DeleteProject)
 		protected.GET("/projects/:id/fact-graph", projectHandler.GetFactGraph)
 		protected.GET("/projects/:id/fact-edges", projectHandler.ListFactEdges)

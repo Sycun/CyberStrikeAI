@@ -323,6 +323,7 @@ export default function Workbench({ id, tab, criterion, evidencePath, evidenceSt
                 {!task ? null : activeTab === 'overview' ? (
                     <OverviewTab
                         task={task}
+                        reloadToken={reloadToken}
                         canWrite={canWrite && canExecute}
                         events={events}
                         eventsError={eventsError}

@@ -7,6 +7,7 @@ import { useInterval } from '../../components/hooks';
 import { SectionCard, StatGrid, ErrorBanner, KeyValueList } from '../../components/ui';
 import { formatDateTime, formatNumber } from '../../lib/format';
 import { countsProgress, eventText, formatElapsed, isActive, statusText } from './labels';
+import CoverageLedger from './CoverageLedger';
 
 const { Text, Paragraph } = Typography;
 
@@ -44,7 +45,7 @@ function CollectionNote({ id }) {
 
 export default function OverviewTab({
     task, canWrite, events, eventsError, autoRefresh, onAutoRefreshChange,
-    onRefreshEvents, onGoTab, onGuidance, onAnswer
+    onRefreshEvents, onGoTab, onGuidance, onAnswer, reloadToken
 }) {
     const t = useT();
     const counts = {};
@@ -147,6 +148,7 @@ export default function OverviewTab({
                     <Text type="tertiary">自动续跑：{task.auto_resume ? '已开启' : '已关闭'}</Text>
                     <Text type="tertiary">并行步骤：{task.concurrency || '—'}</Text>
                     <Text type="tertiary">人工审批：{task.hitl_policy || '系统默认'}</Text>
+                    {task.noise_profile ? <Text type="tertiary">噪音档位：{task.noise_profile}</Text> : null}
                     <Text type="tertiary">最近更新：{formatDateTime(task.updated_at)}</Text>
                 </div>
                 {Array.isArray(task.guidance) && task.guidance.length ? (
@@ -164,6 +166,8 @@ export default function OverviewTab({
                     打开页面不会自动启动任务；自动续跑只针对服务重启前的执行，草稿、手动暂停和待核对任务不会自动开始。
                 </Paragraph>
             </SectionCard>
+
+            <CoverageLedger key={task.id} id={task.id} reloadToken={reloadToken} onView={() => onGoTab?.('acceptance')} />
 
             <SectionCard
                 title={t('deepAssessments.activity', null, '运行记录')}

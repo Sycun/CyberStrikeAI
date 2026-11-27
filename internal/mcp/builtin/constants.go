@@ -28,6 +28,7 @@ const (
 	// 知识库工具
 	ToolListKnowledgeRiskTypes = "list_knowledge_risk_types"
 	ToolSearchKnowledgeBase    = "search_knowledge_base"
+	ToolLookupSecurityTaxonomy = "lookup_security_taxonomy"
 
 	// 视觉分析（本地图片 → VL 模型 → 文本摘要）
 	ToolAnalyzeImage = "analyze_image"
@@ -97,6 +98,7 @@ func IsBuiltinTool(toolName string) bool {
 		ToolRestoreProjectFact,
 		ToolListKnowledgeRiskTypes,
 		ToolSearchKnowledgeBase,
+		ToolLookupSecurityTaxonomy,
 		ToolAnalyzeImage,
 		ToolGetToolExecution,
 		ToolWaitToolExecution,
@@ -159,6 +161,7 @@ func GetAllBuiltinTools() []string {
 		ToolRestoreProjectFact,
 		ToolListKnowledgeRiskTypes,
 		ToolSearchKnowledgeBase,
+		ToolLookupSecurityTaxonomy,
 		ToolAnalyzeImage,
 		ToolGetToolExecution,
 		ToolWaitToolExecution,

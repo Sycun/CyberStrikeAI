@@ -177,6 +177,14 @@ func (m *ExternalMCPManager) ConfigureToolResultSpillRoot(rootDir string) {
 	}
 }
 
+// SetSurfaceIngest installs the shared scanner ingest callback for external MCP results.
+func (m *ExternalMCPManager) SetSurfaceIngest(fn SurfaceIngestFunc) {
+	if m == nil || m.executionService == nil {
+		return
+	}
+	m.executionService.SetSurfaceIngest(fn)
+}
+
 // ConfigureToolWaitTimeoutSeconds controls how long an agent-facing tool call
 // waits for an external MCP execution before returning an execution_id that can
 // be polled with wait_tool_execution. seconds<=0 waits until completion.
