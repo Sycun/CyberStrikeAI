@@ -251,17 +251,20 @@ func (h *ConversationHandler) GetConversation(c *gin.Context) {
 	id := c.Param("id")
 
 	// 默认轻量加载，只有用户需要展开详情时再按需拉取
+	// include_process_details=summary/compact 时返回裁剪后的过程详情摘要（不含工具大载荷/长思考正文）
 	// include_process_details=1/true 时返回全量 processDetails（兼容旧行为）
-	includeStr := c.DefaultQuery("include_process_details", "0")
-	include := includeStr == "1" || includeStr == "true" || includeStr == "yes"
+	includeStr := strings.ToLower(strings.TrimSpace(c.DefaultQuery("include_process_details", "0")))
 
 	var (
 		conv *database.Conversation
 		err  error
 	)
-	if include {
+	switch includeStr {
+	case "summary", "compact":
+		conv, err = h.db.GetConversationSummary(id)
+	case "1", "true", "yes":
 		conv, err = h.db.GetConversation(id)
-	} else {
+	default:
 		conv, err = h.db.GetConversationLite(id)
 	}
 	if err != nil {
@@ -486,15 +489,19 @@ func processDetailsToJSON(logger *zap.Logger, db *database.DB, details []databas
 		if m, ok := data.(map[string]interface{}); ok {
 			enrichEmptyToolCallArgumentsFromExecution(logger, db, d, m)
 		}
+		msg := d.Message
 		if !includeToolPayload {
 			data = summarizeProcessDetailData(d.EventType, data)
+			if d.EventType == "tool_result" {
+				msg = ""
+			}
 		}
 		out = append(out, map[string]interface{}{
 			"id":             d.ID,
 			"messageId":      d.MessageID,
 			"conversationId": d.ConversationID,
 			"eventType":      d.EventType,
-			"message":        d.Message,
+			"message":        msg,
 			"data":           data,
 			"createdAt":      d.CreatedAt,
 		})

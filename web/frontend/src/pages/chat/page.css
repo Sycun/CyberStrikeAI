@@ -527,6 +527,25 @@
 }
 .chat-plan-strip-bar { flex: 1 1 auto; margin: 0; min-width: 80px; }
 
+.chat-tool-loading,
+.chat-tool-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 12px;
+    color: var(--semi-color-text-2);
+}
+.chat-tool-error { color: var(--semi-color-danger); }
+
+.chat-history-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 4px 0 8px;
+}
+
 /* ---------- 窄屏与输入方式 ---------- */
 
 @container chat-workspace (max-width: 560px) {

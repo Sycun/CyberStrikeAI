@@ -1,5 +1,5 @@
 /** 消息区：运行中跟随输出，结束后定位到最终总结的开头。 */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, Button, Empty, Spin, Tag, Tooltip, Typography } from '@douyinfe/semi-ui';
 import { IconArrowDown, IconComment, IconDelete, IconRefresh, IconUser } from '@douyinfe/semi-icons';
 import { CopyButton, ErrorBanner } from '../../components/ui';
@@ -9,6 +9,15 @@ import TurnBody from './TurnBody';
 import { LIVE_STATUS_META, buildHistoryBlocks } from './stream';
 
 const { Paragraph, Text } = Typography;
+
+const INITIAL_VISIBLE_MESSAGES = 40;
+const LOAD_MORE_STEP = 40;
+
+function textFingerprint(value) {
+    const text = String(value || '');
+    if (text.length <= 128) return text;
+    return `${text.length}:${text.slice(0, 64)}:${text.slice(-64)}`;
+}
 
 function ChatWelcome() {
     const t = useT();
@@ -42,7 +51,7 @@ function useElapsed(startedAt, endedAt, active) {
     return `${minutes}m${seconds % 60}s`;
 }
 
-function MessageRow({ message, canDelete, onDeleteTurn }) {
+const MessageRow = memo(function MessageRow({ message, canDelete, onDeleteTurn }) {
     const t = useT();
     const isUser = message.role === 'user';
     const isSystem = message.role === 'system';
@@ -89,7 +98,7 @@ function MessageRow({ message, canDelete, onDeleteTurn }) {
             </div>
         </div>
     );
-}
+});
 
 function LiveRow({ live }) {
     const t = useT();
@@ -138,13 +147,20 @@ export default function MessageList({
     const stickRef = useRef(true);
     const positionedSummaryRef = useRef('');
     const [atBottom, setAtBottom] = useState(true);
+    const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_MESSAGES);
 
     const list = Array.isArray(messages) ? messages : [];
+    const hiddenCount = Math.max(0, list.length - visibleCount);
+    const visibleMessages = useMemo(
+        () => (hiddenCount > 0 ? list.slice(hiddenCount) : list),
+        [list, hiddenCount]
+    );
     const lastMessage = list[list.length - 1];
-    const historySignature = `${list.length}:${lastMessage?.id || ''}:${lastMessage?.content || ''}:${lastMessage?.processDetails?.length || 0}`;
+    const lastContentSig = textFingerprint(lastMessage?.content);
+    const historySignature = `${list.length}:${lastMessage?.id || ''}:${lastContentSig}:${lastMessage?.processDetails?.length || 0}`;
     const summaryKey = live
-        ? (live.status !== 'streaming' && live.text.trim() ? `live:${conversationId}:${live.messageId || live.id}:${live.text}` : '')
-        : (!loading && lastMessage?.role === 'assistant' && String(lastMessage.content || '').trim() ? `history:${conversationId}:${lastMessage.id}:${lastMessage.content}` : '');
+        ? (live.status !== 'streaming' && live.text.trim() ? `live:${conversationId}:${live.messageId || live.id}:${textFingerprint(live.text)}` : '')
+        : (!loading && lastMessage?.role === 'assistant' && String(lastMessage.content || '').trim() ? `history:${conversationId}:${lastMessage.id}:${lastContentSig}` : '');
     const signature = useMemo(() => {
         if (!live) return historySignature;
         const blockSig = live.blocks.map(block => `${block.kind}:${block.id}:${block.text ? block.text.length : 0}:${block.status || ''}`).join('|');
@@ -185,6 +201,7 @@ export default function MessageList({
         stickRef.current = true;
         positionedSummaryRef.current = '';
         setAtBottom(true);
+        setVisibleCount(INITIAL_VISIBLE_MESSAGES);
         const timer = setTimeout(() => scrollToLatest(false), 30);
         return () => clearTimeout(timer);
     }, [conversationId, scrollToLatest]);
@@ -222,7 +239,25 @@ export default function MessageList({
                 {!loading && !list.length && !live && (
                     <ChatWelcome />
                 )}
-                {list.map(message => (
+                {!loading && hiddenCount > 0 && (
+                    <div className="chat-history-more">
+                        <Button
+                            size="small"
+                            theme="light"
+                            onClick={() => setVisibleCount(count => count + LOAD_MORE_STEP)}
+                        >
+                            {t('chat.loadEarlierMessages', { count: Math.min(LOAD_MORE_STEP, hiddenCount) }, `显示更早的 ${Math.min(LOAD_MORE_STEP, hiddenCount)} 条消息`)}
+                        </Button>
+                        <Button
+                            size="small"
+                            theme="borderless"
+                            onClick={() => setVisibleCount(list.length)}
+                        >
+                            {t('chat.showAllMessages', { total: list.length }, `显示全部（共 ${list.length} 条）`)}
+                        </Button>
+                    </div>
+                )}
+                {visibleMessages.map(message => (
                     <MessageRow
                         key={message.id}
                         message={message}

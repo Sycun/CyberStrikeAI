@@ -112,6 +112,8 @@ export default function Page() {
     const narrow = useMediaQuery('(max-width: 900px)');
 
     const detailSeq = useRef(0);
+    const detailAbortRef = useRef(null);
+    const detailInFlightRef = useRef({ id: '', active: false });
     const hitlSeq = useRef(0);
     const planSeq = useRef(0);
     const activeTask = useResource(async () => {
@@ -182,16 +184,31 @@ export default function Page() {
         setPage(1);
     }, []);
 
-    const loadDetail = useCallback(async (id, { silent = false } = {}) => {
-        const seq = ++detailSeq.current;
+    const loadDetail = useCallback(async (id, { silent = false, force = false } = {}) => {
         if (!id) {
+            detailAbortRef.current?.abort();
+            detailAbortRef.current = null;
+            detailInFlightRef.current = { id: '', active: false };
             setDetail(EMPTY_DETAIL);
             return null;
         }
+        // 后台任务轮询期间，若同会话已有请求在途则跳过，避免慢网/大历史场景下 detailSeq 互相作废导致无限转圈。
+        if (silent && !force && detailInFlightRef.current.active && detailInFlightRef.current.id === id) {
+            return null;
+        }
+        detailAbortRef.current?.abort();
+        const controller = new AbortController();
+        detailAbortRef.current = controller;
+        detailInFlightRef.current = { id, active: true };
+        const seq = ++detailSeq.current;
         if (!silent) setDetail(prev => ({ ...prev, loading: true, error: null }));
         try {
-            const payload = await api.get(`/conversations/${encodeURIComponent(id)}`, { include_process_details: 1 });
-            if (seq !== detailSeq.current || conversationRef.current !== id) return null;
+            const payload = await api.get(
+                `/conversations/${encodeURIComponent(id)}`,
+                { include_process_details: 'summary' },
+                { signal: controller.signal }
+            );
+            if (controller.signal.aborted || seq !== detailSeq.current || conversationRef.current !== id) return null;
             setDetail({
                 conversation: payload || null,
                 messages: Array.isArray(payload?.messages) ? payload.messages : [],
@@ -200,11 +217,23 @@ export default function Page() {
             });
             return payload;
         } catch (error) {
+            if (controller.signal.aborted) return null;
             if (seq === detailSeq.current && conversationRef.current === id) {
                 setDetail(prev => ({ ...prev, loading: false, error }));
             }
             return null;
+        } finally {
+            if (detailAbortRef.current === controller) {
+                detailAbortRef.current = null;
+                detailInFlightRef.current = { id: '', active: false };
+            }
         }
+    }, []);
+
+    useEffect(() => () => {
+        detailAbortRef.current?.abort();
+        detailAbortRef.current = null;
+        detailInFlightRef.current = { id: '', active: false };
     }, []);
 
     const refreshHitl = useCallback(async () => {
@@ -279,6 +308,9 @@ export default function Page() {
         boundByRun.current = null;
         if (newlyBound || isStreaming(conversationId)) return;
         resetRun();
+        detailAbortRef.current?.abort();
+        detailAbortRef.current = null;
+        detailInFlightRef.current = { id: '', active: false };
         detailSeq.current++;
         hitlSeq.current++;
         planSeq.current++;
@@ -305,7 +337,7 @@ export default function Page() {
 
     useEffect(() => {
         if (lastActive.current === conversationId && !backgroundRunning) {
-            loadDetail(conversationId, { silent: true });
+            loadDetail(conversationId, { silent: true, force: true });
             reloadConversations.current?.({ silent: true });
         }
         lastActive.current = backgroundRunning ? conversationId : null;
@@ -630,6 +662,10 @@ export default function Page() {
         />
     );
 
+    const retryDetail = useCallback(() => (
+        conversationId ? loadDetail(conversationId, { force: true }) : null
+    ), [conversationId, loadDetail]);
+
     return (
         <div className="chat-page">
             {!narrow && <aside className="chat-sidebar">{sidebar}</aside>}
@@ -655,7 +691,7 @@ export default function Page() {
                         live={live}
                         loading={detail.loading || Boolean(conversationId && !detail.conversation && !detail.error)}
                         error={detail.error}
-                        onRetry={() => (conversationId ? loadDetail(conversationId) : null)}
+                        onRetry={retryDetail}
                         canDelete={canDelete}
                         onDeleteTurn={deleteTurn}
                     />

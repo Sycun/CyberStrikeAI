@@ -98,8 +98,9 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
-	// CORS中间件
+	// CORS 与 Gzip 压缩中间件
 	router.Use(corsMiddleware(cfg.Server.CORSAllowedOrigins))
+	router.Use(gzipMiddleware())
 
 	// 初始化数据库
 	dbPath := cfg.Database.Path

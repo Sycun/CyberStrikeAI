@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -492,6 +493,302 @@ func (db *DB) GetConversationLite(id string) (*Conversation, error) {
 	}
 	conv.Messages = messages
 	return &conv, nil
+}
+
+const (
+	summaryInlineToolArgsMaxBytes = 512
+	summaryInlineThinkingMaxRunes = 512
+	summaryInlineMessageMaxRunes  = 4000
+	summaryInlineRawDataMaxBytes  = 4096
+	summaryFallbackReasoningRunes = 20000
+)
+
+// GetConversationSummary 获取对话（摘要版）：返回全部消息与裁剪后的过程详情摘要。
+// 跳过 progress 噪音事件，剥离大体积工具输出、大参数、长思考正文与重复 finalText，
+// 仅保留前端列表与状态标签所需的轻量元数据；完整单条载荷在用户展开时再按需拉取。
+func (db *DB) GetConversationSummary(id string) (*Conversation, error) {
+	var conv Conversation
+	var createdAt, updatedAt string
+	var pinned int
+
+	var projectID sql.NullString
+	var roleName sql.NullString
+	var agentMode sql.NullString
+	err := db.QueryRow(
+		"SELECT id, title, pinned, created_at, updated_at, project_id, role_name, agent_mode FROM conversations WHERE id = ?",
+		id,
+	).Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt, &projectID, &roleName, &agentMode)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("对话不存在")
+		}
+		return nil, fmt.Errorf("查询对话失败: %w", err)
+	}
+	if projectID.Valid {
+		conv.ProjectID = strings.TrimSpace(projectID.String)
+	}
+	if roleName.Valid {
+		conv.RoleName = normalizeConversationRoleName(roleName.String)
+	}
+	if agentMode.Valid {
+		conv.AgentMode = normalizeConversationAgentMode(agentMode.String)
+	}
+
+	conv.CreatedAt = parseDBTime(createdAt)
+	conv.UpdatedAt = parseDBTime(updatedAt)
+	conv.Pinned = pinned != 0
+
+	messages, err := db.GetMessages(id)
+	if err != nil {
+		return nil, fmt.Errorf("加载消息失败: %w", err)
+	}
+	conv.Messages = messages
+
+	processDetailsMap, err := db.GetProcessDetailsByConversationForSummary(id)
+	if err != nil {
+		db.logger.Warn("加载过程详情摘要失败", zap.Error(err))
+		processDetailsMap = make(map[string][]ProcessDetail)
+	}
+
+	for i := range conv.Messages {
+		hasThinkingDetail := false
+		if details, ok := processDetailsMap[conv.Messages[i].ID]; ok {
+			details = DedupeConsecutiveProcessDetails(details)
+			detailsJSON := make([]map[string]interface{}, 0, len(details))
+			for _, detail := range details {
+				if detail.EventType == "thinking" || detail.EventType == "reasoning_chain" {
+					hasThinkingDetail = true
+				}
+				detailsJSON = append(detailsJSON, summarizeProcessDetailRow(detail, db.logger))
+			}
+			conv.Messages[i].ProcessDetails = detailsJSON
+		}
+		// 若过程详情中已包含思考记录，避免重复传输聚合后的 reasoningContent。
+		if hasThinkingDetail {
+			conv.Messages[i].ReasoningContent = ""
+		} else if conv.Messages[i].ReasoningContent != "" {
+			conv.Messages[i].ReasoningContent, _ = truncateRunes(conv.Messages[i].ReasoningContent, summaryFallbackReasoningRunes)
+		}
+	}
+
+	return &conv, nil
+}
+
+// GetProcessDetailsByConversationForSummary 获取对话的非 progress 过程详情（按消息分组）。
+func (db *DB) GetProcessDetailsByConversationForSummary(conversationID string) (map[string][]ProcessDetail, error) {
+	rows, err := db.Query(
+		"SELECT id, message_id, conversation_id, event_type, message, data, created_at FROM process_details WHERE conversation_id = ? AND event_type != 'progress' ORDER BY created_at ASC, rowid ASC",
+		conversationID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("查询过程详情失败: %w", err)
+	}
+	defer rows.Close()
+
+	detailsMap := make(map[string][]ProcessDetail)
+	for rows.Next() {
+		var detail ProcessDetail
+		var createdAt string
+
+		if err := rows.Scan(&detail.ID, &detail.MessageID, &detail.ConversationID, &detail.EventType, &detail.Message, &detail.Data, &createdAt); err != nil {
+			return nil, fmt.Errorf("扫描过程详情失败: %w", err)
+		}
+		detail.CreatedAt = parseDBTime(createdAt)
+		detailsMap[detail.MessageID] = append(detailsMap[detail.MessageID], detail)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("遍历过程详情失败: %w", err)
+	}
+	return detailsMap, nil
+}
+
+func truncateRunes(s string, maxRunes int) (string, bool) {
+	if maxRunes <= 0 || len(s) <= maxRunes {
+		return s, false
+	}
+	count := 0
+	for idx := range s {
+		if count == maxRunes {
+			return s[:idx], true
+		}
+		count++
+	}
+	return s, false
+}
+
+func hasNonEmptyToolArgs(m map[string]interface{}) (hasArgs bool, inlineSize int) {
+	if m == nil {
+		return false, 0
+	}
+	if obj, ok := m["argumentsObj"].(map[string]interface{}); ok && len(obj) > 0 {
+		if b, err := json.Marshal(obj); err == nil {
+			return true, len(b)
+		}
+		return true, summaryInlineToolArgsMaxBytes + 1
+	}
+	if raw, ok := m["arguments"]; ok && raw != nil {
+		switch v := raw.(type) {
+		case string:
+			trimmed := strings.TrimSpace(v)
+			if trimmed == "" || trimmed == "{}" || trimmed == "null" {
+				return false, 0
+			}
+			return true, len(trimmed)
+		default:
+			if b, err := json.Marshal(v); err == nil {
+				trimmed := strings.TrimSpace(string(b))
+				if trimmed == "" || trimmed == "{}" || trimmed == "null" {
+					return false, 0
+				}
+				return true, len(trimmed)
+			}
+			return true, summaryInlineToolArgsMaxBytes + 1
+		}
+	}
+	return false, 0
+}
+
+func hasNonEmptyToolResult(d ProcessDetail, m map[string]interface{}) bool {
+	if strings.TrimSpace(d.Message) != "" {
+		return true
+	}
+	if m == nil {
+		return false
+	}
+	for _, key := range []string{"resultPreview", "result", "error", "output"} {
+		if v, ok := m[key]; ok && v != nil {
+			if s, ok := v.(string); ok {
+				if strings.TrimSpace(s) != "" {
+					return true
+				}
+			} else {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func summarizeProcessDetailRow(d ProcessDetail, logger *zap.Logger) map[string]interface{} {
+	var parsed interface{}
+	if d.Data != "" {
+		if err := json.Unmarshal([]byte(d.Data), &parsed); err != nil && logger != nil {
+			logger.Warn("解析过程详情数据失败", zap.Error(err))
+		}
+	}
+	m, _ := parsed.(map[string]interface{})
+	msg := d.Message
+	var outData interface{} = parsed
+
+	switch d.EventType {
+	case "tool_call":
+		msg = ""
+		out := make(map[string]interface{}, 12)
+		if m != nil {
+			for _, key := range []string{
+				"toolName", "toolCallId", "index", "total", "executionId",
+				"agentName", "agentRole", "agentScope", "orchestration", "agentFacing", "status",
+			} {
+				if v, ok := m[key]; ok && v != nil {
+					out[key] = v
+				}
+			}
+			hasArgs, argSize := hasNonEmptyToolArgs(m)
+			if hasArgs && argSize <= summaryInlineToolArgsMaxBytes {
+				if v, ok := m["argumentsObj"]; ok && v != nil {
+					out["argumentsObj"] = v
+				} else if v, ok := m["arguments"]; ok && v != nil {
+					out["arguments"] = v
+				}
+				out["_hasPayload"] = true
+			} else if hasArgs {
+				out["_payloadDeferred"] = true
+				out["_argsDeferred"] = true
+				out["_hasPayload"] = true
+			}
+		}
+		outData = out
+
+	case "tool_result":
+		hasResult := hasNonEmptyToolResult(d, m)
+		msg = ""
+		out := make(map[string]interface{}, 14)
+		if m != nil {
+			for _, key := range []string{
+				"toolName", "toolCallId", "index", "total", "executionId",
+				"agentName", "agentRole", "agentScope", "orchestration", "agentFacing",
+				"success", "isError", "status", "displayStatus", "blocked", "modelFacingIsError",
+			} {
+				if v, ok := m[key]; ok && v != nil {
+					out[key] = v
+				}
+			}
+		}
+		if hasResult {
+			out["_payloadDeferred"] = true
+			out["_hasPayload"] = true
+		}
+		outData = out
+
+	case "thinking", "reasoning_chain":
+		runeCount := utf8.RuneCountInString(msg)
+		if runeCount > summaryInlineThinkingMaxRunes {
+			msg = ""
+			out := map[string]interface{}{
+				"_payloadDeferred": true,
+				"_textLength":      runeCount,
+			}
+			if m != nil {
+				if sid, ok := m["streamId"]; ok && sid != nil {
+					out["streamId"] = sid
+				}
+			}
+			outData = out
+		}
+
+	case "finalization_check":
+		msg, _ = truncateRunes(msg, summaryInlineMessageMaxRunes)
+		if m != nil {
+			out := make(map[string]interface{}, len(m))
+			for k, v := range m {
+				if k == "finalText" {
+					continue
+				}
+				out[k] = v
+			}
+			outData = out
+		}
+
+	default:
+		var truncated bool
+		msg, truncated = truncateRunes(msg, summaryInlineMessageMaxRunes)
+		if len(d.Data) > summaryInlineRawDataMaxBytes {
+			outData = map[string]interface{}{
+				"_payloadDeferred": true,
+			}
+		} else if truncated {
+			if m != nil {
+				out := make(map[string]interface{}, len(m)+1)
+				for k, v := range m {
+					out[k] = v
+				}
+				out["_payloadDeferred"] = true
+				outData = out
+			} else {
+				outData = map[string]interface{}{"_payloadDeferred": true}
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"id":             d.ID,
+		"messageId":      d.MessageID,
+		"conversationId": d.ConversationID,
+		"eventType":      d.EventType,
+		"message":        msg,
+		"data":           outData,
+		"createdAt":      d.CreatedAt,
+	}
 }
 
 func normalizeConversationRoleName(roleName string) string {

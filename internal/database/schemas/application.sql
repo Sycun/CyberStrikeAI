@@ -862,6 +862,8 @@ CREATE INDEX idx_knowledge_retrieval_logs_message ON knowledge_retrieval_logs(me
 
 CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
 
+CREATE INDEX idx_messages_conversation_created ON messages(conversation_id, created_at);
+
 CREATE INDEX idx_model_token_usage_conversation ON model_token_usage(conversation_id);
 
 CREATE INDEX idx_model_token_usage_created_at ON model_token_usage(created_at);
@@ -874,7 +876,11 @@ CREATE INDEX idx_notification_reads_user_read_at ON notification_reads_by_user(u
 
 CREATE INDEX idx_process_details_conversation_id ON process_details(conversation_id);
 
+CREATE INDEX idx_process_details_conversation_created ON process_details(conversation_id, created_at);
+
 CREATE INDEX idx_process_details_message_id ON process_details(message_id);
+
+CREATE INDEX idx_process_details_message_created ON process_details(message_id, created_at);
 
 CREATE INDEX idx_project_fact_edges_project ON project_fact_edges(project_id);
 

@@ -118,6 +118,17 @@ function toolArgumentsFromData(data) {
     }
 }
 
+export function extractProcessDetailArgs(detail) {
+    const data = asObject(detail?.data) || {};
+    return toolArgumentsFromData(data);
+}
+
+export function extractProcessDetailResult(detail) {
+    const data = asObject(detail?.data) || {};
+    const raw = data.resultPreview ?? data.result ?? data.error ?? detail?.message;
+    return prettyJson(raw, 8000);
+}
+
 function matchToolResult({ blocks, toolsByCallId }, { toolCallId, toolName, agentName }) {
     const sameAgent = block => !agentName || !block.agentName || block.agentName === agentName;
     const matches = toolsByCallId.get(toolCallId)?.filter(sameAgent);
@@ -147,6 +158,7 @@ function addToolEvent(timeline, type, data, message, key, processDetailId) {
     };
     const args = toolArgumentsFromData(data);
     const isResult = type === 'tool_result';
+    const detailId = str(processDetailId);
     let tool = isResult ? matchToolResult(timeline, identity) : null;
     if (!tool) {
         tool = {
@@ -158,10 +170,17 @@ function addToolEvent(timeline, type, data, message, key, processDetailId) {
             args,
             result: '',
             status: 'running',
-            processDetailId: str(processDetailId),
+            processDetailId: detailId,
+            callDetailId: isResult ? '' : detailId,
+            resultDetailId: isResult ? detailId : '',
+            argsDeferred: Boolean(!isResult && data._argsDeferred && detailId),
+            resultDeferred: false,
+            hasDeferredPayload: Boolean(data._hasPayload || data._argsDeferred),
             hasResult: false
         };
         timeline.blocks.push(tool);
+    } else if (!isResult && detailId && !tool.callDetailId) {
+        tool.callDetailId = detailId;
     }
     if (identity.toolCallId && !tool.toolCallId) {
         tool.toolCallId = identity.toolCallId;
@@ -169,16 +188,31 @@ function addToolEvent(timeline, type, data, message, key, processDetailId) {
         if (matches) matches.push(tool);
         else timeline.toolsByCallId.set(tool.toolCallId, [tool]);
     }
-    if (!isResult) return;
+    if (!isResult) {
+        if (data._argsDeferred && detailId) {
+            tool.argsDeferred = true;
+            tool.hasDeferredPayload = true;
+        }
+        return;
+    }
 
     tool.hasResult = true;
     tool.toolName ||= identity.toolName;
     tool.agentName ||= identity.agentName;
+    if (detailId) tool.resultDetailId = detailId;
     tool.status = toolStatusFromData(data);
     if (args !== null && (tool.args === null || (asObject(tool.args) && !Object.keys(tool.args).length))) {
         tool.args = args;
+        tool.argsDeferred = false;
     }
-    tool.result = prettyJson(data.resultPreview ?? data.result ?? data.error ?? message, 8000);
+    const rawResult = data.resultPreview ?? data.result ?? data.error ?? (str(message).trim() ? message : undefined);
+    if (rawResult !== undefined && rawResult !== null && str(rawResult) !== '') {
+        tool.result = prettyJson(rawResult, 8000);
+        tool.resultDeferred = false;
+    } else if (data._payloadDeferred && data._hasPayload !== false && detailId) {
+        tool.resultDeferred = true;
+        tool.hasDeferredPayload = true;
+    }
 }
 
 /**
@@ -409,14 +443,18 @@ export function buildHistoryBlocks(message) {
             }
             case 'thinking':
             case 'reasoning_chain': {
-                if (!text.trim()) break;
+                const deferred = Boolean(data._payloadDeferred && detail?.id && !text.trim());
+                if (!text.trim() && !deferred) break;
                 blocks.push({
                     kind: 'reasoning',
                     id: key('reason'),
+                    detailId: str(detail?.id),
                     key: str(data.streamId) || key('reasonkey'),
                     stream: str(data.streamId),
                     label: eventType,
-                    text: truncateText(text)
+                    text: deferred ? '' : truncateText(text),
+                    textLength: deferred ? (Number(data._textLength) || 0) : text.length,
+                    payloadDeferred: deferred
                 });
                 break;
             }
