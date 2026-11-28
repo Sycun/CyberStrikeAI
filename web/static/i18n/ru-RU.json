@@ -5875,5 +5875,17 @@
     "saveAuditModel": "Сохранить модель аудита",
     "auditModelSaved": "Модель аудита сохранена",
     "auditSavedApplyFailed": "Модель аудита записана в конфигурацию, но применение не удалось."
+  },
+  "updateUi": {
+    "targetBranch": "Целевая ветка",
+    "branchSwitchPending": "Ожидает переключения",
+    "followDefaultBranch": "Ветка по умолчанию",
+    "targetBranchLabel": "Целевая ветка (пусто = ветка по умолчанию)",
+    "targetBranchPlaceholder": "Оставьте пустым или выберите/введите ветку",
+    "defaultBranchTag": "По умолчанию",
+    "fetchBranches": "Получить ветки",
+    "branchesLoaded": "Загружено веток: {{n}}",
+    "sourceSaveBranchHint": "Сохранение запишет update.repo и update.branch в config.yaml; следующее обновление переключит ветку.",
+    "branchSwitchTag": "Переключение ветки: {{from}} → {{to}}"
   }
 }

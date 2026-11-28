@@ -3301,7 +3301,17 @@
       "build": "编译",
       "done": "完成",
       "version": "保存版本信息"
-    }
+    },
+    "targetBranch": "目标分支",
+    "branchSwitchPending": "待切换",
+    "followDefaultBranch": "跟随仓库默认分支",
+    "targetBranchLabel": "目标分支（留空 = 跟随仓库默认分支）",
+    "targetBranchPlaceholder": "留空跟随默认分支，或选择/输入分支名",
+    "defaultBranchTag": "默认",
+    "fetchBranches": "获取远端分支",
+    "branchesLoaded": "已获取 {{n}} 个远端分支",
+    "sourceSaveBranchHint": "保存会修改配置文件中的 update.repo 与 update.branch，下次点击「更新」时自动拉取并切换至该分支。",
+    "branchSwitchTag": "切换分支：{{from}} → {{to}}"
   },
   "settingsBasic": {
     "basicTitle": "基本设置",

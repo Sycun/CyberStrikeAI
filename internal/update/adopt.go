@@ -120,7 +120,7 @@ func Preview(ctx context.Context, opts Options) (*AdoptPlan, error) {
 	if _, err := gitCmd(ctx, tmp, "init", "--quiet", "--bare"); err != nil {
 		return nil, err
 	}
-	branch, commit, subject, err := fetchSource(ctx, tmp, source)
+	branch, commit, subject, err := fetchSourceBranch(ctx, tmp, source, opts.Branch)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func Adopt(ctx context.Context, opts Options, onStep func(Step)) (*Result, error
 		return nil, &Error{Reason: "init_failed", Message: "添加远端失败：" + err.Error()}
 	}
 
-	branch, commit, subject, err := fetchSource(ctx, root, source)
+	branch, commit, subject, err := fetchSourceBranch(ctx, root, source, opts.Branch)
 	if err != nil {
 		return nil, err
 	}
@@ -317,13 +317,22 @@ func adoptPreflight(ctx context.Context, opts Options) (root, source string, err
 // that ended up being, its short commit and its subject. Both callers fetch into a
 // repository of their own.
 func fetchSource(ctx context.Context, repo, source string) (string, string, string, error) {
-	out, err := gitCmd(ctx, repo, "ls-remote", "--symref", source, "HEAD")
-	if err != nil {
-		return "", "", "", &Error{Reason: "fetch_failed", Message: "读取远端默认分支失败：" + err.Error()}
-	}
-	branch := parseDefaultBranch(out)
+	return fetchSourceBranch(ctx, repo, source, "")
+}
+
+func fetchSourceBranch(ctx context.Context, repo, source, configuredBranch string) (string, string, string, error) {
+	branch := strings.TrimSpace(configuredBranch)
 	if branch == "" {
-		return "", "", "", &Error{Reason: "no_branch", Message: "无法确定远端默认分支：" + source}
+		out, err := gitCmd(ctx, repo, "ls-remote", "--symref", source, "HEAD")
+		if err != nil {
+			return "", "", "", &Error{Reason: "fetch_failed", Message: "读取远端默认分支失败：" + err.Error()}
+		}
+		branch = parseDefaultBranch(out)
+		if branch == "" {
+			return "", "", "", &Error{Reason: "no_branch", Message: "无法确定远端默认分支：" + source}
+		}
+	} else if !ValidName(branch) {
+		return "", "", "", &Error{Reason: "bad_branch", Message: "配置的目标分支名不合法：" + branch}
 	}
 	if _, err := gitCmd(ctx, repo, "fetch", "--quiet", "--no-tags", "--recurse-submodules=no",
 		source, "+refs/heads/"+branch+":refs/remotes/origin/"+branch); err != nil {

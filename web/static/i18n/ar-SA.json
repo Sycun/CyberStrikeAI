@@ -26,7 +26,7 @@
     "chatModuleMissing": "لم يتمّ تحميل وحدة المحادثة بعد"
   },
   "common": {
-        "expandPanel": "توسيع اللوحة",
+    "expandPanel": "توسيع اللوحة",
     "ok": "موافق",
     "cancel": "إلغاء",
     "refresh": "تحديث",
@@ -4840,5 +4840,17 @@
     "saveAuditModel": "حفظ نموذج التدقيق",
     "auditModelSaved": "تم حفظ نموذج التدقيق",
     "auditSavedApplyFailed": "تم حفظ نموذج التدقيق، لكن فشل تطبيق الإعدادات."
+  },
+  "updateUi": {
+    "targetBranch": "الفرع المستهدف",
+    "branchSwitchPending": "بانتظار التبديل",
+    "followDefaultBranch": "اتباع الفرع الافتراضي",
+    "targetBranchLabel": "الفرع المستهدف (فارغ = الفرع الافتراضي للمستودع)",
+    "targetBranchPlaceholder": "اتركه فارغاً أو اختر/أدخل اسم الفرع",
+    "defaultBranchTag": "افتراضي",
+    "fetchBranches": "جلب الفروع البعيدة",
+    "branchesLoaded": "تم جلب {{n}} فرعاً",
+    "sourceSaveBranchHint": "يحفظ update.repo و update.branch في ملف الإعدادات وسيتم التبديل عند التحديث القادم.",
+    "branchSwitchTag": "تبديل الفرع: {{from}} → {{to}}"
   }
 }

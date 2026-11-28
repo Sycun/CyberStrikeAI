@@ -634,7 +634,8 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	})
 
 	updateHandler := handler.NewUpdateHandler(configDir, log.Logger, auditSvc,
-		app.updateRestart(configDir), updateActivation, configHandler.UpdateSource, configHandler.SetUpdateSource)
+		app.updateRestart(configDir), updateActivation, configHandler.UpdateSource, configHandler.SetUpdateSource).
+		WithUpdateConfig(configHandler.GetUpdateConfig, configHandler.SetUpdateConfig)
 
 	// 设置路由（使用 App 实例以便动态获取 handler）
 	setupRoutes(
@@ -1213,6 +1214,7 @@ func setupRoutes(
 
 		// 系统更新（保持本安装自身源码最新：查看、检查、应用、进度、回滚、接入、更新源）
 		protected.GET("/system/update", updateHandler.GetStatus)
+		protected.GET("/system/update/branches", updateHandler.Branches)
 		protected.GET("/system/update/job", updateHandler.Job)
 		protected.POST("/system/update/check", updateHandler.Check)
 		protected.POST("/system/update/apply", updateHandler.Apply)

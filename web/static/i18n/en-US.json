@@ -3313,7 +3313,17 @@
       "build": "Build",
       "done": "Complete",
       "version": "Save version information"
-    }
+    },
+    "targetBranch": "Target Branch",
+    "branchSwitchPending": "Switch Pending",
+    "followDefaultBranch": "Follow default branch",
+    "targetBranchLabel": "Target Branch (empty = repository default branch)",
+    "targetBranchPlaceholder": "Leave empty for default branch, or select/type a branch",
+    "defaultBranchTag": "Default",
+    "fetchBranches": "Fetch Branches",
+    "branchesLoaded": "Loaded {{n}} remote branches",
+    "sourceSaveBranchHint": "Saving writes update.repo and update.branch to config.yaml; the next Update switches to that branch.",
+    "branchSwitchTag": "Switch branch: {{from}} → {{to}}"
   },
   "settingsBasic": {
     "basicTitle": "Basic settings",
