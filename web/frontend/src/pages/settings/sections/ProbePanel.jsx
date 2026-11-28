@@ -160,16 +160,11 @@ function ProbeOutput({ state, defaultWindow, defaultWindowSource, model, onModel
         );
     }
 
-    if (key === 'audit' || key === 'image') {
+    if (key === 'audit') {
         return (
             <div className="settings-probe-result">
                 {payload.success ? (
-                    <KeyValueList
-                        columns={3}
-                        items={summarizeTest(t, payload).map((item, index) => key === 'image' && index === 0
-                            ? { ...item, value: <Tag color="green">{t('settingsProbe.imageReadSuccess', null, '图片读取成功')}</Tag> }
-                            : item)}
-                    />
+                    <KeyValueList columns={3} items={summarizeTest(t, payload)} />
                 ) : (
                     <Banner type="danger" bordered closeIcon={null} description={payload.error || t('settingsBasic.testFailed', null, '连接失败')} />
                 )}
@@ -249,7 +244,7 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
     const [applyPending, setApplyPending] = useState(false);
-    const locked = !canWrite || saving || busy === 'image' || busy === 'list';
+    const locked = !canWrite || saving || busy === 'list';
     const channelOptions = legacy
         ? [{ value: MAIN_CHANNEL, label: t('settingsProbe.mainChannel', null, '主模型通道') }]
         : modelChannelOptions(Object.entries(channels));
@@ -579,7 +574,7 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
                 <label className="settings-field">
                     <Space spacing={6}>
                         <Text type="tertiary" size="small">{t('settingsBasic.model', null, '模型')}</Text>
-                        {(imageEnabled || state.key === 'image' && state.payload?.success) && (
+                        {imageEnabled && (
                             <Tag size="small" color="green">{t('settingsProbe.imageInputSupported', null, '支持图片')}</Tag>
                         )}
                     </Space>
@@ -674,18 +669,6 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
                     {t('settingsBasic.test', null, '测试连接')}
                 </Button>
                 <Button
-                    loading={busy === 'image'}
-                    disabled={locked || !!busy}
-                    onClick={() => run('image', '/config/test-openai', { ...probeBody(), test_image: true })}
-                >
-                    {t('settingsProbe.testImage', null, '测试图片')}
-                </Button>
-                {!imageEnabled && state.key === 'image' && state.payload?.success && (
-                    <Button type="tertiary" disabled={locked || !!busy} onClick={() => update('image_input', 'enabled')}>
-                        {t('settingsProbe.enableImageInput', null, '为此通道启用图片')}
-                    </Button>
-                )}
-                <Button
                     loading={busy === 'context'}
                     disabled={locked || !!busy}
                     onClick={() => run('context', '/config/detect-context', probeBody())}
@@ -718,7 +701,7 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
             {!imageEnabled && (
                 <div className="settings-image-fallback-tip">
                     <Hint>
-                        当前通道未启用原生图片输入。若所选模型本身不支持识图，可开启下方「视觉分析（analyze_image）」由独立视觉模型代为识别截图与验证码；若模型通过中转接口实际支持识图，可将「图片输入能力」切换为「启用」或点击「测试图片」验证。
+                        当前通道未启用原生图片输入。若所选模型本身不支持识图，可开启下方「视觉分析（analyze_image）」由独立视觉模型代为识别截图与验证码；若模型通过中转接口实际支持识图，可将「图片输入能力」切换为「启用」。
                     </Hint>
                 </div>
             )}
