@@ -62,6 +62,7 @@ export default function UpdateSection() {
     const [activationBootID, setActivationBootID] = useState(null);
     const [sourceDraft, setSourceDraft] = useState(null);
     const [branchDraft, setBranchDraft] = useState(null);
+    const [branchSearch, setBranchSearch] = useState('');
     const [remoteBranches, setRemoteBranches] = useState([]);
     const [remoteDefaultBranch, setRemoteDefaultBranch] = useState('');
     const [loadingBranches, setLoadingBranches] = useState(false);
@@ -316,19 +317,27 @@ export default function UpdateSection() {
                                     value={branchValue || undefined}
                                     onChange={value => {
                                         setBranchDraft(value || '');
+                                        setBranchSearch('');
                                         setSourceError(null);
+                                    }}
+                                    onSearch={value => setBranchSearch(String(value || ''))}
+                                    onDropdownVisibleChange={visible => {
+                                        if (visible && remoteBranches.length === 0 && !loadingBranches) {
+                                            fetchBranches();
+                                        }
                                     }}
                                     placeholder={t('updateUi.targetBranchPlaceholder', null, '留空跟随默认分支，或选择/输入分支名')}
                                     filter
-                                    allowCreate
                                     showClear
+                                    loading={loadingBranches}
                                     disabled={!canManage || savingSource}
                                     style={{ width: 340, maxWidth: '100%' }}
                                     optionList={[
                                         ...new Set([
                                             ...(remoteBranches || []),
                                             ...(sourceBranch ? [sourceBranch] : []),
-                                            ...(branchValue && branchValue.trim() ? [branchValue.trim()] : [])
+                                            ...(branchValue && branchValue.trim() ? [branchValue.trim()] : []),
+                                            ...(branchSearch.trim() ? [branchSearch.trim()] : [])
                                         ])
                                     ].map(name => ({
                                         value: name,
