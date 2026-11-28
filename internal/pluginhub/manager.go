@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -102,6 +103,21 @@ func (m *Manager) Probes(ctx context.Context, isolation string) map[string]runne
 		probes["compose"] = docker.ProbeCompose(ctx, isolation)
 	}
 	return probes
+}
+
+func (m *Manager) ProbePlanDriver(ctx context.Context, driverName, isolation string, compose bool) runner.Probe {
+	if driverName == "container" && compose {
+		if docker, ok := m.drivers["container"].(interface {
+			ProbeCompose(context.Context, string) runner.Probe
+		}); ok {
+			return docker.ProbeCompose(ctx, isolation)
+		}
+	}
+	driver := m.drivers[driverName]
+	if driver == nil {
+		return runner.Probe{Code: "driver_unavailable", Guidance: "Selected plugin driver is not registered on this host."}
+	}
+	return driver.Probe(ctx, isolation)
 }
 
 func (m *Manager) Ready() bool { return m.ready.Load() }
@@ -451,11 +467,17 @@ func (m *Manager) runOperation(parent context.Context, op database.PluginOperati
 		log("Operation started: " + op.Kind)
 		result, err = m.execute(ctx, current, op)
 		if err != nil {
+			detail := runner.SanitizeLog(err.Error(), nil)
+			if detail != "" {
+				log("Error detail: " + detail)
+			}
 			switch {
 			case errors.Is(err, ErrUnapprovedArtifact):
 				result.ErrorCode = "plugin_artifact_not_approved"
 			case result.Observed == "cleanup_pending":
 				result.ErrorCode = "plugin_cleanup_pending"
+			case hasKnownDriverErrorCode(detail) != "":
+				result.ErrorCode = hasKnownDriverErrorCode(detail)
 			default:
 				result.ErrorCode = "plugin_" + op.Kind + "_failed"
 			}
@@ -483,4 +505,20 @@ func (m *Manager) runOperation(parent context.Context, op database.PluginOperati
 	} else if err == nil && op.Kind == "upgrade" {
 		_ = os.RemoveAll(snapshotPath(runner.Spec{Root: filepath.Join(m.root, op.InstallID), VersionID: op.VersionID}))
 	}
+}
+
+func hasKnownDriverErrorCode(detail string) string {
+	for _, code := range []string{
+		"docker_cli_missing",
+		"docker_daemon_unavailable",
+		"docker_compose_missing",
+		"docker_engine_unsupported",
+		"docker_socket_missing",
+		"git_missing",
+	} {
+		if strings.HasPrefix(detail, code+":") || detail == code {
+			return code
+		}
+	}
+	return ""
 }

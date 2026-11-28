@@ -27,16 +27,77 @@ const ERROR_KEYS = {
     plugin_llm_gateway_unavailable: ['pluginHub.errorLLMGatewayUnavailable', 'CSAI 插件模型网关未就绪'],
     plugin_web_unavailable: ['pluginHub.errorWebUnavailable', '插件 WebUI 代理未就绪或应用尚未健康启动'],
     plugin_embed_origin_or_permission_rejected: ['pluginHub.errorEmbedRejected', '无权访问该插件工作区或请求来源校验未通过'],
-    plugin_record_not_found: ['pluginHub.errorNotFound', '未找到对应的插件记录或计划已过期']
+    plugin_record_not_found: ['pluginHub.errorNotFound', '未找到对应的插件记录或计划已过期'],
+    docker_cli_missing: ['pluginHub.errorDockerCliMissing', '宿主未安装 Docker CLI / Engine，容器类插件无法启动'],
+    docker_daemon_unavailable: ['pluginHub.errorDockerDaemonUnavailable', '宿主 Docker 服务未启动，或当前运行用户无权访问 docker.sock'],
+    docker_compose_missing: ['pluginHub.errorDockerComposeMissing', '宿主缺少 Docker Compose v2 插件'],
+    docker_engine_unsupported: ['pluginHub.errorDockerEngineUnsupported', '宿主 Docker Engine 版本过低或不满足隔离档位要求'],
+    docker_socket_missing: ['pluginHub.errorDockerSocketMissing', '容器内未挂载 /var/run/docker.sock'],
+    git_missing: ['pluginHub.errorGitMissing', '宿主未安装 Git 工具'],
+    plugin_install_failed: ['pluginHub.errorInstallFailed', '插件安装失败，请查看运行日志或交给 Agent 排错修复']
 };
 
 export function pluginErrorText(t, error, fallback) {
-    const code = error?.payload?.error || (typeof error?.message === 'string' ? error.message : '');
+    const code = typeof error === 'string'
+        ? error
+        : (error?.payload?.error || (typeof error?.message === 'string' ? error.message : ''));
     const entry = ERROR_KEYS[code];
     if (entry) {
         return t(entry[0], null, entry[1]);
     }
-    return error?.message || fallback || t('common.loadFailed', null, '操作失败');
+    return (typeof error === 'string' ? error : error?.message) || fallback || t('common.loadFailed', null, '操作失败');
+}
+
+export function buildDriverFixPrompt({ driver, probe, hostOS, hostArch, pluginTitle }) {
+    const lines = [
+        `请帮我在当前 CyberStrikeAI 宿主机上安装并配置插件平台缺少的运行驱动「${driver}」。`,
+        '',
+        '### 当前诊断信息',
+        `- 宿主机平台：${hostOS || 'unknown'}/${hostArch || 'unknown'}`,
+        `- 缺少驱动：${driver}`,
+        `- 预检错误码：${probe?.code || 'unavailable'}`,
+        probe?.guidance ? `- 官方提示：${probe.guidance}` : '',
+        probe?.install_command ? `- 参考安装命令：\`${probe.install_command}\`` : '',
+        pluginTitle ? `- 待安装插件：${pluginTitle}` : '',
+        '',
+        '### 请按以下步骤协助完成',
+        '1. 先检查当前宿主机系统发行版、当前运行用户、包管理器以及目标依赖（如 Docker / Docker Compose / Git）与服务/权限状态；',
+        '2. 使用官方软件源或受信任方式安装并启动缺少的依赖（涉及 sudo 或系统变更时请清晰说明并走审批确认）；',
+        '3. 如果安装了 Docker，请同时确认 `dockerd` 已开机自启、Compose v2 可用，并检查当前运行 CyberStrikeAI 的用户是否有权限访问 `/var/run/docker.sock`；',
+        '4. 执行验证命令确认驱动已正常可用（例如 `docker version && docker compose version` 或 `git --version`）；',
+        '5. 完成后告诉我是否需要重启 CyberStrikeAI 服务（例如新增 `docker` 用户组后），以便我回到「能力平台」继续一键安装插件。'
+    ].filter(Boolean);
+    return lines.join('\n');
+}
+
+export function buildPluginTroubleshootPrompt({ install, logs, hostOS, hostArch }) {
+    const tail = (Array.isArray(logs) ? logs : [])
+        .slice(-40)
+        .map(item => `[${item.created_at || ''}] ${item.line}`)
+        .join('\n');
+    const lines = [
+        `我在 CyberStrikeAI 插件化能力平台中安装/运行插件「${install?.title || install?.plugin_id || '未知插件'}」失败，请帮我排查根因并直接在宿主机上修复缺少的运行环境或依赖。`,
+        '',
+        '### 插件状态与诊断信息',
+        `- 插件名称：${install?.title || '—'} (${install?.plugin_id || '—'})`,
+        `- 实例 ID：${install?.id || '—'}`,
+        `- 运行驱动：${install?.driver || '—'}`,
+        `- 当前状态：${install?.observed_state || 'failed'}`,
+        `- 最近错误码：${install?.last_error_code || 'plugin_install_failed'}`,
+        install?.repository ? `- 源码仓库：${install.repository}` : '',
+        hostOS ? `- 宿主机平台：${hostOS}/${hostArch || ''}` : '',
+        '',
+        '### 最近插件脱敏日志',
+        '```text',
+        tail || '(暂无日志输出，请直接检查对应驱动的宿主机运行环境)',
+        '```',
+        '',
+        '### 请协助完成',
+        '1. 根据错误码和日志定位失败根因（例如缺少 Docker / Compose / Git / Go / Node.js、dockerd 未启动、docker.sock 权限不足、端口或网络问题等）；',
+        '2. 如果缺少运行环境或依赖，请直接帮我在宿主机上安装并配置就绪（涉及提权或系统改动时按审批确认）；',
+        '3. 验证宿主机依赖已恢复正常，并告诉我接下来回到「能力平台」直接点击重试/启动即可。'
+    ].filter(Boolean);
+    return lines.join('\n');
 }
 
 export function stateColor(state) {

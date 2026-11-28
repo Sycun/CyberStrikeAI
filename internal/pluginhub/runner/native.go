@@ -48,7 +48,19 @@ func (n *Native) Probe(_ context.Context, isolation string) Probe {
 	}
 	if n.driver == "git" {
 		if _, err := exec.LookPath("git"); err != nil {
-			return Probe{Code: "git_missing", Guidance: "Install Git with your platform package manager and retry."}
+			cmd := "sudo apt-get update && sudo apt-get install -y git"
+			switch runtime.GOOS {
+			case "darwin":
+				cmd = "xcode-select --install"
+			case "windows":
+				cmd = "winget install -e --id Git.Git"
+			}
+			return Probe{
+				Code:           "git_missing",
+				Guidance:       "Install Git with your platform package manager and retry.",
+				InstallCommand: cmd,
+				DownloadURL:    "https://git-scm.com/downloads",
+			}
 		}
 	}
 	return Probe{Available: true}

@@ -7,6 +7,7 @@ import { api } from '../../lib/http';
 import { useAuth } from '../../lib/auth';
 import { useT } from '../../lib/i18n';
 import { consumeRetestAutosend, peekRetestAutosend } from '../../lib/retest';
+import { consumeAgentHandoff, peekAgentHandoff } from '../../lib/agent-handoff';
 import { useDebounced, useInterval, useLocalStorage, useResource } from '../../components/hooks';
 import { toastError, toastSuccess, toastWarning } from '../../components/ui';
 import ProjectFormModal from '../projects/project-form';
@@ -586,6 +587,43 @@ export default function Page() {
         run.send({ message, mode, role, ...model.request });
     }, [conversationId, detail.conversation, detail.error, sending, backgroundRunning, checkingRun,
         roleResolved, canWrite, canExecute, mode, model, resetRun, role, run, t, updateComposer]);
+
+    // 插件平台等功能页一键交接给 CSAI Agent：打开新对话时自动发出或回填任务提示词。
+    useEffect(() => {
+        if (conversationId) return;
+        const entry = peekAgentHandoff();
+        if (!entry) return;
+        const message = String(entry.prompt || '').trim();
+        if (!message) {
+            consumeAgentHandoff();
+            return;
+        }
+        if (sending || backgroundRunning || checkingRun || model.waitingForChannel || !roleResolved) return;
+        consumeAgentHandoff();
+        if (canWrite && canExecute && entry.autoSend !== false) {
+            setDetail(prev => ({
+                ...prev,
+                messages: [
+                    ...(prev.messages || []),
+                    { id: `local-${Date.now()}`, role: 'user', content: message, createdAt: new Date().toISOString() }
+                ]
+            }));
+            resetRun();
+            updateComposer('', () => ({ draft: '', attachments: [] }));
+            pendingRoleRef.current = role;
+            run.send({
+                message,
+                mode,
+                projectId: newProjectId,
+                role,
+                ...model.request,
+                hitl: canDecideHitl ? draftHitl || undefined : undefined
+            });
+            return;
+        }
+        updateComposer('', current => ({ ...current, draft: message }));
+    }, [conversationId, sending, backgroundRunning, checkingRun, model, roleResolved,
+        canWrite, canExecute, canDecideHitl, draftHitl, mode, newProjectId, resetRun, role, run, updateComposer]);
 
     // 手动打开复测分支或自动发送被中断时：把服务端保存的 pending_prompt 回填输入框。
     useEffect(() => {

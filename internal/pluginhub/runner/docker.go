@@ -107,6 +107,34 @@ func (d *Docker) Probe(ctx context.Context, isolation string) Probe {
 	return d.probe(ctx, isolation, false)
 }
 
+func dockerRemediation(code string) (installCmd, downloadURL string) {
+	switch runtime.GOOS {
+	case "linux":
+		switch code {
+		case "docker_compose_missing":
+			return `sudo apt-get update && sudo apt-get install -y docker-compose-plugin`, "https://docs.docker.com/compose/install/linux/"
+		case "docker_daemon_unavailable":
+			return `sudo systemctl enable --now docker && sudo usermod -aG docker "$USER"`, "https://docs.docker.com/engine/install/linux-postinstall/"
+		default:
+			return `sudo apt-get update && sudo apt-get install -y docker.io docker-compose-plugin && sudo systemctl enable --now docker && sudo usermod -aG docker "$USER"`, "https://docs.docker.com/engine/install/"
+		}
+	case "darwin":
+		if code == "docker_daemon_unavailable" {
+			return "open -a Docker", "https://www.docker.com/products/docker-desktop/"
+		}
+		return "brew install --cask docker && open -a Docker", "https://www.docker.com/products/docker-desktop/"
+	case "windows":
+		return "winget install -e --id Docker.DockerDesktop", "https://www.docker.com/products/docker-desktop/"
+	default:
+		return "", "https://docs.docker.com/get-docker/"
+	}
+}
+
+func dockerUnavailableProbe(code, guidance string) Probe {
+	cmd, url := dockerRemediation(code)
+	return Probe{Code: code, Guidance: guidance, InstallCommand: cmd, DownloadURL: url}
+}
+
 func (d *Docker) probe(ctx context.Context, isolation string, compose bool) Probe {
 	guidance := "Install Docker Desktop and start its local engine."
 	if runtime.GOOS == "linux" {
@@ -114,15 +142,15 @@ func (d *Docker) probe(ctx context.Context, isolation string, compose bool) Prob
 	}
 	if runningInContainer() {
 		if _, err := os.Stat("/var/run/docker.sock"); err != nil && os.Getenv("DOCKER_HOST") == "" {
-			return Probe{Code: "docker_socket_missing", Guidance: "Configure a local Docker socket for CSAI or select an approved native distribution."}
+			return dockerUnavailableProbe("docker_socket_missing", "Configure a local Docker socket for CSAI or select an approved native distribution.")
 		}
 	}
 	out, err := d.run(ctx, nil, "version", "--format", "{{.Server.Os}}/{{.Server.Version}}")
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
-			return Probe{Code: "docker_cli_missing", Guidance: guidance}
+			return dockerUnavailableProbe("docker_cli_missing", guidance)
 		}
-		return Probe{Code: "docker_daemon_unavailable", Guidance: guidance + " Check your local context and socket permissions."}
+		return dockerUnavailableProbe("docker_daemon_unavailable", guidance+" Check your local context and socket permissions.")
 	}
 	osName, version, _ := strings.Cut(strings.TrimSpace(string(out)), "/")
 	major, _, _ := strings.Cut(version, ".")
@@ -132,12 +160,12 @@ func (d *Docker) probe(ctx context.Context, isolation string, compose bool) Prob
 		minimum = 28
 	}
 	if osName != "linux" || majorNumber < minimum {
-		return Probe{Code: "docker_engine_unsupported", Guidance: fmt.Sprintf(
-			"Use a local Linux-container Docker Engine version %d or later for %s isolation.", minimum, isolation)}
+		return dockerUnavailableProbe("docker_engine_unsupported", fmt.Sprintf(
+			"Use a local Linux-container Docker Engine version %d or later for %s isolation.", minimum, isolation))
 	}
 	if compose {
 		if _, err := d.run(ctx, nil, "compose", "version", "--short"); err != nil {
-			return Probe{Code: "docker_compose_missing", Guidance: "Install the Docker Compose v2 CLI plugin."}
+			return dockerUnavailableProbe("docker_compose_missing", "Install the Docker Compose v2 CLI plugin.")
 		}
 	}
 	if majorNumber < 28 {

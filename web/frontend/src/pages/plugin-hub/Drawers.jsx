@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Banner, Button, Checkbox, Input, InputNumber, Radio, RadioGroup, Select, Space, Tabs, TabPane, Tag, TextArea, Typography
 } from '@douyinfe/semi-ui';
-import { IconCheckCircleStroked, IconPlay, IconRefresh, IconStop } from '@douyinfe/semi-icons';
+import { IconBolt, IconCheckCircleStroked, IconExternalOpen, IconPlay, IconRefresh, IconStop } from '@douyinfe/semi-icons';
 import { useT } from '../../lib/i18n';
 import { CopyButton, Drawer, JsonViewer, KeyValueList, toastError, toastSuccess } from '../../components/ui';
 import {
@@ -11,17 +11,27 @@ import {
 
 const { Text, Paragraph } = Typography;
 
-export function PlanApprovalDrawer({ planResponse, channels, visible, onCancel, onConfirmed }) {
+export function PlanApprovalDrawer({
+    planResponse, channels, visible, canUseAgent, onCancel, onConfirmed, onAskAgentDriverFix
+}) {
     const t = useT();
     const [autoBindLLM, setAutoBindLLM] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    const [liveProbe, setLiveProbe] = useState(null);
+    const [reprobing, setReprobing] = useState(false);
 
     useEffect(() => {
-        if (visible) setAutoBindLLM(true);
-    }, [visible, planResponse?.plan?.id]);
+        if (visible) {
+            setAutoBindLLM(true);
+            setLiveProbe(planResponse?.driver_probe || null);
+        }
+    }, [visible, planResponse?.plan?.id, planResponse?.driver_probe]);
 
     const plan = planResponse?.plan;
     const manifest = planResponse?.manifest;
+    const artifact = plan?.artifact;
+    const effectiveProbe = liveProbe || planResponse?.driver_probe || null;
+    const driverUnavailable = Boolean(effectiveProbe && !effectiveProbe.available);
     const llmDeclared = Boolean(manifest?.llm?.bindings?.length);
     const defaultChannel = useMemo(
         () => (channels || []).find(ch => ch.is_default) || (channels || [])[0] || null,
@@ -31,6 +41,29 @@ export function PlanApprovalDrawer({ planResponse, channels, visible, onCancel, 
         if (!llmDeclared || !defaultChannel) return false;
         return manifest.llm.bindings.some(b => b.protocol === defaultChannel.protocol);
     }, [llmDeclared, defaultChannel, manifest]);
+
+    const handleReprobe = async () => {
+        if (!plan || !artifact?.driver) return;
+        setReprobing(true);
+        try {
+            const res = await pluginApi.probes(plan.isolation || 'standard');
+            const isCompose = (manifest?.distribution || []).some(
+                d => d.type === artifact.driver && d.mode === 'compose'
+            );
+            const key = artifact.driver === 'container' && isCompose ? 'compose' : artifact.driver;
+            const nextProbe = res?.drivers?.[key] || res?.drivers?.[artifact.driver];
+            if (nextProbe) {
+                setLiveProbe(nextProbe);
+                if (nextProbe.available) {
+                    toastSuccess(t('pluginHub.driverNowReady', null, '运行驱动已就绪，可以继续一键安装'));
+                }
+            }
+        } catch (err) {
+            toastError(pluginErrorText(t, err));
+        } finally {
+            setReprobing(false);
+        }
+    };
 
     const handleConfirm = async () => {
         if (!plan || !planResponse?.plan_digest) return;
@@ -50,8 +83,6 @@ export function PlanApprovalDrawer({ planResponse, channels, visible, onCancel, 
         }
     };
 
-    const artifact = plan?.artifact;
-
     return (
         <Drawer
             title={t('pluginHub.planApprovalTitle', null, '确认插件安装计划')}
@@ -65,16 +96,72 @@ export function PlanApprovalDrawer({ planResponse, channels, visible, onCancel, 
                         theme="solid"
                         type="primary"
                         loading={submitting}
-                        disabled={!planResponse?.can_confirm}
+                        disabled={!planResponse?.can_confirm || driverUnavailable}
                         onClick={handleConfirm}
                     >
-                        {t('pluginHub.confirmInstall', null, '确认并一键安装')}
+                        {driverUnavailable
+                            ? t('pluginHub.driverMissingBtn', null, '缺少运行驱动，请先安装依赖')
+                            : t('pluginHub.confirmInstall', null, '确认并一键安装')}
                     </Button>
                 </Space>
             }
         >
             {plan && manifest && (
                 <div className="cs-ph-drawer-stack">
+                    {driverUnavailable && (
+                        <Banner
+                            type="danger"
+                            bordered
+                            closeIcon={null}
+                            title={t('pluginHub.driverMissingTitle', { driver: driverLabel(t, artifact?.driver) }, `当前宿主机缺少所需驱动：${driverLabel(t, artifact?.driver)}`)}
+                            description={
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                                    <Text size="small">
+                                        {pluginErrorText(t, effectiveProbe.code, effectiveProbe.guidance)}
+                                    </Text>
+                                    {effectiveProbe.install_command && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                            <code className="cs-ph-mono" style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, background: 'var(--semi-color-fill-1)', wordBreak: 'break-all' }}>
+                                                {effectiveProbe.install_command}
+                                            </code>
+                                            <CopyButton text={effectiveProbe.install_command} label={t('common.copy', null, '复制')} />
+                                        </div>
+                                    )}
+                                    <Space wrap>
+                                        {canUseAgent && onAskAgentDriverFix && (
+                                            <Button
+                                                size="small"
+                                                theme="solid"
+                                                type="primary"
+                                                icon={<IconBolt />}
+                                                onClick={() => onAskAgentDriverFix({
+                                                    driver: artifact?.driver,
+                                                    probe: effectiveProbe,
+                                                    hostOS: planResponse.host_os,
+                                                    hostArch: planResponse.host_arch,
+                                                    pluginTitle: manifest.metadata?.title || manifest.metadata?.id
+                                                })}
+                                            >
+                                                {t('pluginHub.askAgentInstallDriver', null, '交给 CSAI Agent 自动安装配置')}
+                                            </Button>
+                                        )}
+                                        {effectiveProbe.download_url && (
+                                            <Button
+                                                size="small"
+                                                icon={<IconExternalOpen />}
+                                                onClick={() => window.open(effectiveProbe.download_url, '_blank', 'noopener,noreferrer')}
+                                            >
+                                                {t('pluginHub.officialDownload', null, '官方下载')}
+                                            </Button>
+                                        )}
+                                        <Button size="small" icon={<IconRefresh />} loading={reprobing} onClick={handleReprobe}>
+                                            {t('pluginHub.recheckDriver', null, '重新检测')}
+                                        </Button>
+                                    </Space>
+                                </div>
+                            }
+                        />
+                    )}
                     {!planResponse.can_confirm && (
                         <Banner
                             type="warning"
@@ -558,7 +645,8 @@ export function ImportGitDrawer({ visible, initialEntry, onCancel, onPlanReady, 
 }
 
 export function PluginDetailDrawer({
-    installId, initialTab = 'overview', visible, canManage, channels, onCancel, onRestartRequested, onChanged
+    installId, initialTab = 'overview', visible, canManage, canUseAgent, channels,
+    onCancel, onRestartRequested, onChanged, onAskAgentTroubleshoot
 }) {
     const t = useT();
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -705,6 +793,34 @@ export function PluginDetailDrawer({
                 <TabPane tab={t('pluginHub.tabOverview', null, '概览与权限')} itemKey="overview">
                     {detail && (
                         <div className="cs-ph-drawer-stack" style={{ marginTop: 12 }}>
+                            {(detail.observed_state === 'failed' || detail.observed_state === 'degraded') && (
+                                <Banner
+                                    type="danger"
+                                    bordered
+                                    closeIcon={null}
+                                    title={pluginErrorText(t, detail.last_error_code, t('pluginHub.errorInstallFailed', null, '插件安装或运行异常'))}
+                                    description={
+                                        <Space wrap style={{ marginTop: 4 }}>
+                                            {canUseAgent && onAskAgentTroubleshoot && (
+                                                <Button
+                                                    size="small"
+                                                    theme="solid"
+                                                    type="primary"
+                                                    icon={<IconBolt />}
+                                                    onClick={() => onAskAgentTroubleshoot(detail)}
+                                                >
+                                                    {t('pluginHub.askAgentTroubleshoot', null, '交给 CSAI Agent 排错并修复')}
+                                                </Button>
+                                            )}
+                                            {canManage && (
+                                                <Button size="small" onClick={() => setActiveTab('logs')}>
+                                                    {t('pluginHub.viewLogs', null, '查看运行日志')}
+                                                </Button>
+                                            )}
+                                        </Space>
+                                    }
+                                />
+                            )}
                             <KeyValueList columns={2} items={[
                                 { label: t('pluginHub.installId', null, '实例 ID'), value: <span className="cs-ph-mono">{detail.id}</span> },
                                 { label: t('pluginHub.pluginId', null, '插件标识'), value: detail.plugin_id },
@@ -843,7 +959,7 @@ export function PluginDetailDrawer({
     );
 }
 
-export function RuntimeProbesDrawer({ visible, onCancel }) {
+export function RuntimeProbesDrawer({ visible, canUseAgent, onCancel, onAskAgentDriverFix }) {
     const t = useT();
     const [isolation, setIsolation] = useState('standard');
     const [data, setData] = useState(null);
@@ -870,7 +986,7 @@ export function RuntimeProbesDrawer({ visible, onCancel }) {
             title={t('pluginHub.runtimeProbesTitle', null, '宿主运行环境与驱动预检')}
             visible={visible}
             onCancel={onCancel}
-            width={620}
+            width={660}
         >
             <div className="cs-ph-drawer-stack">
                 <Space style={{ justifyContent: 'space-between', width: '100%' }} wrap>
@@ -903,7 +1019,47 @@ export function RuntimeProbesDrawer({ visible, onCancel }) {
                                         {probe.available ? t('pluginHub.available', null, '可用') : (probe.code || t('pluginHub.unavailable', null, '不可用'))}
                                     </Tag>
                                 </Space>
+                                {!probe.available && probe.code && (
+                                    <Text type="danger" size="small">{pluginErrorText(t, probe.code, probe.guidance)}</Text>
+                                )}
                                 {probe.guidance && <Text type="tertiary" size="small">{probe.guidance}</Text>}
+                                {!probe.available && probe.install_command && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                                        <code className="cs-ph-mono" style={{ fontSize: 12, padding: '4px 8px', borderRadius: 4, background: 'var(--semi-color-fill-1)', wordBreak: 'break-all' }}>
+                                            {probe.install_command}
+                                        </code>
+                                        <CopyButton text={probe.install_command} label={t('common.copy', null, '复制')} />
+                                    </div>
+                                )}
+                                {!probe.available && (canUseAgent || probe.download_url) && (
+                                    <Space wrap style={{ marginTop: 6 }}>
+                                        {canUseAgent && onAskAgentDriverFix && (
+                                            <Button
+                                                size="small"
+                                                theme="solid"
+                                                type="primary"
+                                                icon={<IconBolt />}
+                                                onClick={() => onAskAgentDriverFix({
+                                                    driver: name,
+                                                    probe,
+                                                    hostOS: data.os,
+                                                    hostArch: data.arch
+                                                })}
+                                            >
+                                                {t('pluginHub.askAgentInstallDriver', null, '交给 CSAI Agent 自动安装配置')}
+                                            </Button>
+                                        )}
+                                        {probe.download_url && (
+                                            <Button
+                                                size="small"
+                                                icon={<IconExternalOpen />}
+                                                onClick={() => window.open(probe.download_url, '_blank', 'noopener,noreferrer')}
+                                            >
+                                                {t('pluginHub.officialDownload', null, '官方下载')}
+                                            </Button>
+                                        )}
+                                    </Space>
+                                )}
                             </div>
                         ))}
                         {data.drivers?.container && !data.drivers.container.available && (
@@ -913,8 +1069,8 @@ export function RuntimeProbesDrawer({ visible, onCancel }) {
                                 closeIcon={null}
                                 description={
                                     data.os === 'linux'
-                                        ? t('pluginHub.dockerInstallLinuxHint', null, 'Linux / Kali 宿主可在确认提权后通过发行版官方源安装 docker.io / docker-ce 与 docker-compose-plugin 并启动 dockerd，完成后点击上方「重新检测」；或优先使用 Release / Git 原生驱动。')
-                                        : t('pluginHub.dockerInstallDesktopHint', null, 'macOS / Windows 请先安装并启动 Docker Desktop（或 OrbStack / WSL2 Docker），或选择 Release / Git 原生驱动。')
+                                        ? t('pluginHub.dockerInstallLinuxHint', null, 'Linux / Kali 宿主可直接点击上方「交给 CSAI Agent 自动安装配置」，或手动安装 docker.io 与 docker-compose-plugin 并启动 dockerd，完成后点击「重新检测」。')
+                                        : t('pluginHub.dockerInstallDesktopHint', null, 'macOS / Windows 可点击「官方下载」安装并启动 Docker Desktop（或交给 Agent 通过 Homebrew/winget 协助安装），也可优先选择 Release / Git 原生驱动。')
                                 }
                             />
                         )}

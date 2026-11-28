@@ -161,11 +161,20 @@ func TestPluginManagementPreviewAndRBAC(t *testing.T) {
 	planRequest := `{"inspection_id":"` + inspection.ID + `","isolation":"standard","driver":"git"}`
 	request(http.MethodPost, "/install-plans", otherManager, planRequest, http.StatusNotFound)
 	var response struct {
-		Plan   json.RawMessage `json:"plan"`
-		Digest string          `json:"plan_digest"`
+		Plan        json.RawMessage `json:"plan"`
+		Digest      string          `json:"plan_digest"`
+		HostOS      string          `json:"host_os"`
+		HostArch    string          `json:"host_arch"`
+		DriverProbe *struct {
+			Available bool   `json:"available"`
+			Code      string `json:"code"`
+		} `json:"driver_probe"`
 	}
 	if err := json.Unmarshal(request(http.MethodPost, "/install-plans", admin, planRequest, http.StatusCreated), &response); err != nil {
 		t.Fatal(err)
+	}
+	if response.HostOS == "" || response.HostArch == "" || response.DriverProbe == nil {
+		t.Fatalf("expected driver_probe and host platform in plan response: %+v", response)
 	}
 	plan, err := manifest.DecodeInstallPlan(response.Plan)
 	if err != nil || plan.Artifact.Commit != commit || plan.Isolation != "standard" || manifest.Digest(plan.Canonical) != response.Digest {

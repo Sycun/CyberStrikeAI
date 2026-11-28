@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Banner, Button, Checkbox, Input, Space, Tabs, TabPane, Tag, Tooltip, Typography
 } from '@douyinfe/semi-ui';
@@ -9,12 +9,15 @@ import {
 } from '@douyinfe/semi-icons';
 import { useAuth } from '../../lib/auth';
 import { useT } from '../../lib/i18n';
+import { queueAgentHandoff } from '../../lib/agent-handoff';
 import { useInterval, useResource } from '../../components/hooks';
 import {
     DataTable, ErrorBanner, PageHeader, SectionCard, StatGrid, confirmAction, toastError, toastSuccess
 } from '../../components/ui';
 import { formatDateTime } from '../../lib/format';
-import { driverLabel, pluginApi, pluginErrorText, stateColor, stateLabel } from './api';
+import {
+    buildDriverFixPrompt, buildPluginTroubleshootPrompt, driverLabel, pluginApi, pluginErrorText, stateColor, stateLabel
+} from './api';
 import WorkspaceView from './WorkspaceView';
 import { AddCatalogDrawer, ImportGitDrawer, PlanApprovalDrawer, PluginDetailDrawer, RuntimeProbesDrawer } from './Drawers';
 import './page.css';
@@ -23,9 +26,11 @@ const { Text, Paragraph } = Typography;
 
 export default function PluginHubPage() {
     const t = useT();
+    const navigate = useNavigate();
     const { hasPermission } = useAuth();
     const canManage = hasPermission('plugins:manage');
     const canUse = hasPermission('plugins:use');
+    const canUseAgent = hasPermission('chat:write') && hasPermission('agent:execute');
     const [searchParams, setSearchParams] = useSearchParams();
 
     const activeAppId = searchParams.get('app') || '';
@@ -166,6 +171,41 @@ export default function PluginHubPage() {
         }
     };
 
+    const askAgentFixDriver = useCallback(({ driver, probe, hostOS, hostArch, pluginTitle }) => {
+        const prompt = buildDriverFixPrompt({
+            driver,
+            probe,
+            hostOS: hostOS || probesRes.data?.os,
+            hostArch: hostArch || probesRes.data?.arch,
+            pluginTitle
+        });
+        queueAgentHandoff({ prompt, autoSend: true });
+        setProbesOpen(false);
+        setPlanState(null);
+        toastSuccess(t('pluginHub.handoffToAgent', null, '已将安装任务交给 CSAI Agent，正在跳转对话工作台…'));
+        navigate('/chat');
+    }, [navigate, probesRes.data?.arch, probesRes.data?.os, t]);
+
+    const askAgentTroubleshootPlugin = useCallback(async install => {
+        let logs = [];
+        try {
+            const res = await pluginApi.readLogs(install.id, 0, 50);
+            logs = Array.isArray(res?.items) ? res.items : [];
+        } catch {
+            // proceed with error code even if log read fails
+        }
+        const prompt = buildPluginTroubleshootPrompt({
+            install,
+            logs,
+            hostOS: probesRes.data?.os,
+            hostArch: probesRes.data?.arch
+        });
+        queueAgentHandoff({ prompt, autoSend: true });
+        setDetailTarget(null);
+        toastSuccess(t('pluginHub.handoffTroubleshoot', null, '已将排错与修复任务交给 CSAI Agent，正在跳转对话工作台…'));
+        navigate('/chat');
+    }, [navigate, probesRes.data?.arch, probesRes.data?.os, t]);
+
     const runOperation = async (install, kind, extra = {}) => {
         setBusyInstallId(install.id);
         try {
@@ -239,9 +279,11 @@ export default function PluginHubPage() {
                     initialTab={detailTarget?.tab}
                     visible={Boolean(detailTarget)}
                     canManage={canManage}
+                    canUseAgent={canUseAgent}
                     channels={channels}
                     onCancel={() => setDetailTarget(null)}
                     onRestartRequested={item => runOperation(item, 'restart')}
+                    onAskAgentTroubleshoot={askAgentTroubleshootPlugin}
                     onChanged={reloadAll}
                 />
             </div>
@@ -259,7 +301,9 @@ export default function PluginHubPage() {
                         <Tag size="small" color="grey">{record.plugin_id}</Tag>
                     </Space>
                     {record.last_error_code && (
-                        <Text type="danger" size="small">{record.last_error_code}</Text>
+                        <Text type="danger" size="small">
+                            {pluginErrorText(t, record.last_error_code, record.last_error_code)}
+                        </Text>
                     )}
                 </Space>
             )
@@ -303,9 +347,20 @@ export default function PluginHubPage() {
                             </Button>
                         )}
                         {canManage && !isRunning && (
-                            <Tooltip content={t('pluginHub.start', null, '启动')}>
+                            <Tooltip content={record.observed_state === 'failed' ? t('pluginHub.retryInstallOrStart', null, '重试安装 / 启动') : t('pluginHub.start', null, '启动')}>
                                 <Button size="small" icon={<IconPlay />} loading={isBusy} onClick={() => runOperation(record, 'start')} />
                             </Tooltip>
+                        )}
+                        {canUseAgent && (record.observed_state === 'failed' || record.observed_state === 'degraded') && (
+                            <Button
+                                size="small"
+                                theme="light"
+                                type="warning"
+                                icon={<IconBolt />}
+                                onClick={() => askAgentTroubleshootPlugin(record)}
+                            >
+                                {t('pluginHub.agentFixBtn', null, 'Agent 排错')}
+                            </Button>
                         )}
                         {canManage && isRunning && (
                             <>
@@ -577,7 +632,9 @@ export default function PluginHubPage() {
                 planResponse={planState}
                 channels={channels}
                 visible={Boolean(planState)}
+                canUseAgent={canUseAgent}
                 onCancel={() => setPlanState(null)}
+                onAskAgentDriverFix={askAgentFixDriver}
                 onConfirmed={op => {
                     setPlanState(null);
                     setActiveOp(op);
@@ -591,15 +648,19 @@ export default function PluginHubPage() {
                 initialTab={detailTarget?.tab}
                 visible={Boolean(detailTarget)}
                 canManage={canManage}
+                canUseAgent={canUseAgent}
                 channels={channels}
                 onCancel={() => setDetailTarget(null)}
                 onRestartRequested={item => runOperation(item, 'restart')}
+                onAskAgentTroubleshoot={askAgentTroubleshootPlugin}
                 onChanged={reloadAll}
             />
 
             <RuntimeProbesDrawer
                 visible={probesOpen}
+                canUseAgent={canUseAgent}
                 onCancel={() => setProbesOpen(false)}
+                onAskAgentDriverFix={askAgentFixDriver}
             />
         </div>
     );

@@ -23,9 +23,11 @@ type Driver interface {
 }
 
 type Probe struct {
-	Available bool   `json:"available"`
-	Code      string `json:"code,omitempty"`
-	Guidance  string `json:"guidance,omitempty"`
+	Available      bool   `json:"available"`
+	Code           string `json:"code,omitempty"`
+	Guidance       string `json:"guidance,omitempty"`
+	InstallCommand string `json:"install_command,omitempty"`
+	DownloadURL    string `json:"download_url,omitempty"`
 }
 
 type Spec struct {

@@ -278,6 +278,7 @@ func (h *PluginHandler) createPlan(c *gin.Context) {
 	response["artifact_digest"], response["host_approved"] = result.ArtifactDigest, result.HostApproved
 	response["approval_policy"] = h.hub.ApprovalPolicy()
 	response["can_confirm"] = h.hub.CanConfirm(record.ManifestDigest, result.ArtifactDigest)
+	h.attachPlanDriverProbe(c.Request.Context(), record, response)
 	c.JSON(http.StatusCreated, response)
 }
 
@@ -298,7 +299,29 @@ func (h *PluginHandler) getPlan(c *gin.Context) {
 			response["approved_at"] = record.ApprovedAt
 		}
 	}
+	h.attachPlanDriverProbe(c.Request.Context(), record, response)
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *PluginHandler) attachPlanDriverProbe(ctx context.Context, record database.PluginPlanRecord, response gin.H) {
+	response["host_os"] = runtime.GOOS
+	response["host_arch"] = runtime.GOARCH
+	plan, err := manifest.DecodeInstallPlan([]byte(record.PlanJSON))
+	if err != nil {
+		return
+	}
+	compose := false
+	if doc, err := manifest.DecodeDeclaration([]byte(record.ManifestJSON)); err == nil {
+		for _, dist := range doc.Distribution {
+			if dist.Type == plan.Artifact.Driver && dist.Mode == "compose" {
+				compose = true
+				break
+			}
+		}
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	response["driver_probe"] = h.hub.ProbePlanDriver(probeCtx, plan.Artifact.Driver, plan.Isolation, compose)
 }
 
 func pluginPlanResponse(record database.PluginPlanRecord) gin.H {
