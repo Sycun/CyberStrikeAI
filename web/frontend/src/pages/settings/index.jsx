@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/ui';
 import { useT } from '../../lib/i18n';
 import BasicSection from './sections/BasicSection';
 import ModelsSection from './sections/ModelsSection';
+import KnowledgeSection from './sections/KnowledgeSection';
 import TokenUsageSection from './sections/TokenUsageSection';
 import StorageSection from './sections/StorageSection';
 import UpdateSection from './sections/UpdateSection';
@@ -16,7 +17,7 @@ import AuditSection from './sections/AuditSection';
 import AppearanceSection from './sections/AppearanceSection';
 import './page.css';
 
-const SECTION_KEYS = ['basic', 'models', 'token-usage', 'storage', 'update', 'audit', 'appearance'];
+const SECTION_KEYS = ['basic', 'models', 'knowledge', 'token-usage', 'storage', 'update', 'audit', 'appearance'];
 
 export default function SettingsPage() {
     const t = useT();
@@ -32,6 +33,7 @@ export default function SettingsPage() {
     const change = key => {
         const next = new URLSearchParams(params);
         next.set('section', key);
+        next.delete('focus');
         setParams(next, { replace: true });
     };
 
@@ -51,10 +53,13 @@ export default function SettingsPage() {
                 className="settings-tabs"
             >
                 <Tabs.TabPane itemKey="basic" tab={t('settings.nav.basic', null, '基础配置')}>
-                    <BasicSection />
+                    <BasicSection active={activeKey === 'basic'} />
                 </Tabs.TabPane>
                 <Tabs.TabPane itemKey="models" tab={t('settings.nav.models', null, '模型与工具')}>
                     <ModelsSection />
+                </Tabs.TabPane>
+                <Tabs.TabPane itemKey="knowledge" tab={t('settings.nav.knowledge', null, '知识库')}>
+                    <KnowledgeSection />
                 </Tabs.TabPane>
                 <Tabs.TabPane itemKey="token-usage" tab={t('settings.nav.tokenUsage', null, 'Token 用量')}>
                     <TokenUsageSection />

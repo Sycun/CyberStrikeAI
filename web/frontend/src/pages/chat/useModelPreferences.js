@@ -26,17 +26,34 @@ function useChatPreference(key, fallback) {
     }];
 }
 
+function resolveNativeImageMode(channelConfig, imageDefault) {
+    if (channelConfig?.image_input === 'enabled') return 'enabled';
+    if (channelConfig?.image_input === 'disabled') return 'disabled';
+    if (imageDefault === true) return 'enabled';
+    if (imageDefault === false) return 'disabled';
+    return 'auto';
+}
+
 export function useModelPreferences(canReadConfig) {
     const [storedChannel, setChannel] = useChatPreference('cyberstrike-chat-ai-channel', '');
     const [storedMode, setMode] = useChatPreference('cyberstrike-chat-reasoning-mode', 'default');
     const [storedEffort, setEffort] = useChatPreference('cyberstrike-chat-reasoning-effort', '');
-    const config = useResource(async ({ signal } = {}) => (await api.get('/config', { include_tools: 0 }, { signal }))?.ai, [canReadConfig], { skip: !canReadConfig });
-    const channels = Object.entries(config.data?.channels || {}).sort(([a], [b]) => a.localeCompare(b));
+    const fullConfig = useResource(({ signal } = {}) => api.get('/config', { include_tools: 0 }, { signal }), [canReadConfig], { skip: !canReadConfig });
+    const aiData = fullConfig.data?.ai;
+    const config = { ...fullConfig, data: aiData };
+    const channels = Object.entries(aiData?.channels || {}).sort(([a], [b]) => a.localeCompare(b));
     const normalizedChannel = storedChannel.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const channel = channels.find(([id]) => id === storedChannel)?.[0]
         || channels.find(([id]) => id === normalizedChannel)?.[0] || '';
-    const channelConfig = config.data?.channels?.[channel || config.data?.default_channel];
+    const activeId = channel || aiData?.default_channel || '';
+    const channelConfig = activeId ? aiData?.channels?.[activeId] : fullConfig.data?.openai;
     const overrideBlocked = channelConfig?.reasoning?.allow_client_reasoning === false;
+    const visionModel = String(fullConfig.data?.vision?.model || '').trim();
+    const visionReady = Boolean(fullConfig.data?.vision?.enabled && visionModel);
+    const nativeImageMode = resolveNativeImageMode(
+        channelConfig,
+        fullConfig.data?.image_input_defaults?.[activeId]
+    );
     const mode = REASONING_MODES.includes(storedMode) ? storedMode : 'default';
     const effort = REASONING_EFFORTS.includes(storedEffort) ? storedEffort : '';
     const reasoning = {
@@ -46,6 +63,11 @@ export function useModelPreferences(canReadConfig) {
 
     return {
         channel, channels, setChannel, config, mode, setMode, effort, setEffort, overrideBlocked,
+        vision: {
+            ready: visionReady,
+            model: visionModel,
+            nativeMode: nativeImageMode
+        },
         waitingForChannel: Boolean(canReadConfig && storedChannel && config.loading),
         request: {
             aiChannelId: canReadConfig ? channel || undefined : undefined,

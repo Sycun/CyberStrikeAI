@@ -63,6 +63,12 @@ func NewEmbedder(ctx context.Context, cfg *config.KnowledgeConfig, openAIConfig 
 	}
 
 	baseURL := strings.TrimSpace(cfg.Embedding.BaseURL)
+	if baseURL == "" && openAIConfig != nil {
+		provider := strings.ToLower(strings.TrimSpace(openAIConfig.Provider))
+		if provider != "claude" && provider != "anthropic" {
+			baseURL = strings.TrimSpace(openAIConfig.BaseURL)
+		}
+	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
@@ -93,6 +99,32 @@ func NewEmbedder(ctx context.Context, cfg *config.KnowledgeConfig, openAIConfig 
 		maxRetries:     maxRetries,
 		retryDelay:     retryDelay,
 	}, nil
+}
+
+// ProbeEmbedding 发送一条最小文本向量化请求以验证 Embedding 接口连通性与返回维度。
+func ProbeEmbedding(ctx context.Context, cfg *config.KnowledgeConfig, openAIConfig *config.OpenAIConfig, logger *zap.Logger) (string, int, error) {
+	probeCfg := config.KnowledgeConfig{}
+	if cfg != nil {
+		probeCfg = *cfg
+	}
+	probeCfg.Indexing.MaxRetries = 1
+	probeCfg.Indexing.RateLimitDelayMs = 0
+	probeCfg.Indexing.MaxRPM = 0
+	if probeCfg.Indexing.RequestTimeoutSeconds <= 0 || probeCfg.Indexing.RequestTimeoutSeconds > 30 {
+		probeCfg.Indexing.RequestTimeoutSeconds = 30
+	}
+	embedder, err := NewEmbedder(ctx, &probeCfg, openAIConfig, logger)
+	if err != nil {
+		return "", 0, err
+	}
+	vecs, err := embedder.provider.EmbedStrings(ctx, []string{"CyberStrikeAI knowledge connectivity check"})
+	if err != nil {
+		return embedder.EmbeddingModelName(), 0, err
+	}
+	if len(vecs) == 0 || len(vecs[0]) == 0 {
+		return embedder.EmbeddingModelName(), 0, fmt.Errorf("API 返回了空向量")
+	}
+	return embedder.EmbeddingModelName(), len(vecs[0]), nil
 }
 
 // EmbeddingModelName 返回配置的嵌入模型名（用于 tiktoken 分块与向量行元数据）。

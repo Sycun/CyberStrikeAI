@@ -6,7 +6,8 @@
  *   POST /config/apply 重新加载并重启相关服务
  * 选择 YAML 而不是逐项表单：GET /config 暴露 18 个段落，逐项表单必然漏字段。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Banner, Button, Collapse, Space, Tag, TextArea, Typography } from '@douyinfe/semi-ui';
 import { IconRefresh, IconTick } from '@douyinfe/semi-icons';
 import { api, errorMessage } from '../../../lib/http';
@@ -32,10 +33,11 @@ const WRITABLE_SECTIONS = [
 const EDITOR_HEADER = [
     '系统设置 · 原始配置（由 GET /config 生成）',
     '',
+    '· 视觉模型与知识库设置现可直接在左侧「模型与工具」与「知识库」页签可视化启用。',
     '· 密钥字段显示为 ********：原样保存会沿用已保存的凭据，填写新值即替换。',
     '· 保存 = PUT /config（写入 config.yaml）+ POST /config/apply（重新加载）。',
     '· 只提交文本里有修改的段落，省略的段落沿用服务端配置。',
-    '· storage（清理策略）不在 GET /config 里，请到「存储与更新」分区编辑。',
+    '· storage（清理策略）不在 GET /config 里，请到「存储清理」分区编辑。',
     '· server / auth / log / audit / monitor / database / security / external_mcp / update',
     '  不在本接口的写入范围，保存时会被忽略（这些段落请改 config.yaml 或其他页面）。'
 ].join('\n');
@@ -50,13 +52,15 @@ function normalizeTools(tools) {
     }));
 }
 
-export default function BasicSection() {
+export default function BasicSection({ active = true }) {
     const t = useT();
+    const navigate = useNavigate();
     const { hasPermission } = useAuth();
     const canRead = hasPermission('config:read');
     const canWrite = hasPermission('config:write');
     const loader = useCallback(({ signal } = {}) => api.get('/config', null, { signal }), []);
     const config = useResource(loader, [canRead], { skip: !canRead });
+    const prevActive = useRef(active);
 
     const [text, setText] = useState('');
     const [baseline, setBaseline] = useState('');
@@ -67,7 +71,11 @@ export default function BasicSection() {
 
     useEffect(() => {
         if (!config.data) return;
-        const { context_window_defaults: _defaults, ...configuration } = config.data;
+        const {
+            context_window_defaults: _defaults,
+            image_input_defaults: _imageDefaults,
+            ...configuration
+        } = config.data;
         const next = dumpYaml(configuration, { header: EDITOR_HEADER });
         setText(next);
         setBaseline(next);
@@ -77,6 +85,13 @@ export default function BasicSection() {
     const dirty = baseline !== '' && text !== baseline;
     const busy = phase !== 'idle';
 
+    useEffect(() => {
+        if (active && !prevActive.current && canRead && !dirty && !busy) {
+            config.reload({ silent: true });
+        }
+        prevActive.current = active;
+    }, [active, busy, canRead, config.reload, dirty]);
+
     const summary = useMemo(() => {
         const data = config.data;
         if (!data) return [];
@@ -85,6 +100,8 @@ export default function BasicSection() {
         const defaultId = data.ai?.default_channel;
         const tools = Array.isArray(data.tools) ? data.tools : [];
         const enabledTools = tools.filter(tool => tool.enabled).length;
+        const visionOn = Boolean(data.vision?.enabled && String(data.vision?.model || '').trim());
+        const knowledgeOn = Boolean(data.knowledge?.enabled);
         return [
             { label: t('settings.defaultChannel', null, '默认 AI 通道'), value: defaultId ? modelChannelName(defaultId, channels[defaultId]) : '—' },
             {
@@ -97,12 +114,41 @@ export default function BasicSection() {
             },
             {
                 label: t('settings.visionLabel', null, '视觉模型'),
-                value: data.vision?.enabled ? (data.vision.model || '已启用') : '未启用'
+                value: (
+                    <span className="settings-overview-inline">
+                        <span>{data.vision?.enabled ? (data.vision.model || '已启用') : '未启用'}</span>
+                        <Button
+                            size="small"
+                            theme="borderless"
+                            type="primary"
+                            className="settings-overview-link"
+                            onClick={() => navigate('/settings?section=models&focus=vision')}
+                        >
+                            {visionOn ? '配置' : '去启用'}
+                        </Button>
+                    </span>
+                )
             },
-            { label: t('settings.knowledge.title', null, '知识库'), value: data.knowledge?.enabled ? '已启用' : '未启用' },
+            {
+                label: t('settings.knowledge.title', null, '知识库设置'),
+                value: (
+                    <span className="settings-overview-inline">
+                        <span>{knowledgeOn ? '已启用' : '未启用'}</span>
+                        <Button
+                            size="small"
+                            theme="borderless"
+                            type="primary"
+                            className="settings-overview-link"
+                            onClick={() => navigate('/settings?section=knowledge')}
+                        >
+                            {knowledgeOn ? '配置' : '去启用'}
+                        </Button>
+                    </span>
+                )
+            },
             { label: 'C2', value: data.c2?.enabled ? '已启用' : '未启用' }
         ];
-    }, [config.data, t]);
+    }, [config.data, navigate, t]);
 
     const doReload = useCallback(async () => {
         setSaveError(null);

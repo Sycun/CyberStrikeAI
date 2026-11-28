@@ -214,6 +214,7 @@ function ProbeOutput({ state, defaultWindow, defaultWindowSource, model, onModel
 export default function ProbePanel({ config, canWrite, reloadConfig }) {
     const t = useT();
     const channelLabelId = useId();
+    const imageModeLabelId = useId();
     const channels = config.ai?.channels || NO_CHANNELS;
     const channelIds = Object.keys(channels);
     const defaultId = config.ai?.default_channel;
@@ -604,6 +605,28 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
                         style={{ width: '100%' }}
                     />
                 </label>
+                <div className="settings-field">
+                    <Text id={imageModeLabelId} type="tertiary" size="small">图片输入能力</Text>
+                    <Select
+                        value={imageMode || ''}
+                        onChange={value => update('image_input', value)}
+                        disabled={locked}
+                        aria-labelledby={imageModeLabelId}
+                        optionList={[
+                            {
+                                value: '',
+                                label: imageDefault === true
+                                    ? '自动识别（支持图片）'
+                                    : imageDefault === false
+                                        ? '自动识别（仅文本）'
+                                        : '自动识别'
+                            },
+                            { value: 'enabled', label: '启用（该模型原生支持识图）' },
+                            { value: 'disabled', label: '禁用（仅文本 / 走下方独立视觉模型）' }
+                        ]}
+                        style={{ width: '100%' }}
+                    />
+                </div>
                 {TOKEN_LIMITS.map(([field, key, fallback]) => {
                     const isWindow = field === 'context_window';
                     const showDefault = isWindow && useDefaultWindow;
@@ -692,6 +715,13 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
                 onModelChange={value => update('model', value)}
                 disabled={locked}
             />
+            {!imageEnabled && (
+                <div className="settings-image-fallback-tip">
+                    <Hint>
+                        当前通道未启用原生图片输入。若所选模型本身不支持识图，可开启下方「视觉分析（analyze_image）」由独立视觉模型代为识别截图与验证码；若模型通过中转接口实际支持识图，可将「图片输入能力」切换为「启用」或点击「测试图片」验证。
+                    </Hint>
+                </div>
+            )}
 
             <Collapse className="settings-audit-model">
                 <Collapse.Panel itemKey="audit-model" header={(

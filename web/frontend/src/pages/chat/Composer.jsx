@@ -1,4 +1,5 @@
 import { useId, useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Banner, Button, Popover, Select, Tag, TextArea, Tooltip, Typography } from '@douyinfe/semi-ui';
 import { IconArrowUp, IconChevronDown, IconDesktop, IconFolder, IconPaperclip, IconPlus, IconShield, IconStop, IconUser } from '@douyinfe/semi-icons';
 import { useT } from '../../lib/i18n';
@@ -42,11 +43,16 @@ export default function Composer({
     uploading
 }) {
     const t = useT();
+    const navigate = useNavigate();
     const fileRef = useRef(null);
     const modeLabelId = useId();
     const projectLabelId = useId();
     const roleLabelId = useId();
     const list = Array.isArray(attachments) ? attachments : [];
+    const hasImageAttachment = list.some(item => (
+        String(item?.mimeType || '').startsWith('image/')
+        || /\.(?:png|jpe?g|gif|webp|bmp)$/i.test(String(item?.fileName || ''))
+    ));
     const modeOptions = useMemo(() => [
         {
             value: 'single',
@@ -250,6 +256,22 @@ export default function Composer({
                                     </span>
                                 </Tag>
                             ))}
+                        </div>
+                    )}
+                    {hasImageAttachment && canReadConfig && !model.config.loading && model.vision?.nativeMode !== 'enabled' && (
+                        <div className={`chat-image-vision-tip${model.vision?.ready ? ' is-ready' : ''}`}>
+                            <span>
+                                {model.vision?.ready
+                                    ? `已启用独立视觉模型（${model.vision.model}），若当前模型不支持图片输入将自动通过 analyze_image 识图。`
+                                    : '若当前对话模型不支持识别图片，可开启独立「视觉分析模型」代为识图（或为支持识图的通道启用原生图片输入）。'}
+                            </span>
+                            <button
+                                type="button"
+                                className="chat-vision-entry-link"
+                                onClick={() => navigate('/settings?section=models&focus=vision')}
+                            >
+                                {model.vision?.ready ? '切换视觉模型' : '去开启视觉模型'}
+                            </button>
                         </div>
                     )}
                     <TextArea

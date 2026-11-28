@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Button, Form, Input, Select, Space, Tag, TextArea, Typography } from '@douyinfe/semi-ui';
-import { IconDelete, IconEdit, IconPlus, IconRefresh, IconSearch } from '@douyinfe/semi-icons';
+import { useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Banner, Button, Form, Input, Select, Space, Tag, Typography } from '@douyinfe/semi-ui';
+import { IconDelete, IconEdit, IconPlus, IconRefresh, IconSearch, IconSetting } from '@douyinfe/semi-icons';
 import { api } from '../../lib/http';
 import { useAuth } from '../../lib/auth';
 import { useT } from '../../lib/i18n';
@@ -12,8 +13,10 @@ const { Text } = Typography;
 
 export default function KnowledgeManagementPage() {
     const t = useT();
+    const navigate = useNavigate();
     const { hasPermission } = useAuth();
     const canWrite = hasPermission('knowledge:write');
+    const canReadConfig = hasPermission('config:read');
     const [category, setCategory] = useState('');
     const [keyword, setKeyword] = useState('');
     const [page, setPage] = useState(1);
@@ -34,6 +37,7 @@ export default function KnowledgeManagementPage() {
 
     const items = Array.isArray(list.data?.items) ? list.data.items : [];
     const total = Number(list.data?.total || 0);
+    const knowledgeDisabled = list.data?.enabled === false || indexStatus.data?.enabled === false;
     const categoryOptions = (Array.isArray(categories.data?.categories) ? categories.data.categories : [])
         .map(item => (typeof item === 'string' ? { value: item, label: item } : { value: item.name || item.category, label: item.name || item.category }));
 
@@ -109,14 +113,37 @@ export default function KnowledgeManagementPage() {
                 title={t('knowledge.title', null, '知识管理')}
                 description="知识条目会参与智能体检索；修改后需要重建索引才能生效。"
                 extra={(
-                    <Space>
+                    <Space wrap>
+                        {canReadConfig && (
+                            <Button icon={<IconSetting />} onClick={() => navigate('/settings?section=knowledge')}>
+                                知识库设置
+                            </Button>
+                        )}
                         <Button icon={<IconRefresh />} onClick={refreshAll}>刷新</Button>
-                        {canWrite && <Button onClick={() => buildIndex(false)}>构建索引</Button>}
-                        {canWrite && <Button onClick={() => buildIndex(true)}>全量重建</Button>}
-                        {canWrite && <Button theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditor({ item: null, form: {} })}>新增知识</Button>}
+                        {canWrite && <Button disabled={knowledgeDisabled} onClick={() => buildIndex(false)}>构建索引</Button>}
+                        {canWrite && <Button disabled={knowledgeDisabled} onClick={() => buildIndex(true)}>全量重建</Button>}
+                        {canWrite && <Button theme="solid" type="primary" icon={<IconPlus />} disabled={knowledgeDisabled} onClick={() => setEditor({ item: null, form: {} })}>新增知识</Button>}
                     </Space>
                 )}
             />
+            {knowledgeDisabled && (
+                <Banner
+                    type="warning"
+                    bordered
+                    closeIcon={null}
+                    style={{ marginBottom: 16 }}
+                    description={(
+                        <Space wrap>
+                            <span>{list.data?.message || indexStatus.data?.message || '知识库功能未启用，请先在系统设置中开启知识检索并配置嵌入模型。'}</span>
+                            {canReadConfig && (
+                                <Button size="small" theme="solid" type="primary" onClick={() => navigate('/settings?section=knowledge')}>
+                                    前往启用知识库
+                                </Button>
+                            )}
+                        </Space>
+                    )}
+                />
+            )}
             <StatGrid
                 columns={4}
                 metrics={[

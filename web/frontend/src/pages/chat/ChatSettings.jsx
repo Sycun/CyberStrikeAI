@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Dropdown, RadioGroup, Select, SideSheet, Slider, Spin, TextArea, Typography } from '@douyinfe/semi-ui';
 import { IconBolt, IconChevronRight, IconUndo } from '@douyinfe/semi-icons';
 import { useResource } from '../../components/hooks';
@@ -85,6 +86,7 @@ function SettingSelect({ label, ...props }) {
 
 export function ModelSettings({ model, busy, canReadConfig }) {
     const t = useT();
+    const navigate = useNavigate();
     const channelLabelId = useId();
     const pickerRef = useRef(null);
     const defaultId = model.config.data?.default_channel;
@@ -187,6 +189,24 @@ export function ModelSettings({ model, busy, canReadConfig }) {
                 <Text type="tertiary" size="small" className="chat-reasoning-hint">
                     {t('chat.reasoningOverrideBlocked', null, '此通道使用系统设置中的推理强度。')}
                 </Text>
+            )}
+            {canReadConfig && !model.config.loading && !model.config.error && (
+                <div className="chat-vision-entry">
+                    <Text type="tertiary" size="small" className="chat-vision-entry-status">
+                        {model.vision?.ready
+                            ? `辅助识图：${model.vision.model}`
+                            : model.vision?.nativeMode === 'enabled'
+                                ? '图片识别：通道原生支持'
+                                : '当前模型不支持识图？'}
+                    </Text>
+                    <button
+                        type="button"
+                        className="chat-vision-entry-link"
+                        onClick={() => navigate('/settings?section=models&focus=vision')}
+                    >
+                        {model.vision?.ready ? '配置' : '配置视觉模型'}
+                    </button>
+                </div>
             )}
         </div>
     );

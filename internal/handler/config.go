@@ -963,6 +963,10 @@ func (h *ConfigHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	if req.Vision != nil {
+		if req.Vision.Enabled && strings.TrimSpace(req.Vision.Model) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "启用视觉分析时请填写视觉模型名称"})
+			return
+		}
 		h.config.Vision = *req.Vision
 		h.logger.Info("更新 Vision 配置",
 			zap.Bool("enabled", h.config.Vision.Enabled),
@@ -1919,6 +1923,71 @@ func (h *ConfigHandler) TestVision(c *gin.Context) {
 	})
 }
 
+// TestEmbeddingRequest 测试知识库嵌入模型连接；embedding.api_key/base_url 留空时可传 openai 段作回退。
+type TestEmbeddingRequest struct {
+	ChannelID string                 `json:"channel_id,omitempty"`
+	Embedding config.EmbeddingConfig `json:"embedding"`
+	OpenAI    config.OpenAIConfig    `json:"openai,omitempty"`
+}
+
+// TestEmbedding 测试知识库 Embedding 模型 API 连接。
+func (h *ConfigHandler) TestEmbedding(c *gin.Context) {
+	var req TestEmbeddingRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数: " + err.Error()})
+		return
+	}
+	mainKey, mainErr := h.resolveProbeSecret(req.OpenAI.APIKey, req.ChannelID, req.OpenAI.BaseURL, "openai")
+	if mainErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": mainErr.Error()})
+		return
+	}
+	req.OpenAI.APIKey = mainKey
+
+	embedKey, embedErr := h.resolveProbeSecret(req.Embedding.APIKey, "", req.Embedding.BaseURL, "knowledgeEmbedding")
+	if embedErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": embedErr.Error()})
+		return
+	}
+	req.Embedding.APIKey = embedKey
+
+	effectiveKey := strings.TrimSpace(req.Embedding.APIKey)
+	if effectiveKey == "" {
+		effectiveKey = strings.TrimSpace(req.OpenAI.APIKey)
+	}
+	if effectiveKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "API Key 不能为空（可填写嵌入模型 API Key 或复用默认通道）"})
+		return
+	}
+	if strings.TrimSpace(req.Embedding.Model) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "嵌入模型名称不能为空"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	modelName, dims, err := knowledge.ProbeEmbedding(ctx, &config.KnowledgeConfig{
+		Embedding: req.Embedding,
+	}, &req.OpenAI, h.logger)
+	latency := time.Since(start)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"error":   "连接失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"model":      modelName,
+		"dimensions": dims,
+		"latency_ms": latency.Milliseconds(),
+	})
+}
+
 // ApplyConfig 应用配置（重新加载并重启相关服务）
 func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 	// 先检查是否需要动态初始化知识库（在锁外执行，避免阻塞其他请求）
@@ -2379,38 +2448,40 @@ func updateVisionConfig(doc *yaml.Node, cfg config.VisionConfig) {
 	root := doc.Content[0]
 	visionNode := ensureMap(root, "vision")
 	setBoolInMap(visionNode, "enabled", cfg.Enabled)
-	if strings.TrimSpace(cfg.APIKey) != "" {
-		setStringInMap(visionNode, "api_key", cfg.APIKey)
-	} else {
-		setStringInMap(visionNode, "api_key", "")
-	}
-	if strings.TrimSpace(cfg.BaseURL) != "" {
-		setStringInMap(visionNode, "base_url", cfg.BaseURL)
-	} else {
-		setStringInMap(visionNode, "base_url", "")
-	}
-	setStringInMap(visionNode, "model", cfg.Model)
-	if strings.TrimSpace(cfg.Provider) != "" {
-		setStringInMap(visionNode, "provider", cfg.Provider)
-	}
+	setStringInMap(visionNode, "api_key", strings.TrimSpace(cfg.APIKey))
+	setStringInMap(visionNode, "base_url", strings.TrimSpace(cfg.BaseURL))
+	setStringInMap(visionNode, "model", strings.TrimSpace(cfg.Model))
+	setStringInMap(visionNode, "provider", strings.TrimSpace(cfg.Provider))
 	if cfg.TimeoutSeconds > 0 {
 		setIntInMap(visionNode, "timeout_seconds", cfg.TimeoutSeconds)
+	} else {
+		removeKeyFromMap(visionNode, "timeout_seconds")
 	}
 	if cfg.MaxImageBytes > 0 {
 		setIntInMap(visionNode, "max_image_bytes", int(cfg.MaxImageBytes))
+	} else {
+		removeKeyFromMap(visionNode, "max_image_bytes")
 	}
 	if cfg.MaxDimension > 0 {
 		setIntInMap(visionNode, "max_dimension", cfg.MaxDimension)
+	} else {
+		removeKeyFromMap(visionNode, "max_dimension")
 	}
 	if cfg.JPEGQuality > 0 {
 		setIntInMap(visionNode, "jpeg_quality", cfg.JPEGQuality)
+	} else {
+		removeKeyFromMap(visionNode, "jpeg_quality")
 	}
 	if cfg.MaxPayloadBytes > 0 {
 		setIntInMap(visionNode, "max_payload_bytes", int(cfg.MaxPayloadBytes))
+	} else {
+		removeKeyFromMap(visionNode, "max_payload_bytes")
 	}
 	setIntInMap(visionNode, "skip_preprocess_below_bytes", int(cfg.SkipPreprocessBelowBytes))
 	if strings.TrimSpace(cfg.Detail) != "" {
-		setStringInMap(visionNode, "detail", cfg.Detail)
+		setStringInMap(visionNode, "detail", strings.TrimSpace(cfg.Detail))
+	} else {
+		removeKeyFromMap(visionNode, "detail")
 	}
 }
 
@@ -2564,14 +2635,10 @@ func updateKnowledgeConfig(doc *yaml.Node, cfg config.KnowledgeConfig) {
 
 	// 更新嵌入配置
 	embeddingNode := ensureMap(knowledgeNode, "embedding")
-	setStringInMap(embeddingNode, "provider", cfg.Embedding.Provider)
-	setStringInMap(embeddingNode, "model", cfg.Embedding.Model)
-	if cfg.Embedding.BaseURL != "" {
-		setStringInMap(embeddingNode, "base_url", cfg.Embedding.BaseURL)
-	}
-	if cfg.Embedding.APIKey != "" {
-		setStringInMap(embeddingNode, "api_key", cfg.Embedding.APIKey)
-	}
+	setStringInMap(embeddingNode, "provider", strings.TrimSpace(cfg.Embedding.Provider))
+	setStringInMap(embeddingNode, "model", strings.TrimSpace(cfg.Embedding.Model))
+	setStringInMap(embeddingNode, "base_url", strings.TrimSpace(cfg.Embedding.BaseURL))
+	setStringInMap(embeddingNode, "api_key", strings.TrimSpace(cfg.Embedding.APIKey))
 
 	// 更新检索配置
 	retrievalNode := ensureMap(knowledgeNode, "retrieval")

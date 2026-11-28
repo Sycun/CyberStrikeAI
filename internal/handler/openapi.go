@@ -5086,6 +5086,51 @@ func (h *OpenAPIHandler) GetOpenAPISpec(c *gin.Context) {
 					},
 				},
 			},
+			"/api/config/test-embedding": map[string]interface{}{
+				"post": map[string]interface{}{
+					"tags":        []string{"配置管理"},
+					"summary":     "测试知识库嵌入模型连接",
+					"description": "测试知识库 Embedding 模型 API 是否可用，返回向量维度与延迟。",
+					"operationId": "testEmbedding",
+					"requestBody": map[string]interface{}{
+						"required": true,
+						"content": map[string]interface{}{
+							"application/json": map[string]interface{}{
+								"schema": map[string]interface{}{
+									"type":     "object",
+									"required": []string{"embedding"},
+									"properties": map[string]interface{}{
+										"channel_id": map[string]interface{}{"type": "string"},
+										"embedding":  map[string]interface{}{"type": "object"},
+										"openai":     map[string]interface{}{"type": "object"},
+									},
+								},
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "测试结果",
+							"content": map[string]interface{}{
+								"application/json": map[string]interface{}{
+									"schema": map[string]interface{}{
+										"type": "object",
+										"properties": map[string]interface{}{
+											"success":    map[string]interface{}{"type": "boolean"},
+											"error":      map[string]interface{}{"type": "string"},
+											"model":      map[string]interface{}{"type": "string"},
+											"dimensions": map[string]interface{}{"type": "integer"},
+											"latency_ms": map[string]interface{}{"type": "number"},
+										},
+									},
+								},
+							},
+						},
+						"400": map[string]interface{}{"description": "参数错误"},
+						"401": map[string]interface{}{"description": "未授权"},
+					},
+				},
+			},
 			"/api/config/test-openai": map[string]interface{}{
 				"post": map[string]interface{}{
 					"tags":        []string{"配置管理"},

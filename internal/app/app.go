@@ -1208,6 +1208,7 @@ func setupRoutes(
 		protected.POST("/config/test-typesafe", configHandler.TestTypeSafe)
 		protected.POST("/config/test-audit-model", configHandler.TestAuditModel)
 		protected.POST("/config/test-vision", configHandler.TestVision)
+		protected.POST("/config/test-embedding", configHandler.TestEmbedding)
 		protected.POST("/config/list-models", configHandler.ListModels)
 
 		// 系统更新（保持本安装自身源码最新：查看、检查、应用、进度、回滚、接入、更新源）

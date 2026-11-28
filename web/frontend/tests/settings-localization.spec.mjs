@@ -34,14 +34,16 @@ test.describe('model probe localization', () => {
         await page.goto('/static/app/#/settings?section=models');
         const main = await ready(page);
         const probe = main.locator('.cs-section-card').filter({ has: page.locator('.settings-probe-form') });
+        const vision = main.locator('.settings-vision-panel');
         await expect(probe.getByLabel('API 地址', { exact: true }).first()).toHaveValue('https://example.test/models');
         await expect(probe.getByText('最大输出令牌数', { exact: true })).toBeVisible();
         await probe.getByRole('button', { name: '测试连接', exact: true }).click();
-        await probe.getByRole('button', { name: '测试视觉模型', exact: true }).click();
+        await vision.getByRole('button', { name: '测试视觉模型', exact: true }).click();
         await expect(probe.getByRole('cell', { name: /响应耗时.*961 毫秒/ })).toBeVisible();
-        await expect(probe.getByText('连接成功', { exact: true })).toHaveCount(2);
+        await expect(probe.getByText('连接成功', { exact: true })).toHaveCount(1);
+        await expect(vision.getByText('连接成功', { exact: true })).toHaveCount(1);
         await expect(probe.getByText('961 毫秒', { exact: true })).toBeVisible();
-        await expect(probe.getByText('994 毫秒', { exact: true })).toBeVisible();
+        await expect(vision.getByText('994 毫秒', { exact: true })).toBeVisible();
         await expect(probe.getByText('未检测到上下文窗口，请手动填写', { exact: true })).toBeVisible();
         await expect(probe.getByText(/context_warnings|context_window_unknown|latency_ms/)).toHaveCount(0);
         expect(mockApi.calls('POST', '/api/config/test-openai')[0].body).toMatchObject({
