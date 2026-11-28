@@ -165,7 +165,184 @@ export function PlanApprovalDrawer({ planResponse, channels, visible, onCancel, 
     );
 }
 
-export function ImportGitDrawer({ visible, onCancel, onPlanReady }) {
+export function AddCatalogDrawer({ visible, onCancel, onSaved }) {
+    const t = useT();
+    const [repository, setRepository] = useState('');
+    const [revision, setRevision] = useState('');
+    const [id, setId] = useState('');
+    const [title, setTitle] = useState('');
+    const [summary, setSummary] = useState('');
+    const [manifestText, setManifestText] = useState('');
+    const [inspecting, setInspecting] = useState(false);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (visible) {
+            setRepository('');
+            setRevision('');
+            setId('');
+            setTitle('');
+            setSummary('');
+            setManifestText('');
+        }
+    }, [visible]);
+
+    const inferFromRepo = repoValue => {
+        const cleaned = String(repoValue || '').trim().replace(/\.git$/i, '').replace(/\/+$/, '');
+        const seg = cleaned.split('/').pop() || '';
+        const slug = seg.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+        return { seg, slug };
+    };
+
+    const handleRepoChange = value => {
+        setRepository(value);
+        const { seg, slug } = inferFromRepo(value);
+        if (!id && slug && /^[a-z]/.test(slug)) setId(slug);
+        if (!title && seg) setTitle(seg);
+    };
+
+    const handleProbe = async () => {
+        if (!repository.trim()) return;
+        setInspecting(true);
+        try {
+            const res = await pluginApi.inspectGit(repository, revision);
+            const info = res?.inspection;
+            if (info?.repository) setRepository(info.repository);
+            if (info?.manifest) {
+                const m = info.manifest;
+                if (m.metadata?.id) setId(m.metadata.id);
+                if (m.metadata?.title) setTitle(m.metadata.title);
+                if (m.metadata?.summary) setSummary(m.metadata.summary);
+                setManifestText(JSON.stringify(m, null, 2));
+                toastSuccess(t('pluginHub.catalogProbeWithManifest', null, '已探测到仓库自带 Manifest，保存后支持一键安装'));
+            } else {
+                const { seg, slug } = inferFromRepo(info?.repository || repository);
+                if (!id && slug && /^[a-z]/.test(slug)) setId(slug);
+                if (!title && seg) setTitle(seg);
+                toastSuccess(t('pluginHub.catalogProbeSuccess', null, '仓库只读探测完成，已自动填充基础信息'));
+            }
+        } catch (err) {
+            toastError(pluginErrorText(t, err, t('pluginHub.inspectFailed', null, '探测仓库失败')));
+        } finally {
+            setInspecting(false);
+        }
+    };
+
+    const handleSave = async () => {
+        if (!repository.trim() && !manifestText.trim()) {
+            toastError(t('pluginHub.catalogRepoRequired', null, '请填写 GitHub 仓库地址或提供 Manifest'));
+            return;
+        }
+        setSaving(true);
+        try {
+            const res = await pluginApi.saveCatalog({
+                id: id.trim(),
+                title: title.trim(),
+                repository: repository.trim(),
+                revision: revision.trim(),
+                summary: summary.trim(),
+                manifest: manifestText.trim()
+            });
+            toastSuccess(t('pluginHub.catalogSaved', null, '已保存到能力市场'));
+            onSaved?.(res?.item);
+        } catch (err) {
+            toastError(pluginErrorText(t, err, t('pluginHub.catalogSaveFailed', null, '保存到能力市场失败')));
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <Drawer
+            title={t('pluginHub.addCatalogTitle', null, '新增能力市场插件')}
+            visible={visible}
+            onCancel={onCancel}
+            width={680}
+            footer={
+                <Space>
+                    <Button onClick={onCancel}>{t('common.cancel', null, '取消')}</Button>
+                    <Button theme="solid" type="primary" loading={saving} onClick={handleSave}>
+                        {t('pluginHub.saveToMarket', null, '保存到能力市场')}
+                    </Button>
+                </Space>
+            }
+        >
+            <div className="cs-ph-drawer-stack">
+                <Paragraph type="tertiary" style={{ margin: 0 }}>
+                    {t('pluginHub.addCatalogDesc', null, '将公开 GitHub 仓库收录到本机能力市场。留空 Manifest 将以「支持探测导入」模式展示；提供合法 YAML/JSON Manifest 后将直接支持「一键下载安装」。')}
+                </Paragraph>
+                <Space style={{ width: '100%' }} align="end" wrap>
+                    <div style={{ flex: 2, minWidth: 260 }}>
+                        <Text strong size="small">{t('pluginHub.repositoryURL', null, 'GitHub 仓库地址')}</Text>
+                        <Input
+                            value={repository}
+                            onChange={handleRepoChange}
+                            placeholder="https://github.com/owner/repo"
+                            style={{ marginTop: 4 }}
+                        />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 130 }}>
+                        <Text strong size="small">{t('pluginHub.revisionOptional', null, '分支 / Tag（可选）')}</Text>
+                        <Input
+                            value={revision}
+                            onChange={setRevision}
+                            placeholder="main / v1.0.0"
+                            style={{ marginTop: 4 }}
+                        />
+                    </div>
+                    <Button loading={inspecting} onClick={handleProbe} disabled={!repository.trim()}>
+                        {t('pluginHub.probeAndFill', null, '探测并自动填充')}
+                    </Button>
+                </Space>
+
+                <Space style={{ width: '100%' }} wrap>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                        <Text strong size="small">{t('pluginHub.pluginId', null, '插件标识 ID')}</Text>
+                        <Input
+                            value={id}
+                            onChange={setId}
+                            placeholder="my-security-tool"
+                            style={{ marginTop: 4 }}
+                        />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 220 }}>
+                        <Text strong size="small">{t('pluginHub.pluginTitle', null, '显示名称')}</Text>
+                        <Input
+                            value={title}
+                            onChange={setTitle}
+                            placeholder="My Security Tool"
+                            style={{ marginTop: 4 }}
+                        />
+                    </div>
+                </Space>
+
+                <div>
+                    <Text strong size="small">{t('pluginHub.catalogSummaryLabel', null, '功能简介')}</Text>
+                    <Input
+                        value={summary}
+                        onChange={setSummary}
+                        placeholder={t('pluginHub.catalogSummaryPlaceholder', null, '简述该开源安全工具的用途、架构或特性')}
+                        style={{ marginTop: 4 }}
+                    />
+                </div>
+
+                <div>
+                    <Text strong size="small">{t('pluginHub.catalogManifestOptional', null, '插件 Manifest（可选，支持 YAML 或 JSON）')}</Text>
+                    <TextArea
+                        className="cs-ph-code-editor"
+                        value={manifestText}
+                        onChange={setManifestText}
+                        placeholder={t('pluginHub.catalogManifestPlaceholder', null, '可选：粘贴 csai-plugin.yaml 或 JSON 声明；点击上方「探测并自动填充」可自动抓取仓库根目录的 csai-plugin.yaml')}
+                        autosize={{ minRows: 8, maxRows: 18 }}
+                        style={{ marginTop: 4 }}
+                    />
+                </div>
+            </div>
+        </Drawer>
+    );
+}
+
+export function ImportGitDrawer({ visible, initialEntry, onCancel, onPlanReady, onCatalogSaved }) {
     const t = useT();
     const [repository, setRepository] = useState('');
     const [revision, setRevision] = useState('');
@@ -175,6 +352,16 @@ export function ImportGitDrawer({ visible, onCancel, onPlanReady }) {
     const [driver, setDriver] = useState('auto');
     const [isolation, setIsolation] = useState('standard');
     const [planning, setPlanning] = useState(false);
+    const [savingCatalog, setSavingCatalog] = useState(false);
+
+    useEffect(() => {
+        if (visible && initialEntry?.repository) {
+            setRepository(initialEntry.repository);
+            setRevision(initialEntry.revision || '');
+            setInspected(null);
+            setManifestText('');
+        }
+    }, [visible, initialEntry]);
 
     const handleInspect = async () => {
         if (!repository.trim()) return;
@@ -221,6 +408,24 @@ export function ImportGitDrawer({ visible, onCancel, onPlanReady }) {
         }
     };
 
+    const handleSaveToCatalog = async () => {
+        if (!inspected?.inspection) return;
+        setSavingCatalog(true);
+        try {
+            await pluginApi.saveCatalog({
+                repository: inspected.inspection.repository || repository.trim(),
+                revision: revision.trim(),
+                manifest: manifestText.trim()
+            });
+            toastSuccess(t('pluginHub.catalogSaved', null, '已保存到能力市场'));
+            onCatalogSaved?.();
+        } catch (err) {
+            toastError(pluginErrorText(t, err, t('pluginHub.catalogSaveFailed', null, '保存到能力市场失败')));
+        } finally {
+            setSavingCatalog(false);
+        }
+    };
+
     const info = inspected?.inspection;
 
     return (
@@ -232,6 +437,13 @@ export function ImportGitDrawer({ visible, onCancel, onPlanReady }) {
             footer={
                 <Space>
                     <Button onClick={onCancel}>{t('common.cancel', null, '取消')}</Button>
+                    <Button
+                        loading={savingCatalog}
+                        disabled={!inspected?.inspection || !manifestText.trim()}
+                        onClick={handleSaveToCatalog}
+                    >
+                        {t('pluginHub.saveToMarket', null, '保存到能力市场')}
+                    </Button>
                     <Button
                         theme="solid"
                         type="primary"

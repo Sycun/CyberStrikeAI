@@ -9,6 +9,7 @@ export function newIdempotencyKey(prefix = 'op') {
 
 const ERROR_KEYS = {
     plugin_bearer_required: ['pluginHub.errorBearerRequired', '需要 Bearer 登录凭据才能访问插件平台'],
+    plugin_invalid_request: ['pluginHub.errorInvalidRequest', '请求参数不合法，请检查插件 ID（仅限小写字母、数字和连字符）、标题与仓库地址'],
     plugin_invalid_source: ['pluginHub.errorInvalidSource', '仅支持公开的 GitHub HTTPS 仓库地址及合法分支/Tag/Commit'],
     plugin_ambiguous_git_ref: ['pluginHub.errorAmbiguousRef', '分支与 Tag 同名，请填写完整引用（如 refs/tags/xxx 或 refs/heads/xxx）'],
     plugin_source_not_found: ['pluginHub.errorSourceNotFound', '未找到目标仓库或指定版本'],
@@ -83,6 +84,9 @@ export function driverLabel(t, driver) {
 
 export const pluginApi = {
     listCatalog: () => api.get('/plugins/catalog'),
+    saveCatalog: body => api.post('/plugins/catalog', body),
+    deleteCatalog: id => api.del(`/plugins/catalog/${encodeURIComponent(id)}`),
+    restoreCatalog: () => api.post('/plugins/catalog/restore', {}),
     listInstalls: () => api.get('/plugins/installs'),
     getInstall: id => api.get(`/plugins/installs/${encodeURIComponent(id)}`),
     listLLMChannels: () => api.get('/plugins/llm/channels'),

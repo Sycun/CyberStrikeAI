@@ -16,7 +16,7 @@ import {
 import { formatDateTime } from '../../lib/format';
 import { driverLabel, pluginApi, pluginErrorText, stateColor, stateLabel } from './api';
 import WorkspaceView from './WorkspaceView';
-import { ImportGitDrawer, PlanApprovalDrawer, PluginDetailDrawer, RuntimeProbesDrawer } from './Drawers';
+import { AddCatalogDrawer, ImportGitDrawer, PlanApprovalDrawer, PluginDetailDrawer, RuntimeProbesDrawer } from './Drawers';
 import './page.css';
 
 const { Text, Paragraph } = Typography;
@@ -33,6 +33,9 @@ export default function PluginHubPage() {
 
     const [search, setSearch] = useState('');
     const [importOpen, setImportOpen] = useState(false);
+    const [importInitialEntry, setImportInitialEntry] = useState(null);
+    const [addCatalogOpen, setAddCatalogOpen] = useState(false);
+    const [restoringCatalog, setRestoringCatalog] = useState(false);
     const [probesOpen, setProbesOpen] = useState(false);
     const [planState, setPlanState] = useState(null);
     const [planningCatalogId, setPlanningCatalogId] = useState('');
@@ -47,6 +50,7 @@ export default function PluginHubPage() {
 
     const installs = Array.isArray(installsRes.data?.items) ? installsRes.data.items : [];
     const catalogItems = Array.isArray(catalogRes.data?.items) ? catalogRes.data.items : [];
+    const hiddenBuiltins = Number(catalogRes.data?.hidden_builtins || 0);
     const channels = Array.isArray(channelsRes.data?.channels) ? channelsRes.data.channels : [];
 
     const activeApp = useMemo(
@@ -107,6 +111,7 @@ export default function PluginHubPage() {
 
     const handleCatalogInstall = async entry => {
         if (entry.availability !== 'plan_available') {
+            setImportInitialEntry({ repository: entry.repository, revision: entry.revision || '' });
             setImportOpen(true);
             return;
         }
@@ -122,6 +127,42 @@ export default function PluginHubPage() {
             toastError(pluginErrorText(t, err, t('pluginHub.createPlanFailed', null, '生成安装计划失败')));
         } finally {
             setPlanningCatalogId('');
+        }
+    };
+
+    const confirmDeleteCatalog = entry => {
+        confirmAction({
+            title: t('pluginHub.confirmDeleteCatalogTitle', { name: entry.title || entry.id }, `从能力市场移除「${entry.title || entry.id}」？`),
+            content: (
+                <Text type="tertiary">
+                    {entry.builtin
+                        ? t('pluginHub.confirmHideBuiltinDesc', null, '该条目为内置精选目录项，移除后将在市场中隐藏，可随时通过「恢复默认精选」找回；不会影响已安装的实例。')
+                        : t('pluginHub.confirmDeleteCustomDesc', null, '将从能力市场永久删除该自定义条目，不会影响已安装的插件实例。')}
+                </Text>
+            ),
+            okText: t('common.delete', null, '删除'),
+            onOk: async () => {
+                try {
+                    await pluginApi.deleteCatalog(entry.id);
+                    toastSuccess(t('pluginHub.catalogDeleted', null, '已从能力市场移除'));
+                    catalogRes.reload({ silent: true });
+                } catch (err) {
+                    toastError(pluginErrorText(t, err, t('pluginHub.catalogDeleteFailed', null, '删除市场条目失败')));
+                }
+            }
+        });
+    };
+
+    const handleRestoreBuiltins = async () => {
+        setRestoringCatalog(true);
+        try {
+            await pluginApi.restoreCatalog();
+            toastSuccess(t('pluginHub.catalogRestored', null, '已恢复全部默认精选目录'));
+            catalogRes.reload({ silent: true });
+        } catch (err) {
+            toastError(pluginErrorText(t, err, t('pluginHub.catalogRestoreFailed', null, '恢复默认精选失败')));
+        } finally {
+            setRestoringCatalog(false);
         }
     };
 
@@ -404,8 +445,29 @@ export default function PluginHubPage() {
                     </TabPane>
 
                     <TabPane tab={`${t('pluginHub.marketTitle', null, '能力市场')} (${catalogItems.length})`} itemKey="market">
+                        {canManage && (
+                            <Space style={{ justifyContent: 'space-between', width: '100%', marginTop: 12 }} wrap>
+                                <Text type="tertiary" size="small">
+                                    {t('pluginHub.marketManageHint', null, '支持自由新增开源仓库或删除/隐藏条目；已安装的插件不受市场目录变更影响。')}
+                                </Text>
+                                <Space wrap>
+                                    {hiddenBuiltins > 0 && (
+                                        <Button size="small" icon={<IconRefresh />} loading={restoringCatalog} onClick={handleRestoreBuiltins}>
+                                            {t('pluginHub.restoreBuiltins', { count: hiddenBuiltins }, `恢复默认精选 (${hiddenBuiltins})`)}
+                                        </Button>
+                                    )}
+                                    <Button size="small" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setAddCatalogOpen(true)}>
+                                        {t('pluginHub.addCatalogBtn', null, '新增市场插件')}
+                                    </Button>
+                                </Space>
+                            </Space>
+                        )}
                         <div className="cs-ph-catalog-grid" style={{ marginTop: 14 }}>
-                            {filteredCatalog.map(entry => {
+                            {filteredCatalog.length === 0 ? (
+                                <Text type="tertiary" style={{ padding: '16px 0' }}>
+                                    {t('pluginHub.emptyMarket', null, '当前能力市场暂无匹配条目，可点击「新增市场插件」添加。')}
+                                </Text>
+                            ) : filteredCatalog.map(entry => {
                                 const existing = installs.find(i => i.plugin_id === entry.id);
                                 const oneClick = entry.availability === 'plan_available';
                                 return (
@@ -413,7 +475,12 @@ export default function PluginHubPage() {
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                             <div className="cs-ph-card-head">
                                                 <div>
-                                                    <Text strong size="normal">{entry.title}</Text>
+                                                    <Space spacing={6}>
+                                                        <Text strong size="normal">{entry.title}</Text>
+                                                        {!entry.builtin && (
+                                                            <Tag size="small" color="violet">{t('pluginHub.catalogCustomBadge', null, '自定义')}</Tag>
+                                                        )}
+                                                    </Space>
                                                     <div>
                                                         <Text type="tertiary" size="small" className="cs-ph-mono">{entry.id}</Text>
                                                     </div>
@@ -425,7 +492,7 @@ export default function PluginHubPage() {
                                                 </Tag>
                                             </div>
                                             <Paragraph type="tertiary" size="small" style={{ margin: 0 }}>
-                                                {entry.summary}
+                                                {entry.summary || t('pluginHub.noSummary', null, '暂无简介')}
                                             </Paragraph>
                                             <div className="cs-ph-card-meta">
                                                 <a href={entry.repository} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
@@ -442,6 +509,17 @@ export default function PluginHubPage() {
                                                 <Text type="tertiary" size="small">{t('pluginHub.externalRepoHint', null, '代码保留在原作者仓库')}</Text>
                                             )}
                                             <Space spacing={6}>
+                                                {canManage && (
+                                                    <Tooltip content={entry.builtin ? t('pluginHub.hideBuiltinTooltip', null, '从市场隐藏') : t('common.delete', null, '删除')}>
+                                                        <Button
+                                                            size="small"
+                                                            theme="borderless"
+                                                            type="danger"
+                                                            icon={<IconDelete />}
+                                                            onClick={() => confirmDeleteCatalog(entry)}
+                                                        />
+                                                    </Tooltip>
+                                                )}
                                                 {existing && canUse && existing.observed_state === 'healthy' && (
                                                     <Button size="small" theme="solid" type="primary" onClick={() => openApp(existing)}>
                                                         {t('pluginHub.openWorkspace', null, '打开应用')}
@@ -471,11 +549,26 @@ export default function PluginHubPage() {
                 </Tabs>
             </SectionCard>
 
+            <AddCatalogDrawer
+                visible={addCatalogOpen}
+                onCancel={() => setAddCatalogOpen(false)}
+                onSaved={() => {
+                    setAddCatalogOpen(false);
+                    catalogRes.reload({ silent: true });
+                }}
+            />
+
             <ImportGitDrawer
                 visible={importOpen}
-                onCancel={() => setImportOpen(false)}
+                initialEntry={importInitialEntry}
+                onCancel={() => {
+                    setImportOpen(false);
+                    setImportInitialEntry(null);
+                }}
+                onCatalogSaved={() => catalogRes.reload({ silent: true })}
                 onPlanReady={res => {
                     setImportOpen(false);
+                    setImportInitialEntry(null);
                     setPlanState(res);
                 }}
             />

@@ -222,7 +222,11 @@ func pluginPermission(method, path string) string {
 		switch path {
 		case "/plugins/installs/:id/embed-sessions":
 			return "plugins:use"
-		case "/plugins/imports/inspect", "/plugins/install-plans", "/plugins/installs", "/plugins/installs/:id/operations":
+		case "/plugins/catalog", "/plugins/catalog/restore", "/plugins/imports/inspect", "/plugins/install-plans", "/plugins/installs", "/plugins/installs/:id/operations":
+			return "plugins:manage"
+		}
+	case http.MethodDelete:
+		if path == "/plugins/catalog/:id" {
 			return "plugins:manage"
 		}
 	case http.MethodPatch:

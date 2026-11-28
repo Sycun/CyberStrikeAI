@@ -16,7 +16,6 @@ import (
 	"cyberstrike-ai/internal/audit"
 	"cyberstrike-ai/internal/database"
 	"cyberstrike-ai/internal/pluginhub"
-	"cyberstrike-ai/internal/pluginhub/catalog"
 	"cyberstrike-ai/internal/pluginhub/llmgateway"
 	"cyberstrike-ai/internal/pluginhub/manifest"
 	"cyberstrike-ai/internal/pluginhub/source"
@@ -54,6 +53,9 @@ func (h *PluginHandler) Register(group *gin.RouterGroup) {
 		c.Next()
 	})
 	group.GET("/catalog", h.listCatalog)
+	group.POST("/catalog", h.saveCatalog)
+	group.DELETE("/catalog/:id", h.deleteCatalog)
+	group.POST("/catalog/restore", h.restoreCatalog)
 	group.GET("/schemas/:name", h.schema)
 	group.GET("/llm/channels", h.listLLMChannels)
 	group.GET("/installs", h.listInstalls)
@@ -111,7 +113,54 @@ func (h *PluginHandler) patchLLM(c *gin.Context) {
 }
 
 func (h *PluginHandler) listCatalog(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"items": catalog.Entries()})
+	items, hiddenBuiltins, err := h.hub.ListCatalog(c.Request.Context())
+	if err != nil {
+		pluginError(c, http.StatusInternalServerError, "plugin_storage_error")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "hidden_builtins": hiddenBuiltins})
+}
+
+func (h *PluginHandler) saveCatalog(c *gin.Context) {
+	var input pluginhub.CatalogInput
+	if !bindPluginRequest(c, &input) {
+		return
+	}
+	entry, err := h.hub.SaveCatalogEntry(c.Request.Context(), input)
+	if err != nil {
+		pluginLifecycleError(c, err)
+		return
+	}
+	if h.audit != nil {
+		h.audit.RecordOK(c, "plugins", "catalog_save", "Plugin catalog entry saved", "plugin_catalog", entry.ID,
+			map[string]interface{}{"repository": entry.Repository, "availability": entry.Availability})
+	}
+	c.JSON(http.StatusCreated, gin.H{"item": entry})
+}
+
+func (h *PluginHandler) deleteCatalog(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.hub.DeleteCatalogEntry(c.Request.Context(), id); err != nil {
+		pluginLifecycleError(c, err)
+		return
+	}
+	if h.audit != nil {
+		h.audit.RecordOK(c, "plugins", "catalog_delete", "Plugin catalog entry removed", "plugin_catalog", id, nil)
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": id})
+}
+
+func (h *PluginHandler) restoreCatalog(c *gin.Context) {
+	restored, err := h.hub.RestoreBuiltinCatalog(c.Request.Context())
+	if err != nil {
+		pluginError(c, http.StatusInternalServerError, "plugin_storage_error")
+		return
+	}
+	if h.audit != nil {
+		h.audit.RecordOK(c, "plugins", "catalog_restore", "Built-in plugin catalog entries restored", "plugin_catalog", "builtin",
+			map[string]interface{}{"restored": restored})
+	}
+	c.JSON(http.StatusOK, gin.H{"restored": restored})
 }
 
 func (h *PluginHandler) schema(c *gin.Context) {

@@ -13,7 +13,6 @@ import (
 
 	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/database"
-	"cyberstrike-ai/internal/pluginhub/catalog"
 	"cyberstrike-ai/internal/pluginhub/manifest"
 	"cyberstrike-ai/internal/pluginhub/source"
 
@@ -73,7 +72,7 @@ func (m *Manager) CreatePlan(ctx context.Context, request PlanRequest) (PlanResu
 		if len(request.Manifest) != 0 {
 			return PlanResult{}, ErrInvalidRequest
 		}
-		data, ok := catalog.Manifest(request.CatalogID)
+		data, ok := m.CatalogManifest(ctx, request.CatalogID)
 		if !ok {
 			return PlanResult{}, ErrCatalogManifest
 		}

@@ -123,6 +123,30 @@ func TestPluginManagementPreviewAndRBAC(t *testing.T) {
 	request(http.MethodGet, "/catalog", "cookie:"+admin, "", http.StatusUnauthorized)
 	request(http.MethodGet, "/catalog", reader, "", http.StatusOK)
 	request(http.MethodGet, "/catalog", userWithoutPlugins, "", http.StatusForbidden)
+	// Catalog CRUD & RBAC
+	customBody := `{"id":"custom-tool","title":"Custom Tool","repository":"https://github.com/example/custom-tool","revision":"main","summary":"Custom market entry"}`
+	request(http.MethodPost, "/catalog", reader, customBody, http.StatusForbidden)
+	request(http.MethodPost, "/catalog", scopedManager, customBody, http.StatusForbidden)
+	request(http.MethodPost, "/catalog", admin, customBody, http.StatusCreated)
+	catalogRaw := request(http.MethodGet, "/catalog", reader, "", http.StatusOK)
+	if !strings.Contains(string(catalogRaw), `"custom-tool"`) {
+		t.Fatalf("expected custom-tool in catalog: %s", catalogRaw)
+	}
+	request(http.MethodDelete, "/catalog/custom-tool", reader, "", http.StatusForbidden)
+	request(http.MethodDelete, "/catalog/custom-tool", admin, "", http.StatusOK)
+	request(http.MethodDelete, "/catalog/custom-tool", admin, "", http.StatusNotFound)
+	// Hiding and restoring a built-in catalog entry
+	request(http.MethodDelete, "/catalog/artex", admin, "", http.StatusOK)
+	hiddenRaw := request(http.MethodGet, "/catalog", reader, "", http.StatusOK)
+	if strings.Contains(string(hiddenRaw), `"id":"artex"`) || !strings.Contains(string(hiddenRaw), `"hidden_builtins":1`) {
+		t.Fatalf("expected artex hidden with hidden_builtins=1: %s", hiddenRaw)
+	}
+	request(http.MethodPost, "/catalog/restore", reader, `{}`, http.StatusForbidden)
+	request(http.MethodPost, "/catalog/restore", admin, `{}`, http.StatusOK)
+	restoredRaw := request(http.MethodGet, "/catalog", reader, "", http.StatusOK)
+	if !strings.Contains(string(restoredRaw), `"id":"artex"`) || !strings.Contains(string(restoredRaw), `"hidden_builtins":0`) {
+		t.Fatalf("expected artex restored: %s", restoredRaw)
+	}
 	request(http.MethodGet, "/schemas/manifest-v1", reader, "", http.StatusOK)
 	body := `{"repository":"https://github.com/example/review","revision":"v1.0.0"}`
 	request(http.MethodPost, "/imports/inspect", reader, body, http.StatusForbidden)

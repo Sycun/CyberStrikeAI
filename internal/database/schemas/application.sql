@@ -1227,6 +1227,18 @@ CREATE TABLE IF NOT EXISTS plugin_operations (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_plugin_operations_active ON plugin_operations(install_id)
     WHERE status IN ('queued', 'running');
 
+CREATE TABLE IF NOT EXISTS plugin_catalog_entries (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    repository TEXT NOT NULL,
+    revision TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    manifest_json TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'custom' CHECK(source IN ('custom','builtin_hidden')),
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS plugin_runtime_leases (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     owner TEXT NOT NULL,
