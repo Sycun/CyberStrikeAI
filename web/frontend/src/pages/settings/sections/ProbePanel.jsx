@@ -93,10 +93,13 @@ function summarizeTest(t, payload) {
     ];
 }
 
-function summarizeContext(t, payload, fallbackWindow) {
+function summarizeContext(t, payload, fallbackWindow, fallbackSource) {
     const source = payload.context_source;
     const sourceKey = source?.replace(/^omlx_models_(?=max_model_len|context_length|max_context_length|context_window)/, 'openai_models_');
     const backend = payload.context_backend;
+    const fallbackLabel = fallbackSource === 'configured'
+        ? t('settingsProbe.windowConfigured', null, '手动配置')
+        : t('settingsProbe.windowDefault', null, '默认值');
     return [
         ...summarizeTest(t, payload),
         { label: t('settingsProbe.window', null, '上下文窗口'), value: payload.context_window || fallbackWindow || '—' },
@@ -108,14 +111,14 @@ function summarizeContext(t, payload, fallbackWindow) {
         },
         {
             label: t('settingsProbe.source', null, '窗口信息来源'),
-            value: fallbackWindow ? t('settingsProbe.windowDefault', null, '默认值') : (source ? t('settingsProbe.sources.' + sourceKey, null, source) : '—')
+            value: fallbackWindow ? fallbackLabel : (source ? t('settingsProbe.sources.' + sourceKey, null, source) : '—')
         },
         { label: t('settingsProbe.profile', null, '上下文配置'), value: profileLabel(t, payload.context_profile) },
         { label: t('settingsProbe.effectiveBudget', null, '实际可用上下文令牌数'), value: payload.effective_max_total_tokens ?? '—' }
     ];
 }
 
-function ProbeOutput({ state, defaultWindow, model, onModelChange, disabled }) {
+function ProbeOutput({ state, defaultWindow, defaultWindowSource, model, onModelChange, disabled }) {
     const t = useT();
     const pickerLabelId = useId();
     const { key, payload, error } = state;
@@ -182,7 +185,7 @@ function ProbeOutput({ state, defaultWindow, model, onModelChange, disabled }) {
         .filter(code => !fallbackWindow || code !== 'context_window_unknown');
     return (
         <div className="settings-probe-result">
-            <KeyValueList columns={3} items={summarizeContext(t, payload, fallbackWindow)} />
+            <KeyValueList columns={3} items={summarizeContext(t, payload, fallbackWindow, defaultWindowSource)} />
             {warnings.length > 0 && (
                 <Banner
                     type="warning"
@@ -230,8 +233,14 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
     const defaultWindow = sameModelEndpoint && form.context_profile === baseline.context_profile
         ? config.context_window_defaults?.[legacy ? '' : channelId]
         : listedModel?.context_window;
+    const isLocalProfile = ['local', 'local_auto'].includes(String(form.context_profile || '').trim().toLowerCase());
     const needsDefaultWindow = Boolean(form.model.trim()) && !form.context_window;
     const useDefaultWindow = needsDefaultWindow && !Object.hasOwn(draft, 'context_window');
+    const explicitWindow = numberValue(form.context_window);
+    const probeFallbackWindow = explicitWindow > 0
+        ? explicitWindow
+        : (useDefaultWindow ? (isLocalProfile ? (defaultWindow || 0) : (defaultWindow || DEFAULT_FORM_CONTEXT_WINDOW)) : 0);
+    const probeFallbackSource = explicitWindow > 0 ? 'configured' : (probeFallbackWindow > 0 ? 'default' : '');
     const matchesServerDefault = defaultWindow === DEFAULT_FORM_CONTEXT_WINDOW;
     const dirty = Object.keys(draft).length > 0;
     const [busy, setBusy] = useState('');
@@ -381,6 +390,7 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
         api_key: form.api_key,
         model: form.model,
         headers: form.headers,
+        context_window: probeFallbackWindow || undefined,
         max_total_tokens: numberValue(form.max_total_tokens),
         max_completion_tokens: numberValue(form.max_completion_tokens),
         context_profile: form.context_profile
@@ -676,7 +686,8 @@ export default function ProbePanel({ config, canWrite, reloadConfig }) {
             </Space>
             <ProbeOutput
                 state={state}
-                defaultWindow={useDefaultWindow ? defaultWindow : 0}
+                defaultWindow={probeFallbackWindow}
+                defaultWindowSource={probeFallbackSource}
                 model={form.model}
                 onModelChange={value => update('model', value)}
                 disabled={locked}

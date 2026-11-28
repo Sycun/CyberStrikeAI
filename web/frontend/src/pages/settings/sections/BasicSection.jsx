@@ -55,7 +55,7 @@ export default function BasicSection() {
     const { hasPermission } = useAuth();
     const canRead = hasPermission('config:read');
     const canWrite = hasPermission('config:write');
-    const loader = useCallback(() => api.get('/config'), []);
+    const loader = useCallback(({ signal } = {}) => api.get('/config', null, { signal }), []);
     const config = useResource(loader, [canRead], { skip: !canRead });
 
     const [text, setText] = useState('');

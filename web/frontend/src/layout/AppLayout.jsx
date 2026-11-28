@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
     Avatar, Badge, Breadcrumb, Button, Dropdown, Form, Nav, Popover, SideSheet, Space, Typography
@@ -101,20 +101,44 @@ function NotificationsBell({ navigate }) {
     const [pending, setPending] = useState(0);
     const [visible, setVisible] = useState(false);
     const [marking, setMarking] = useState(false);
+    const loadAbortRef = useRef(null);
+    const loadInFlightRef = useRef(false);
 
-    const load = async () => {
+    const load = async ({ force = false } = {}) => {
+        if (!force && loadInFlightRef.current) return;
+        loadAbortRef.current?.abort();
+        const controller = new AbortController();
+        loadAbortRef.current = controller;
+        loadInFlightRef.current = true;
         try {
-            const summary = await api.get('/notifications/summary', { limit: 80, lang: document.documentElement.lang || 'zh-CN' });
+            const summary = await api.get(
+                '/notifications/summary',
+                { limit: 80, lang: document.documentElement.lang || 'zh-CN' },
+                { signal: controller.signal }
+            );
+            if (controller.signal.aborted) return;
             const list = Array.isArray(summary?.items) ? summary.items : [];
             setItems(list);
             setPending(summary?.unreadCount ?? list.filter(item => !item.read).length);
         } catch (error) {
             /* 通知属于辅助信息，失败不打扰 */
+        } finally {
+            if (loadAbortRef.current === controller) {
+                loadAbortRef.current = null;
+                loadInFlightRef.current = false;
+            }
         }
     };
 
-    useEffect(() => { load(); }, []);
-    useInterval(load, 60000);
+    useEffect(() => {
+        load({ force: true });
+        return () => {
+            loadAbortRef.current?.abort();
+            loadAbortRef.current = null;
+            loadInFlightRef.current = false;
+        };
+    }, []);
+    useInterval(() => load(), 60000);
 
     const markSeen = async () => {
         const ids = items.filter(item => !item.read).map(item => item.id).filter(Boolean);
@@ -122,7 +146,7 @@ function NotificationsBell({ navigate }) {
         setMarking(true);
         try {
             await api.post('/notifications/read', { eventIds: ids });
-            await load();
+            await load({ force: true });
         } catch (error) {
             toastError(error);
         } finally {

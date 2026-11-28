@@ -85,3 +85,29 @@ func TestGzipMiddlewareCompressesJSONAndSkipsSSE(t *testing.T) {
 		t.Fatalf("204 Content-Encoding = %q, want empty", got)
 	}
 }
+
+func TestStaticCacheControlMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	g := r.Group("/static", staticCacheControlMiddleware())
+	g.GET("/*filepath", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"/static/app/assets/chat-abc123.js", "public, max-age=31536000, immutable"},
+		{"/static/i18n/zh-CN.json", "public, max-age=3600"},
+		{"/static/app/index.html", "no-cache"},
+		{"/static/logo.png", ""},
+	}
+	for _, tc := range cases {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if got := w.Header().Get("Cache-Control"); got != tc.want {
+			t.Fatalf("%s Cache-Control = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}

@@ -299,61 +299,51 @@ type ToolConfigInfo struct {
 
 // GetConfig 获取当前配置
 func (h *ConfigHandler) GetConfig(c *gin.Context) {
+	includeToolsStr := strings.ToLower(strings.TrimSpace(c.DefaultQuery("include_tools", "1")))
+	includeTools := includeToolsStr != "0" && includeToolsStr != "false" && includeToolsStr != "no"
+
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	// 获取工具列表（包含内部和外部工具）
-	// 首先从配置文件获取工具
-	configToolMap := make(map[string]bool)
-	tools := make([]ToolConfigInfo, 0, len(h.config.Security.Tools))
-
-	for _, tool := range h.config.Security.Tools {
-		configToolMap[tool.Name] = true
-		info := ToolConfigInfo{
-			Name:        tool.Name,
-			Description: h.pickToolDescription(tool.ShortDescription, tool.Description),
-			Enabled:     tool.Enabled,
-			IsExternal:  false,
-		}
-		tools = append(tools, info)
-	}
-
-	// 从MCP服务器获取所有已注册的工具（包括直接注册的工具，如知识检索工具）
-	if h.mcpServer != nil {
-		mcpTools := h.mcpServer.GetAllTools()
-		for _, mcpTool := range mcpTools {
-			if configToolMap[mcpTool.Name] {
-				continue
-			}
-			description := h.pickToolDescription(mcpTool.ShortDescription, mcpTool.Description)
+	// 仅在读锁内快速拷贝内存配置快照，避免在持有锁期间执行外部 MCP 网络探测或扫盘。
+	var tools []ToolConfigInfo
+	var mcpServer *mcp.Server
+	var externalMCPMgr *mcp.ExternalMCPManager
+	pickDesc := h.pickToolDescription
+	if includeTools {
+		configToolMap := make(map[string]bool, len(h.config.Security.Tools))
+		tools = make([]ToolConfigInfo, 0, len(h.config.Security.Tools))
+		for _, tool := range h.config.Security.Tools {
+			configToolMap[tool.Name] = true
 			tools = append(tools, ToolConfigInfo{
-				Name:        mcpTool.Name,
-				Description: description,
-				Enabled:     true,
+				Name:        tool.Name,
+				Description: pickDesc(tool.ShortDescription, tool.Description),
+				Enabled:     tool.Enabled,
 				IsExternal:  false,
 			})
 		}
-	}
-
-	// 获取外部MCP工具（走缓存，持锁期间通常不阻塞）
-	if h.externalMCPMgr != nil {
-		ctx := context.Background()
-		externalTools := h.getExternalMCPTools(ctx)
-		for _, toolInfo := range externalTools {
-			tools = append(tools, toolInfo)
+		mcpServer = h.mcpServer
+		externalMCPMgr = h.externalMCPMgr
+		if mcpServer != nil {
+			for _, mcpTool := range mcpServer.GetAllTools() {
+				if configToolMap[mcpTool.Name] {
+					continue
+				}
+				tools = append(tools, ToolConfigInfo{
+					Name:        mcpTool.Name,
+					Description: pickDesc(mcpTool.ShortDescription, mcpTool.Description),
+					Enabled:     true,
+					IsExternal:  false,
+				})
+			}
 		}
 	}
 
-	subAgentCount := len(h.config.MultiAgent.SubAgents)
+	yamlSubAgents := append(h.config.MultiAgent.SubAgents[:0:0], h.config.MultiAgent.SubAgents...)
 	agentsDir := strings.TrimSpace(h.config.AgentsDir)
 	if agentsDir == "" {
 		agentsDir = "agents"
 	}
 	if !filepath.IsAbs(agentsDir) {
 		agentsDir = filepath.Join(filepath.Dir(h.configPath), agentsDir)
-	}
-	if load, err := agents.LoadMarkdownAgentsDir(agentsDir); err == nil {
-		subAgentCount = len(agents.MergeYAMLAndMarkdown(h.config.MultiAgent.SubAgents, load.SubAgents))
 	}
 	effectiveRuntime := config.EffectiveRuntimeForChannel(h.config.MultiAgent.Runtime, h.config.OpenAI)
 	builtinAlwaysVisible := builtin.GetAllBuiltinTools()
@@ -364,7 +354,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		Enabled:                      h.config.MultiAgent.Enabled,
 		RobotDefaultAgentMode:        config.NormalizeRobotAgentMode(h.config.MultiAgent),
 		BatchUseMultiAgent:           h.config.MultiAgent.BatchUseMultiAgent,
-		SubAgentCount:                subAgentCount,
+		SubAgentCount:                len(yamlSubAgents),
 		Orchestration:                config.NormalizeMultiAgentOrchestration(h.config.MultiAgent.Orchestration),
 		PlanExecuteLoopMaxIterations: h.config.MultiAgent.PlanExecuteLoopMaxIterations,
 		ModelRetryMaxRetries:         h.config.MultiAgent.Runtime.ModelRetryMaxRetries,
@@ -401,7 +391,7 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		}
 	}
 
-	response, err := maskedConfigResponse(GetConfigResponse{
+	respModel := GetConfigResponse{
 		Proxy:        h.config.Proxy,
 		AgentRuntime: h.config.AgentRuntime,
 		AI:           h.config.AI,
@@ -422,7 +412,21 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 
 		ContextWindowDefaults: windowDefaults,
 		ImageInputDefaults:    imageDefaults,
-	})
+	}
+	h.mu.RUnlock()
+
+	// 锁外执行外部 MCP 工具读取（绑定请求 Context，客户端切页断开立即中止）与子代理目录扫描。
+	if includeTools && externalMCPMgr != nil {
+		externalTools := h.getExternalMCPToolsWithManager(c.Request.Context(), externalMCPMgr, pickDesc)
+		if len(externalTools) > 0 {
+			respModel.Tools = append(respModel.Tools, externalTools...)
+		}
+	}
+	if load, err := agents.LoadMarkdownAgentsDir(agentsDir); err == nil {
+		respModel.MultiAgent.SubAgentCount = len(agents.MergeYAMLAndMarkdown(yamlSubAgents, load.SubAgents))
+	}
+
+	response, err := maskedConfigResponse(respModel)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置序列化失败"})
 		return
@@ -1369,6 +1373,7 @@ type TestOpenAIRequest struct {
 	APIKey              string            `json:"api_key"`
 	Model               string            `json:"model"`
 	Headers             map[string]string `json:"headers,omitempty"`
+	ContextWindow       int               `json:"context_window,omitempty"`
 	MaxTotalTokens      int               `json:"max_total_tokens,omitempty"`
 	MaxCompletionTokens int               `json:"max_completion_tokens,omitempty"`
 	ContextProfile      string            `json:"context_profile,omitempty"`
@@ -1392,6 +1397,10 @@ func probeModelContext(ctx context.Context, provider, baseURL, apiKey, model str
 }
 
 func addModelContextToResponse(resp gin.H, info modelmeta.ContextInfo, maxTotalTokens, maxCompletionTokens int, contextProfile string) {
+	addModelContextToResponseWithConfigured(resp, info, 0, maxTotalTokens, maxCompletionTokens, contextProfile)
+}
+
+func addModelContextToResponseWithConfigured(resp gin.H, info modelmeta.ContextInfo, configuredWindow, maxTotalTokens, maxCompletionTokens int, contextProfile string) {
 	if info.Backend != "" {
 		resp["context_backend"] = info.Backend
 	}
@@ -1419,8 +1428,15 @@ func addModelContextToResponse(resp gin.H, info modelmeta.ContextInfo, maxTotalT
 		}
 	}
 	resp["context_profile"] = profile
+	isLocal := profile == "local" || profile == "local_auto"
+	effectiveWindow := info.ContextWindow
+	usedFallbackWindow := false
+	if effectiveWindow <= 0 && !info.RuntimeUnknown && !isLocal && configuredWindow > 0 {
+		effectiveWindow = configuredWindow
+		usedFallbackWindow = true
+	}
 	oa := config.OpenAIConfig{
-		ContextWindow:       info.ContextWindow,
+		ContextWindow:       effectiveWindow,
 		ContextProfile:      profile,
 		MaxTotalTokens:      maxTotalTokens,
 		MaxCompletionTokens: maxCompletionTokens,
@@ -1428,11 +1444,17 @@ func addModelContextToResponse(resp gin.H, info modelmeta.ContextInfo, maxTotalT
 	if profile == "local_auto" && info.RuntimeUnknown {
 		oa.ContextWindow = 0
 	}
-	if info.ContextWindow > 0 || profile != "" {
+	if effectiveWindow > 0 || profile != "" {
 		resp["effective_max_total_tokens"] = oa.EffectiveMaxTotalTokens()
 	}
-	warnings := append([]string(nil), info.Warnings...)
-	if info.ContextWindow > 0 && maxTotalTokens > info.ContextWindow {
+	warnings := make([]string, 0, len(info.Warnings)+2)
+	for _, w := range info.Warnings {
+		if usedFallbackWindow && w == modelmeta.WarningContextUnknown {
+			continue
+		}
+		warnings = append(warnings, w)
+	}
+	if effectiveWindow > 0 && maxTotalTokens > effectiveWindow {
 		warnings = append(warnings, modelmeta.WarningBudgetExceedsWindow)
 	}
 	warnings = append(warnings, oa.ContextBudgetWarnings()...)
@@ -1494,7 +1516,7 @@ func (h *ConfigHandler) DetectContext(c *gin.Context) {
 	}
 	info := probeModelContext(c.Request.Context(), req.Provider, baseURL, req.APIKey, req.Model, resolvedHeaders)
 	resp := gin.H{"success": true, "model": req.Model}
-	addModelContextToResponse(resp, info, req.MaxTotalTokens, req.MaxCompletionTokens, req.ContextProfile)
+	addModelContextToResponseWithConfigured(resp, info, req.ContextWindow, req.MaxTotalTokens, req.MaxCompletionTokens, req.ContextProfile)
 	c.JSON(http.StatusOK, resp)
 }
 
@@ -1545,7 +1567,7 @@ func (h *ConfigHandler) testOpenAI(c *gin.Context, req TestOpenAIRequest) {
 	// Identify local servers before the completion so the first connection
 	// test already uses the output-limit field supported by that backend.
 	metadata := gin.H{}
-	addModelContextToResponse(metadata, probeModelContext(c.Request.Context(), req.Provider, baseURL, req.APIKey, req.Model, resolvedHeaders), req.MaxTotalTokens, req.MaxCompletionTokens, req.ContextProfile)
+	addModelContextToResponseWithConfigured(metadata, probeModelContext(c.Request.Context(), req.Provider, baseURL, req.APIKey, req.Model, resolvedHeaders), req.ContextWindow, req.MaxTotalTokens, req.MaxCompletionTokens, req.ContextProfile)
 	detectedProfile, _ := metadata["context_profile"].(string)
 	maxTokensField := (config.OpenAIConfig{ContextProfile: detectedProfile}).OutputLimitField()
 	payload := map[string]interface{}{

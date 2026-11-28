@@ -13,7 +13,7 @@ export default function ModelsSection() {
     const t = useT();
     const { hasPermission } = useAuth();
     const canRead = hasPermission('config:read');
-    const loader = useCallback(() => api.get('/config'), []);
+    const loader = useCallback(({ signal } = {}) => api.get('/config', { include_tools: 0 }, { signal }), []);
     const config = useResource(loader, [canRead], { skip: !canRead });
 
     if (!canRead) {

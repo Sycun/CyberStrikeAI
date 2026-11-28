@@ -222,3 +222,64 @@ func TestContextProbeDoesNotRedirectCredentials(t *testing.T) {
 	defer source.Close()
 	probeModelContext(context.Background(), "openai", source.URL+"/v1", "test-key", "test-model", map[string]string{"X-Gateway-Key": "test-gateway"})
 }
+
+func TestGetConfigIncludeToolsZeroSkipsToolAssembly(t *testing.T) {
+	cfg := &config.Config{
+		Security: config.SecurityConfig{
+			Tools: []config.ToolConfig{
+				{Name: "nmap", Description: "port scanner", Enabled: true},
+				{Name: "sqlmap", Description: "sqli scanner", Enabled: true},
+			},
+		},
+		AI: config.AIConfig{
+			DefaultChannel: "primary",
+			Channels: map[string]config.AIChannelConfig{
+				"primary": {BaseURL: "https://example.test/v1", Model: "gpt-test"},
+			},
+		},
+	}
+	h := &ConfigHandler{config: cfg, logger: zap.NewNop()}
+	router := gin.New()
+	router.GET("/config", h.GetConfig)
+
+	res := httptest.NewRecorder()
+	router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/config?include_tools=0", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("GET /config?include_tools=0: %d %s", res.Code, res.Body.String())
+	}
+	var result GetConfigResponse
+	if err := json.Unmarshal(res.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Tools) != 0 {
+		t.Fatalf("expected 0 tools when include_tools=0, got %d", len(result.Tools))
+	}
+	if result.AI.DefaultChannel != "primary" {
+		t.Fatalf("default channel = %q, want primary", result.AI.DefaultChannel)
+	}
+}
+
+func TestAddModelContextToResponseWithConfiguredWindowSuppressesUnknownWarning(t *testing.T) {
+	t.Parallel()
+	resp := gin.H{}
+	addModelContextToResponseWithConfigured(
+		resp,
+		modelmeta.ContextInfo{
+			Backend:  modelmeta.BackendOpenAICompatible,
+			Warnings: []string{modelmeta.WarningContextUnknown},
+		},
+		1048576,
+		0,
+		0,
+		"",
+	)
+	if _, hasWindow := resp["context_window"]; hasWindow {
+		t.Fatalf("fallback configured window should not masquerade as upstream detected context_window: %#v", resp)
+	}
+	if got := resp["effective_max_total_tokens"]; got != config.DefaultMaxTotalTokens {
+		t.Fatalf("effective_max_total_tokens = %#v, want %d", got, config.DefaultMaxTotalTokens)
+	}
+	if warnings, ok := resp["context_warnings"].([]string); ok && containsWarning(warnings, modelmeta.WarningContextUnknown) {
+		t.Fatalf("context_window_unknown should be suppressed when configured/default 1M window is active: %#v", warnings)
+	}
+}

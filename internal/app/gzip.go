@@ -185,3 +185,20 @@ func (w *gzipResponseWriter) close() {
 		w.gz = nil
 	}
 }
+
+// staticCacheControlMiddleware 为带内容哈希的 Vite 前端构建产物设置长期不可变缓存，
+// 对语言包设置适度缓存，对 index.html 等入口文件保持 no-cache。
+func staticCacheControlMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		switch {
+		case strings.HasPrefix(path, "/static/app/assets/"):
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		case strings.HasPrefix(path, "/static/i18n/"):
+			c.Header("Cache-Control", "public, max-age=3600")
+		case path == "/static/app/" || path == "/static/app/index.html":
+			c.Header("Cache-Control", "no-cache")
+		}
+		c.Next()
+	}
+}

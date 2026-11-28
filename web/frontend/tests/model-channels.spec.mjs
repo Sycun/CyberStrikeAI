@@ -252,6 +252,31 @@ test.describe('model channel editing', () => {
         expect(mockApi.calls('PUT', '/api/config')).toHaveLength(2);
         expect(mockApi.calls('POST', '/api/config/apply')).toHaveLength(2);
     });
+
+    test('generic OpenAI-compatible channel uses 1M default context window during probe without false unknown warning', async ({ page, mockApi }) => {
+        const config = modelConfig();
+        mockApi.respond('GET', '/api/config', () => ({ json: config }));
+        mockApi.respond('POST', '/api/config/test-openai', ({ body }) => ({
+            json: {
+                success: true,
+                model: body.model,
+                context_backend: 'openai_compatible',
+                effective_max_total_tokens: body.context_window ? 120000 : undefined,
+                context_warnings: ['context_window_unknown']
+            }
+        }));
+
+        await page.goto('/static/app/#/settings?section=models');
+        const panel = (await ready(page)).locator('.settings-channel-panel');
+        await expect(panel.getByLabel('模型上下文窗口（Token）', { exact: true })).toHaveValue('1048576');
+
+        await panel.getByRole('button', { name: '测试连接', exact: true }).click();
+        expect(mockApi.calls('POST', '/api/config/test-openai')[0].body.context_window).toBe(1048576);
+        await expect(panel.getByRole('cell', { name: /上下文窗口.*1048576/ })).toBeVisible();
+        await expect(panel.getByRole('cell', { name: /窗口信息来源.*默认值/ })).toBeVisible();
+        await expect(panel.getByRole('cell', { name: /实际可用上下文令牌数.*120000/ })).toBeVisible();
+        await expect(panel.getByText('未检测到上下文窗口，请手动填写', { exact: true })).toHaveCount(0);
+    });
 });
 
 test('model configuration remains readable with view permission', async ({ page, mockApi }) => {

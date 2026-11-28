@@ -257,6 +257,11 @@ func (h *NotificationHandler) loadPendingHITLItems(limit int, english bool, acce
 
 func (h *NotificationHandler) loadVulnerabilityItems(sinceMs int64, limit int, english bool, access database.RBACListAccess) ([]NotificationSummaryItem, map[string]int, error) {
 	sinceSec := normalizedSinceSec(sinceMs)
+	// 先用保守的 48h 字典序下界命中 idx_vulnerabilities_created_at 索引，再由 strftime 做跨时区精确过滤。
+	createdAtLowerBound := ""
+	if sinceSec > 48*3600 {
+		createdAtLowerBound = time.Unix(sinceSec-48*3600, 0).UTC().Format("2006-01-02")
+	}
 	query := `
 		SELECT
 			id,
@@ -268,6 +273,10 @@ func (h *NotificationHandler) loadVulnerabilityItems(sinceMs int64, limit int, e
 		WHERE CAST(strftime('%s', created_at) AS INTEGER) > ?
 	`
 	args := []interface{}{sinceSec}
+	if createdAtLowerBound != "" {
+		query += ` AND created_at >= ?`
+		args = append(args, createdAtLowerBound)
+	}
 	query, args = appendVulnerabilityNotificationAccessSQL(query, args, access)
 	query += `
 		ORDER BY created_at DESC

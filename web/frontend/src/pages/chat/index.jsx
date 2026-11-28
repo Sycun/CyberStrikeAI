@@ -116,8 +116,8 @@ export default function Page() {
     const detailInFlightRef = useRef({ id: '', active: false });
     const hitlSeq = useRef(0);
     const planSeq = useRef(0);
-    const activeTask = useResource(async () => {
-        const payload = await api.get('/agent-loop/tasks');
+    const activeTask = useResource(async ({ signal } = {}) => {
+        const payload = await api.get('/agent-loop/tasks', null, { signal });
         return { id: conversationId, running: Array.isArray(payload?.tasks) && payload.tasks.some(task => task.conversationId === conversationId) };
     }, [conversationId, canReadTasks], { skip: !conversationId || !canReadTasks });
     const backgroundRunning = canReadTasks && activeTask.data?.id === conversationId && activeTask.data.running;
@@ -125,14 +125,14 @@ export default function Page() {
     const lastActive = useRef(null);
 
     const conversations = useResource(
-        async () => ({
+        async ({ signal } = {}) => ({
             ...(await api.get('/conversations', {
                 limit: PAGE_SIZE,
                 offset: (page - 1) * PAGE_SIZE,
                 search: debouncedSearch || undefined,
                 project_id: projectGroup,
                 group_by_project: 1
-            })),
+            }, { signal })),
             projectGroup, page, search: debouncedSearch
         }),
         [page, debouncedSearch, projectGroup]
@@ -141,8 +141,8 @@ export default function Page() {
     const reloadConversations = useRef(conversations.reload);
     useEffect(() => { reloadConversations.current = conversations.reload; }, [conversations.reload]);
 
-    const projectsResource = useResource(() => api.get('/projects', { limit: 200 }), []);
-    const rolesResource = useResource(() => api.get('/roles'), [canReadRoles], { skip: !canReadRoles });
+    const projectsResource = useResource(({ signal } = {}) => api.get('/projects', { limit: 200 }, { signal }), []);
+    const rolesResource = useResource(({ signal } = {}) => api.get('/roles', null, { signal }), [canReadRoles], { skip: !canReadRoles });
     const projects = useMemo(() => (
         Array.isArray(projectsResource.data?.projects) ? projectsResource.data.projects : []
     ), [projectsResource.data]);

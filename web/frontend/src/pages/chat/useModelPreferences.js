@@ -30,7 +30,7 @@ export function useModelPreferences(canReadConfig) {
     const [storedChannel, setChannel] = useChatPreference('cyberstrike-chat-ai-channel', '');
     const [storedMode, setMode] = useChatPreference('cyberstrike-chat-reasoning-mode', 'default');
     const [storedEffort, setEffort] = useChatPreference('cyberstrike-chat-reasoning-effort', '');
-    const config = useResource(async () => (await api.get('/config'))?.ai, [canReadConfig], { skip: !canReadConfig });
+    const config = useResource(async ({ signal } = {}) => (await api.get('/config', { include_tools: 0 }, { signal }))?.ai, [canReadConfig], { skip: !canReadConfig });
     const channels = Object.entries(config.data?.channels || {}).sort(([a], [b]) => a.localeCompare(b));
     const normalizedChannel = storedChannel.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
     const channel = channels.find(([id]) => id === storedChannel)?.[0]

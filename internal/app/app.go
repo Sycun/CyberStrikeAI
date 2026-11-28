@@ -1562,7 +1562,9 @@ func setupRoutes(
 	protected.GET("/openapi/spec", openAPIHandler.GetOpenAPISpec)
 
 	// 静态文件（前端为 React + Semi Design 单页应用，构建产物在 web/static/app）
-	router.Static("/static", "./web/static")
+	// 带内容哈希的 Vite 产物使用长期不可变缓存，减少跨境与高延迟链路重复下载。
+	staticGroup := router.Group("/static", staticCacheControlMiddleware())
+	staticGroup.Static("/", "./web/static")
 
 	// API 文档已并入单页应用路由（#/api-docs），保留旧地址跳转
 	router.GET("/api-docs", func(c *gin.Context) {
