@@ -33,8 +33,8 @@ func TestCatalogStoreCRUDAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(initial) < 3 || hidden != 0 {
-		t.Fatalf("expected >=3 built-ins and 0 hidden, got %d / %d", len(initial), hidden)
+	if len(initial) != 1 || initial[0].ID != "artex" || hidden != 0 {
+		t.Fatalf("expected 1 built-in (artex) and 0 hidden, got %+v / %d", initial, hidden)
 	}
 
 	// Add custom inspection-only entry

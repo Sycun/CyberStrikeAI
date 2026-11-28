@@ -333,13 +333,13 @@ func TestPluginCatalogPlanUsesPlatformLock(t *testing.T) {
 	}
 	m.locker = testLocker{}
 	m.drivers["container"] = &fixtureDriver{}
-	result, err := m.CreatePlan(context.Background(), PlanRequest{Actor: "tester", CatalogID: "static-web", Isolation: "strict"})
+	result, err := m.CreatePlan(context.Background(), PlanRequest{Actor: "tester", CatalogID: "artex", Isolation: "strict"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	plan, err := manifest.DecodeInstallPlan([]byte(result.Record.PlanJSON))
 	if err != nil || plan.Platform.OS != "linux" || plan.Artifact.Driver != "container" ||
-		len(plan.Artifact.Services) != 1 || result.HostApproved {
+		len(plan.Artifact.Services) != 2 || result.HostApproved {
 		t.Fatalf("unexpected catalog execution plan: %+v %v", plan, err)
 	}
 }
@@ -359,7 +359,7 @@ func TestPluginHostConfigOnlyPreservesStaticApprovals(t *testing.T) {
 	}
 	m.locker = testLocker{}
 	m.drivers["container"] = &fixtureDriver{}
-	result, err := m.CreatePlan(ctx, PlanRequest{Actor: "operator", CatalogID: "static-web", Isolation: "strict"})
+	result, err := m.CreatePlan(ctx, PlanRequest{Actor: "operator", CatalogID: "artex", Isolation: "strict"})
 	if err != nil {
 		t.Fatal(err)
 	}
