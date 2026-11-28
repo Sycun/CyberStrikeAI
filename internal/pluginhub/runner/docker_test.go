@@ -215,6 +215,22 @@ func TestPluginDockerMissingCLIReportsGuidance(t *testing.T) {
 	if probe := d.Probe(context.Background(), "strict"); probe.Available || probe.Guidance == "" {
 		t.Fatalf("probe %+v", probe)
 	}
+	spec := Spec{
+		InstallID: uuid.NewString(),
+		VersionID: uuid.NewString(),
+		Root:      t.TempDir(),
+		Declaration: &manifest.Declaration{
+			Distribution: []manifest.Distribution{{
+				Type:     "container",
+				Mode:     "docker",
+				Services: []manifest.Service{{Name: "web", Role: "web", ContainerPort: 80}},
+			}},
+		},
+		Plan: &manifest.InstallPlan{Artifact: manifest.Artifact{Driver: "container"}},
+	}
+	if err := d.Remove(context.Background(), spec); err != nil {
+		t.Fatalf("expected uninstall of never-prepared container plugin to succeed without docker: %v", err)
+	}
 }
 
 func TestPluginRuntimeLogRedactsBearerJSONAndDSN(t *testing.T) {

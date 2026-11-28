@@ -660,6 +660,11 @@ func (d *Docker) Stop(ctx context.Context, spec Spec) error {
 	if err != nil {
 		return err
 	}
+	if _, statErr := os.Stat(spec.VersionDir()); errors.Is(statErr, os.ErrNotExist) {
+		// Prepare() only creates VersionDir() after verifying Docker and pulling images.
+		// When it is absent, no container or managed Docker network was ever created.
+		return nil
+	}
 	for _, s := range stopOrder(distribution.Services) {
 		item, err := d.find(ctx, serviceName(spec, s.Name), spec)
 		if err != nil {
@@ -764,7 +769,7 @@ func (d *Docker) ensureNetwork(ctx context.Context, spec Spec, network managedNe
 }
 
 func (d *Docker) Remove(ctx context.Context, spec Spec) error {
-	if err := d.Stop(ctx, spec); err != nil {
+	if err := d.Stop(ctx, spec); err != nil && !errors.Is(err, exec.ErrNotFound) {
 		return err
 	}
 	return os.RemoveAll(spec.VersionDir())
