@@ -22,6 +22,7 @@ export const PAGES = {
     'c2-events': lazy(() => import('./c2-events')),
     'c2-profiles': lazy(() => import('./c2-profiles')),
     'chat-files': lazy(() => import('./chat-files')),
+    'plugin-hub': lazy(() => import('./plugin-hub')),
     'mcp-monitor': lazy(() => import('./mcp-monitor')),
     'mcp-management': lazy(() => import('./mcp-management')),
     'knowledge-retrieval-logs': lazy(() => import('./knowledge-retrieval-logs')),

@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cyberstrikeai.local/plugin/install-plan/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "installId",
+    "actorId",
+    "manifestSha256",
+    "policySha256",
+    "expiresAt",
+    "platform",
+    "isolation",
+    "artifact"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "installId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actorId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "manifestSha256": {
+      "$ref": "#/$defs/hex"
+    },
+    "policySha256": {
+      "$ref": "#/$defs/hex"
+    },
+    "configTemplateSha256": {
+      "$ref": "#/$defs/hex"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "arch"
+      ],
+      "properties": {
+        "os": {
+          "enum": [
+            "linux",
+            "darwin",
+            "windows"
+          ]
+        },
+        "arch": {
+          "enum": [
+            "amd64",
+            "arm64"
+          ]
+        }
+      }
+    },
+    "isolation": {
+      "enum": [
+        "standard",
+        "strict"
+      ]
+    },
+    "artifact": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/releaseLock"
+        },
+        {
+          "$ref": "#/$defs/gitLock"
+        },
+        {
+          "$ref": "#/$defs/containerLock"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "hex": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "httpsURL": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 2048
+    },
+    "releaseLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "assetURL",
+        "sha256",
+        "verification"
+      ],
+      "properties": {
+        "driver": {
+          "const": "release"
+        },
+        "assetURL": {
+          "$ref": "#/$defs/httpsURL"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hex"
+        },
+        "verification": {
+          "enum": [
+            "declared_checksum",
+            "verified_attestation",
+            "reviewed_observed_digest"
+          ]
+        }
+      }
+    },
+    "gitLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "repository",
+        "requestedRef",
+        "commit"
+      ],
+      "properties": {
+        "driver": {
+          "const": "git"
+        },
+        "repository": {
+          "$ref": "#/$defs/httpsURL"
+        },
+        "requestedRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 180
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^([a-f0-9]{40}|[a-f0-9]{64})$"
+        }
+      }
+    },
+    "containerLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "services"
+      ],
+      "properties": {
+        "driver": {
+          "const": "container"
+        },
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "requestedImage",
+              "repository",
+              "manifestDigest"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]{1,47}$"
+              },
+              "requestedImage": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "repository": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "manifestDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "indexDigest": {
+                "$ref": "#/$defs/digest"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

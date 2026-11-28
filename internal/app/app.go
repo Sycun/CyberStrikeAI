@@ -29,6 +29,7 @@ import (
 	"cyberstrike-ai/internal/mcp"
 	"cyberstrike-ai/internal/mcp/builtin"
 	"cyberstrike-ai/internal/monitor"
+	"cyberstrike-ai/internal/pluginhub"
 
 	"cyberstrike-ai/internal/robot"
 	"cyberstrike-ai/internal/security"
@@ -77,6 +78,7 @@ type App struct {
 	c2Handler          *handler.C2Handler        // C2 REST（与 Manager 生命周期同步）
 	storageHandler     *handler.StorageHandler   // 运行空间占用统计与垃圾清理
 	auditSvc           *audit.Service
+	pluginHub          *pluginhub.Manager
 }
 
 // New 创建新应用
@@ -525,7 +527,13 @@ func New(cfg *config.Config, log *logger.Logger, configPath, updateActivation st
 	openAPIHandler := handler.NewOpenAPIHandler(db, log.Logger, conversationHandler, agentHandler)
 
 	// 创建 App 实例（部分字段稍后填充）
+	pluginHub, err := pluginhub.New(db, cfg.Plugins, configDir, log.Logger)
+	if err != nil {
+		return nil, fmt.Errorf("initialize plugin runtime: %w", err)
+	}
+	pluginHub.ConfigureServices(authManager, configHandler.RuntimeConfigSnapshot)
 	app := &App{
+		pluginHub:          pluginHub,
 		config:             cfg,
 		configDir:          configDir,
 		logger:             log,
@@ -748,7 +756,25 @@ func (a *App) RunWithContext(ctx context.Context) error {
 		return tlsErr
 	}
 
-	srv := &http.Server{Addr: addr, Handler: a.router}
+	var mainHandler http.Handler = a.router
+	if a.pluginHub != nil {
+		var pluginTLS *tls.Config
+		if tlsMode != mainTLSOff {
+			pluginTLS, tlsErr = ensureMainTLSConfigCerts(tlsMode, tlsConf, certFile, keyFile)
+			if tlsErr != nil {
+				return fmt.Errorf("初始化插件监听证书: %w", tlsErr)
+			}
+		}
+		if err := a.pluginHub.StartServices(a.config.Server.Host, a.config.Server.Port, pluginTLS); err != nil {
+			a.logger.Warn("Plugin model gateway unavailable", zap.Error(err))
+		}
+		defer a.pluginHub.CloseServices()
+		mainHandler = a.pluginHub.WebHandler(mainHandler)
+		if err := a.pluginHub.Start(ctx); err != nil {
+			a.logger.Warn("Plugin runtime unavailable", zap.Error(err))
+		}
+	}
+	srv := &http.Server{Addr: addr, Handler: mainHandler}
 	var mainMux *mainServerMux
 	httpRedirect := config.ServerHTTPRedirectEnabled(&a.config.Server)
 	if tlsMode != mainTLSOff {
@@ -834,6 +860,13 @@ func (a *App) Shutdown() {
 }
 
 func (a *App) shutdown() {
+	if a.pluginHub != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 32*time.Second)
+		if err := a.pluginHub.Close(ctx); err != nil {
+			a.logger.Warn("Could not finish plugin runtime cleanup", zap.Error(err))
+		}
+		cancel()
+	}
 	if a.agentHandler != nil {
 		a.agentHandler.ShutdownTasks()
 	}
@@ -956,6 +989,13 @@ func (a *App) RestartRobotConnections() {
 }
 
 // setupRoutes 设置路由
+func pluginAwarePlatformAuth(manager *security.AuthManager, proxy config.PluginProxyConfig) gin.HandlerFunc {
+	if proxy.Effective().Mode == "port" {
+		return security.AuthMiddlewareWithoutCookie(manager)
+	}
+	return security.AuthMiddleware(manager)
+}
+
 func setupRoutes(
 	router *gin.Engine,
 	authHandler *handler.AuthHandler,
@@ -989,6 +1029,7 @@ func setupRoutes(
 	openAPIHandler *handler.OpenAPIHandler,
 	updateHandler *handler.UpdateHandler,
 ) {
+	platformAuth := pluginAwarePlatformAuth(authManager, app.config.Plugins.Proxy)
 	// API路由
 	api := router.Group("/api")
 
@@ -997,12 +1038,12 @@ func setupRoutes(
 	loginRL := security.NewRateLimiter(10, 1*time.Minute)
 	{
 		authRoutes.POST("/login", security.RateLimitMiddleware(loginRL), authHandler.Login)
-		authRoutes.POST("/logout", security.AuthMiddleware(authManager), authHandler.Logout)
-		authRoutes.POST("/change-password", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), authHandler.ChangePassword)
-		authRoutes.GET("/validate", updateHandler.SetBootHeader, security.AuthMiddleware(authManager), authHandler.Validate)
-		authRoutes.POST("/robot-binding-code", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.CreateRobotBindingCode)
-		authRoutes.GET("/robot-bindings", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.ListMyRobotBindings)
-		authRoutes.DELETE("/robot-bindings/:id", security.AuthMiddleware(authManager), security.RequirePermission("auth:self"), robotHandler.DeleteMyRobotBinding)
+		authRoutes.POST("/logout", platformAuth, authHandler.Logout)
+		authRoutes.POST("/change-password", platformAuth, security.RequirePermission("auth:self"), authHandler.ChangePassword)
+		authRoutes.GET("/validate", updateHandler.SetBootHeader, platformAuth, authHandler.Validate)
+		authRoutes.POST("/robot-binding-code", platformAuth, security.RequirePermission("auth:self"), robotHandler.CreateRobotBindingCode)
+		authRoutes.GET("/robot-bindings", platformAuth, security.RequirePermission("auth:self"), robotHandler.ListMyRobotBindings)
+		authRoutes.DELETE("/robot-bindings/:id", platformAuth, security.RequirePermission("auth:self"), robotHandler.DeleteMyRobotBinding)
 	}
 
 	// 机器人回调（无需登录，供企业微信/钉钉/飞书服务器调用）
@@ -1018,7 +1059,7 @@ func setupRoutes(
 	}
 
 	protected := api.Group("")
-	protected.Use(security.AuthMiddleware(authManager))
+	protected.Use(platformAuth)
 	protected.Use(security.RBACMiddlewareWithDenyHook(app.db, func(c *gin.Context, reason, permission string) {
 		if auditSvc != nil {
 			auditSvc.Record(c, audit.Entry{
@@ -1028,6 +1069,7 @@ func setupRoutes(
 			})
 		}
 	}))
+	handler.NewPluginHandler(app.db, auditSvc, app.pluginHub).Register(protected)
 	{
 		protected.GET("/rbac/me", rbacHandler.Me)
 		protected.GET("/rbac/metadata", rbacHandler.Metadata)

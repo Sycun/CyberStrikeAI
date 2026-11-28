@@ -21,8 +21,18 @@ const (
 
 // AuthMiddleware enforces authentication on protected routes.
 func AuthMiddleware(manager *AuthManager) gin.HandlerFunc {
+	return authMiddleware(manager, true)
+}
+
+// AuthMiddlewareWithoutCookie preserves header and streaming-token transport
+// while preventing same-host plugin ports from using the primary session cookie.
+func AuthMiddlewareWithoutCookie(manager *AuthManager) gin.HandlerFunc {
+	return authMiddleware(manager, false)
+}
+
+func authMiddleware(manager *AuthManager, allowCookie bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := extractTokenFromRequest(c)
+		token := extractRequestToken(c, allowCookie)
 		session, ok := manager.ValidateToken(token)
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
@@ -127,6 +137,10 @@ func SessionHasPermission(c *gin.Context, permission string) bool {
 }
 
 func extractTokenFromRequest(c *gin.Context) string {
+	return extractRequestToken(c, true)
+}
+
+func extractRequestToken(c *gin.Context, allowCookie bool) string {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader != "" {
 		if len(authHeader) > 7 && strings.EqualFold(authHeader[0:7], "Bearer ") {
@@ -143,8 +157,10 @@ func extractTokenFromRequest(c *gin.Context) string {
 		}
 	}
 
-	if cookie, err := c.Cookie("auth_token"); err == nil {
-		return strings.TrimSpace(cookie)
+	if allowCookie {
+		if cookie, err := c.Cookie("auth_token"); err == nil {
+			return strings.TrimSpace(cookie)
+		}
 	}
 
 	return ""

@@ -1,0 +1,132 @@
+apiVersion: plugins.csai.io/v1
+kind: WebPlugin
+metadata:
+  id: log-review
+  title: 日志复核
+  summary: 对用户主动选择的离线运维日志生成文本摘要和复核记录
+  version: "1.0.0"
+  repository: https://git.example.org/examples/log-review-demo.git
+  license: Apache-2.0
+distribution:
+  - type: release
+    assets:
+      - os: linux
+        arch: amd64
+        name: log-review-linux-amd64.tar.gz
+        url: https://downloads.example.org/log-review/1.0.0/log-review-linux-amd64.tar.gz
+        format: tar_gz
+        sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+      - os: darwin
+        arch: arm64
+        name: log-review-darwin-arm64.tar.gz
+        url: https://downloads.example.org/log-review/1.0.0/log-review-darwin-arm64.tar.gz
+        format: tar_gz
+        sha256: "2222222222222222222222222222222222222222222222222222222222222222"
+      - os: windows
+        arch: amd64
+        name: log-review-windows-amd64.zip
+        url: https://downloads.example.org/log-review/1.0.0/log-review-windows-amd64.zip
+        format: zip
+        attestationURL: https://downloads.example.org/log-review/1.0.0/log-review-windows-amd64.attestation.json
+        entrypoint: log-review.exe
+  - type: git
+    url: https://git.example.org/examples/log-review-demo.git
+    revision: refs/tags/v1.0.0
+    dependencies:
+      - {name: git, minVersion: "2.43"}
+      - {name: go, minVersion: "1.25"}
+    build:
+      - program: go
+        args: [build, -trimpath, -mod=readonly, -o, dist/, ./cmd/log-review]
+    outputRoot: dist
+  - type: container
+    mode: compose
+    services:
+      - name: review
+        role: web
+        image: registry.example.org/examples/log-review:1.0.0
+        containerPort: 8080
+        staticEnv: {REVIEW_TITLE: Review}
+        secretEnv:
+          REVIEW_DB_URI:
+            kind: connection_uri
+            secretRef: db-password
+            scheme: postgresql
+            service: history
+            username: review
+            database: review
+        depends_on: {history: service_healthy}
+        healthcheck: {kind: http, path: /healthz, intervalSeconds: 5, timeoutSeconds: 2, retries: 8}
+        resources: {memoryMiB: 256, pids: 64}
+      - name: history
+        role: dependency
+        image: registry.example.org/examples/log-review-history:1.0.0
+        containerPort: 5432
+        staticEnv: {POSTGRES_USER: review, POSTGRES_DB: review}
+        secretEnv:
+          POSTGRES_PASSWORD_FILE: {kind: file, secretRef: db-password}
+        healthcheck:
+          kind: exec
+          argv: [pg_isready, -U, review, -d, review]
+          intervalSeconds: 5
+          timeoutSeconds: 2
+          retries: 12
+        resources: {memoryMiB: 512, pids: 128}
+        dataVolumes:
+          - {name: review-data, mountPath: /var/lib/log-review}
+secrets:
+  db-password: {generator: random_base64url, bytes: 32}
+launch:
+  entrypoint: log-review
+  env:
+    REVIEW_LISTEN_HOST: listen_host
+    REVIEW_LISTEN_PORT: listen_port
+    REVIEW_DATA_DIR: data_dir
+web:
+  route: root
+  entryPath: /
+  healthPath: /healthz
+  sse: true
+  websocket: false
+access:
+  mode: plugin_login
+  bootstrap:
+    usernameEnv: REVIEW_BOOTSTRAP_USER
+    passwordFileEnv: REVIEW_BOOTSTRAP_PASSWORD_FILE
+llm:
+  bindings:
+    - protocol: openai_chat
+      providerValue: openai
+      env:
+        REVIEW_OPENAI_BASE_URL: gateway_v1_url
+        REVIEW_OPENAI_TOKEN: gateway_token
+        REVIEW_OPENAI_MODEL: model_alias
+        REVIEW_OPENAI_PROVIDER: provider
+      configTemplate:
+        path: run/openai-settings.json
+        format: json
+        values:
+          /channel/protocol: protocol
+          /channel/model: model_alias
+    - protocol: anthropic_messages
+      providerValue: anthropic
+      env:
+        REVIEW_ANTHROPIC_BASE_URL: gateway_root_url
+        REVIEW_ANTHROPIC_TOKEN: gateway_token
+        REVIEW_ANTHROPIC_MODEL: model_alias
+        REVIEW_ANTHROPIC_PROVIDER: provider
+permissions:
+  persistentData: true
+  modelGateway: true
+  egress: [managed_dependency, managed_model_gateway]
+extensions:
+  projectExchange:
+    version: 1
+    accepts: ["org.example.review:project-summary"]
+    produces: ["org.example.review:report-draft"]
+  capabilities:
+    - id: log-summary
+      transport: openapi
+      path: /api/read-only/openapi.json
+      resource: "org.example.review:summary"
+      protocolVersion: "3.1"

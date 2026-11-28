@@ -31,6 +31,7 @@ var rbacAssignableResourceTables = map[string]string{
 	"webshell":        "webshell_connections",
 	"batch_task":      "batch_task_queues",
 	"deep_assessment": "deep_assessments",
+	"plugin_install":  "plugin_installs",
 	"c2_listener":     "c2_listeners",
 }
 
@@ -501,6 +502,8 @@ func (db *DB) userOwnsResource(userID, resourceType, resourceID string) bool {
 		table = "webshell_connections"
 	case "deep_assessment":
 		table = "deep_assessments"
+	case "plugin_install":
+		table = "plugin_installs"
 	case "batch_task":
 		table = "batch_task_queues"
 	case "c2_listener":
@@ -532,6 +535,8 @@ func (db *DB) SetResourceOwner(resourceType, resourceID, userID string) error {
 		table = "webshell_connections"
 	case "deep_assessment":
 		table = "deep_assessments"
+	case "plugin_install":
+		table = "plugin_installs"
 	case "batch_task":
 		table = "batch_task_queues"
 	case "c2_listener":
@@ -558,6 +563,8 @@ func (db *DB) GetResourceOwner(resourceType, resourceID string) string {
 		table = "webshell_connections"
 	case "deep_assessment":
 		table = "deep_assessments"
+	case "plugin_install":
+		table = "plugin_installs"
 	case "batch_task":
 		table = "batch_task_queues"
 	case "c2_listener":
@@ -627,6 +634,10 @@ func (db *DB) ListAssignableRBACResourcesPage(resourceType, search string, limit
 			ORDER BY created_at DESC LIMIT ? OFFSET ?`
 	case "deep_assessment":
 		query = `SELECT id,name,status FROM deep_assessments WHERE LOWER(name) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\' ORDER BY updated_at DESC LIMIT ? OFFSET ?`
+	case "plugin_install":
+		query = `SELECT id, title, observed_state FROM plugin_installs WHERE observed_state <> 'removed'
+			AND (LOWER(title) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\')
+			ORDER BY updated_at DESC, id LIMIT ? OFFSET ?`
 	case "batch_task":
 		query = `SELECT id, COALESCE(NULLIF(title, ''), id), status FROM batch_task_queues
 			WHERE LOWER(COALESCE(NULLIF(title, ''), id)) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'
@@ -682,6 +693,9 @@ func (db *DB) CountAssignableRBACResources(resourceType, search string) (int, er
 		query = `SELECT COUNT(*) FROM webshell_connections WHERE LOWER(COALESCE(NULLIF(remark, ''), url)) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
 	case "deep_assessment":
 		query = `SELECT COUNT(*) FROM deep_assessments WHERE LOWER(name) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
+	case "plugin_install":
+		query = `SELECT COUNT(*) FROM plugin_installs WHERE observed_state <> 'removed'
+			AND (LOWER(title) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\')`
 	case "batch_task":
 		query = `SELECT COUNT(*) FROM batch_task_queues WHERE LOWER(COALESCE(NULLIF(title, ''), id)) LIKE ? ESCAPE '\' OR LOWER(id) LIKE ? ESCAPE '\'`
 	case "c2_listener":
@@ -778,6 +792,8 @@ func (db *DB) lookupRBACResourceOptionsByIDs(resourceType string, ids []string) 
 		query = `SELECT id, COALESCE(NULLIF(remark, ''), url), type FROM webshell_connections WHERE id IN (` + placeholders + `)`
 	case "deep_assessment":
 		query = `SELECT id,name,status FROM deep_assessments WHERE id IN (` + placeholders + `)`
+	case "plugin_install":
+		query = `SELECT id, title, observed_state FROM plugin_installs WHERE id IN (` + placeholders + `)`
 	case "batch_task":
 		query = `SELECT id, COALESCE(NULLIF(title, ''), id), status FROM batch_task_queues WHERE id IN (` + placeholders + `)`
 	case "c2_listener":

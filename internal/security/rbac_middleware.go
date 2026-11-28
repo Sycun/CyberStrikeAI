@@ -91,6 +91,8 @@ func permissionAlternativesForRequest(method, path string) []string {
 func permissionForRequest(method, fullPath string) string {
 	path := strings.TrimPrefix(fullPath, "/api")
 	switch {
+	case strings.HasPrefix(path, "/plugins/"):
+		return pluginPermission(method, path)
 	case path == "/rbac/me":
 		return "auth:self"
 	case path == "/rbac/resources":
@@ -207,6 +209,30 @@ func permissionForRequest(method, fullPath string) string {
 	}
 }
 
+func pluginPermission(method, path string) string {
+	switch method {
+	case http.MethodGet:
+		switch path {
+		case "/plugins/catalog", "/plugins/schemas/:name", "/plugins/installs", "/plugins/installs/:id", "/plugins/llm/channels":
+			return "plugins:read"
+		case "/plugins/install-plans/:id", "/plugins/runtime/probes", "/plugins/operations/:id", "/plugins/installs/:id/logs":
+			return "plugins:manage"
+		}
+	case http.MethodPost:
+		switch path {
+		case "/plugins/installs/:id/embed-sessions":
+			return "plugins:use"
+		case "/plugins/imports/inspect", "/plugins/install-plans", "/plugins/installs", "/plugins/installs/:id/operations":
+			return "plugins:manage"
+		}
+	case http.MethodPatch:
+		if path == "/plugins/installs/:id/llm" {
+			return "plugins:manage"
+		}
+	}
+	return ""
+}
+
 func crudPermission(method, module string) string {
 	switch method {
 	case http.MethodGet, http.MethodHead:
@@ -225,6 +251,10 @@ func resourceAllowed(c *gin.Context, db *database.DB) bool {
 	}
 	path := strings.TrimPrefix(c.FullPath(), "/api")
 	switch {
+	case pluginPermission(c.Request.Method, path) == "plugins:manage":
+		return false
+	case path == "/plugins/installs/:id" || path == "/plugins/installs/:id/embed-sessions":
+		return db.UserCanAccessResource(session.UserID, session.Scope, "plugin_install", c.Param("id"))
 	case path == "/tool-guard" && isMutationMethod(c.Request.Method):
 		return session.Scope == database.RBACScopeAll
 	case path == "/monitor/stats", path == "/monitor/calls-timeline":

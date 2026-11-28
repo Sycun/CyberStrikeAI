@@ -13,6 +13,9 @@ import (
 // Platform permissions use module:action naming. They are intentionally
 // separate from AI testing roles under roles/.
 var PermissionCatalog = map[string]string{
+	"plugins:read":         "View plugin catalog and authorized installations",
+	"plugins:use":          "Open authorized plugin workspaces",
+	"plugins:manage":       "Inspect sources and manage platform plugin installations",
 	"auth:self":            "Manage own session and password",
 	"dashboard:read":       "View dashboard summaries",
 	"chat:read":            "View conversations",

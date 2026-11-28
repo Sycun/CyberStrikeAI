@@ -2,7 +2,7 @@
  * 导航配置：id 即路由段（#/<id>），与后端页面和权限键保持一致。
  */
 import {
-    IconArticle, IconBolt, IconBook, IconBranch, IconBriefcase, IconCheckList,
+    IconApps, IconArticle, IconBolt, IconBook, IconBranch, IconBriefcase, IconCheckList,
     IconComment, IconFlag, IconFolder, IconHome, IconLock, IconPuzzle,
     IconServer, IconSetting, IconShield, IconTerminal, IconUser, IconUserGroup
 } from '@douyinfe/semi-icons';
@@ -45,6 +45,7 @@ export const NAV_TREE = [
         ]
     },
     { id: 'chat-files', i18n: 'nav.chatFiles', fallback: '文件管理', icon: IconFolder },
+    { id: 'plugin-hub', i18n: 'nav.pluginHub', fallback: '能力平台', icon: IconApps, permission: 'plugins:read' },
     {
         id: 'mcp', i18n: 'nav.mcp', fallback: 'MCP', icon: IconServer,
         children: [
@@ -86,7 +87,7 @@ export const NAV_TREE = [
 export const NAV_SECTIONS = [
     { id: 'workspace', i18n: 'nav.groupWorkspace', fallback: '工作台', pages: ['dashboard', 'chat', 'deep-assessments', 'security'] },
     { id: 'operations', i18n: 'nav.groupOperations', fallback: '安全作业', pages: ['projects', 'assets', 'vulnerabilities', 'tasks', 'workflows', 'webshell', 'c2', 'chat-files'] },
-    { id: 'capabilities', i18n: 'nav.groupCapabilities', fallback: '能力中心', pages: ['mcp', 'knowledge', 'skills', 'agents', 'roles'] },
+    { id: 'capabilities', i18n: 'nav.groupCapabilities', fallback: '能力中心', pages: ['plugin-hub', 'mcp', 'knowledge', 'skills', 'agents', 'roles'] },
     { id: 'platform', i18n: 'nav.groupPlatform', fallback: '平台管理', pages: ['platform-rbac', 'settings', 'api-docs'] }
 ];
 

@@ -35,6 +35,36 @@ server:
   # tls_key_path: /path/to/privkey.pem
   # 方式 B（仅本地/测试）：在配置目录的 data/tls/self-signed.pem 保存并复用自签证书和私钥（SAN 含 localhost / 127.0.0.1）。
   tls_auto_self_sign: true
+# 插件平台。默认每个 WebUI 使用独立端口并复用主站 TLS 策略。
+# 默认端口模式每个已安装插件占用一个代理端口，并复用主站的 TLS 配置。
+# VPS、防火墙或容器端口映射可预先放行这个闭区间。插件后端端口保持在私网。
+# plugins:
+#   directory: data/plugins # 相对配置文件目录
+#   egress:
+#     proxy_mode: system    # system / direct / fixed
+#     # proxy_url: http://proxy.example.com:3128
+#     # github_token_env: CSAI_PLUGINS_GITHUB_TOKEN
+#   approval_policy: admin_confirm # 默认：全局插件管理员确认锁定计划，批准记录保存在 SQLite
+#   # 改为 host_config_only 时，由下方声明摘要与制品摘要列表授权执行。
+#   # approved_artifacts:
+#   #   "<manifest SHA-256>": ["<artifact SHA-256>"]
+#   proxy:
+#     mode: port
+#     port_pool:
+#       start: 43100
+#       end: 43131
+#     # host_suffix: plugins.localhost # mode: host 使用
+#     # bind_host: 127.0.0.1         # 端口模式，缺省继承主站监听 IP
+#     # public_origin: https://csai.example.com
+#     # external_ports: {43100: 44310}
+#   llm_gateway:
+#     listen_host: 127.0.0.1         # 也可绑定明确的私有 bridge IP
+#     listen_port: 0                # 0 表示分配可用端口
+#     # container_host: host.docker.internal
+#     concurrency: 4
+#     rpm: 30
+#     token_budget: 200000          # 每实例每日 UTC 计费额度
+
 # 认证配置
 auth:
   session_duration_hours: 12 # 登录有效期（小时），超时后需重新登录

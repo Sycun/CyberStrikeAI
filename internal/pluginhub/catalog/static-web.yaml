@@ -1,0 +1,19 @@
+apiVersion: plugins.csai.io/v1
+kind: WebPlugin
+metadata:
+  id: static-web
+  title: Static Web Runtime Check
+  version: "1.0.0"
+  repository: https://github.com/nginx/docker-nginx-unprivileged
+distribution:
+  - type: container
+    mode: docker
+    services:
+      - name: web
+        role: web
+        image: nginxinc/nginx-unprivileged:stable-alpine
+        containerPort: 8080
+        resources: {memoryMiB: 128, pids: 64}
+web: {route: root, entryPath: "/", healthPath: "/"}
+access: {mode: platform}
+permissions: {persistentData: false, modelGateway: false, egress: []}

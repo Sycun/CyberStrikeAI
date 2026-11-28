@@ -1141,3 +1141,149 @@ CREATE TABLE IF NOT EXISTS project_fact_receipts (
     execution_id TEXT NOT NULL REFERENCES tool_executions(id) ON DELETE CASCADE,
     PRIMARY KEY(fact_id, execution_id)
 );
+
+CREATE TABLE IF NOT EXISTS plugin_import_inspections (
+    id TEXT PRIMARY KEY,
+    actor_user_id TEXT NOT NULL,
+    inspection_json TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    expires_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_import_inspections_expiry ON plugin_import_inspections(expires_at);
+
+CREATE TABLE IF NOT EXISTS plugin_install_plans (
+    id TEXT PRIMARY KEY,
+    install_id TEXT NOT NULL,
+    inspection_id TEXT NOT NULL,
+    actor_user_id TEXT NOT NULL,
+    manifest_json TEXT NOT NULL,
+    manifest_digest TEXT NOT NULL,
+    policy_json TEXT NOT NULL,
+    plan_json TEXT NOT NULL,
+    plan_digest TEXT NOT NULL,
+    expires_at DATETIME NOT NULL,
+    approved_at DATETIME,
+    consumed_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_install_plans_actor ON plugin_install_plans(actor_user_id, expires_at);
+
+CREATE TABLE IF NOT EXISTS plugin_installs (
+    id TEXT PRIMARY KEY,
+    catalog_id TEXT NOT NULL DEFAULT '',
+    plugin_id TEXT NOT NULL,
+    source_identity TEXT NOT NULL,
+    title TEXT NOT NULL,
+    owner_user_id TEXT,
+    desired_state TEXT NOT NULL DEFAULT 'stopped',
+    observed_state TEXT NOT NULL DEFAULT 'stopped',
+    active_version_id TEXT,
+    generation INTEGER NOT NULL DEFAULT 0,
+    driver TEXT NOT NULL,
+    endpoint_ref TEXT,
+    observed_port INTEGER,
+    last_error_code TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plugin_installs_active_source ON plugin_installs(source_identity, plugin_id)
+    WHERE observed_state <> 'removed';
+
+CREATE TABLE IF NOT EXISTS plugin_versions (
+    id TEXT PRIMARY KEY,
+    install_id TEXT NOT NULL REFERENCES plugin_installs(id) ON DELETE CASCADE,
+    version TEXT NOT NULL,
+    manifest_json TEXT NOT NULL,
+    manifest_digest TEXT NOT NULL,
+    artifact_identity TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    driver TEXT NOT NULL,
+    storage_key TEXT NOT NULL,
+    approval_json TEXT NOT NULL,
+    plan_json TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    UNIQUE(install_id, manifest_digest, artifact_identity, artifact_digest, driver)
+);
+
+CREATE TABLE IF NOT EXISTS plugin_operations (
+    id TEXT PRIMARY KEY,
+    install_id TEXT NOT NULL REFERENCES plugin_installs(id) ON DELETE CASCADE,
+    actor_user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    plan_digest TEXT NOT NULL,
+    version_id TEXT NOT NULL DEFAULT '',
+    request_digest TEXT NOT NULL DEFAULT '',
+    purge_data INTEGER NOT NULL DEFAULT 0,
+    error_code TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','canceled')),
+    checkpoint TEXT NOT NULL DEFAULT '',
+    lease_owner TEXT,
+    lease_until DATETIME,
+    log_key TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE(install_id, idempotency_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plugin_operations_active ON plugin_operations(install_id)
+    WHERE status IN ('queued', 'running');
+
+CREATE TABLE IF NOT EXISTS plugin_runtime_leases (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    owner TEXT NOT NULL,
+    expires_at DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS plugin_runtime_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    install_id TEXT NOT NULL REFERENCES plugin_installs(id) ON DELETE CASCADE,
+    message TEXT NOT NULL,
+    created_at DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_runtime_logs_cursor ON plugin_runtime_logs(install_id, id);
+
+CREATE TABLE IF NOT EXISTS plugin_web_origins (
+    install_id TEXT PRIMARY KEY REFERENCES plugin_installs(id),
+    mode TEXT NOT NULL CHECK(mode IN ('port','host')),
+    listener_port INTEGER NOT NULL DEFAULT 0,
+    hostname TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL,
+    retired_at DATETIME
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plugin_web_origin_port ON plugin_web_origins(listener_port) WHERE mode='port';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plugin_web_origin_host ON plugin_web_origins(hostname) WHERE mode='host';
+
+CREATE TABLE IF NOT EXISTS plugin_llm_bindings (
+    install_id TEXT NOT NULL REFERENCES plugin_installs(id) ON DELETE CASCADE,
+    protocol TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK(mode IN ('follow_default','channel','disabled')),
+    channel_id TEXT NOT NULL DEFAULT '',
+    concurrency INTEGER NOT NULL,
+    rpm INTEGER NOT NULL,
+    token_budget INTEGER NOT NULL,
+    PRIMARY KEY(install_id, protocol)
+);
+
+CREATE TABLE IF NOT EXISTS plugin_gateway_keys (
+    digest TEXT PRIMARY KEY,
+    install_id TEXT NOT NULL REFERENCES plugin_installs(id) ON DELETE CASCADE,
+    generation INTEGER NOT NULL,
+    protocol TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    UNIQUE(install_id,generation,protocol)
+);
+
+CREATE TABLE IF NOT EXISTS plugin_model_usage (
+    id TEXT PRIMARY KEY,
+    install_id TEXT NOT NULL REFERENCES plugin_installs(id) ON DELETE CASCADE,
+    generation INTEGER NOT NULL,
+    protocol TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    charged_tokens INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at DATETIME NOT NULL,
+    finished_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_plugin_model_usage_budget ON plugin_model_usage(install_id,day);

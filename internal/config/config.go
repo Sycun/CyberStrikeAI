@@ -21,6 +21,7 @@ import (
 )
 
 type Config struct {
+	Plugins      PluginsConfig         `yaml:"plugins,omitempty" json:"-"`
 	Proxy        ProxyConfig           `yaml:"proxy,omitempty" json:"proxy"`
 	Version      string                `yaml:"version,omitempty" json:"version,omitempty"` // 前端显示的版本号，如 v1.3.3
 	Server       ServerConfig          `yaml:"server"`
@@ -1570,6 +1571,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
 	if err := cfg.Proxy.Validate(); err != nil {
+		return nil, err
+	}
+	if err := cfg.Plugins.Validate(); err != nil {
 		return nil, err
 	}
 	if err := cfg.Agent.validateTaskTimeout(); err != nil {

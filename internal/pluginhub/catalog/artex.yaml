@@ -1,0 +1,105 @@
+apiVersion: plugins.csai.io/v1
+kind: WebPlugin
+metadata:
+  id: artex
+  title: ARTEX
+  summary: AI 自主渗透测试平台（Go 后端 + Next.js 前端 + PostgreSQL），支持直接复用 CSAI 模型通道。
+  version: "1.0.0"
+  repository: https://github.com/RuoJi6/ARTEX
+  license: AGPL-3.0
+distribution:
+  - type: container
+    mode: compose
+    services:
+      - name: artex
+        role: web
+        image: ruoji6/artex:latest
+        containerPort: 8787
+        staticEnv:
+          TZ: Asia/Shanghai
+          ARTEX_EVENT_BUS: memory
+        secretEnv:
+          ARTEX_PG_DSN:
+            kind: connection_uri
+            secretRef: db-password
+            scheme: postgres
+            service: postgres
+            username: artex
+            database: artex
+            options:
+              sslmode: disable
+        depends_on:
+          postgres: service_healthy
+        resources:
+          memoryMiB: 4096
+          pids: 512
+        dataVolumes:
+          - name: app-data
+            mountPath: /app/data
+      - name: postgres
+        role: dependency
+        image: postgres:16-alpine
+        containerPort: 5432
+        staticEnv:
+          POSTGRES_USER: artex
+          POSTGRES_DB: artex
+        secretEnv:
+          POSTGRES_PASSWORD:
+            kind: value
+            secretRef: db-password
+        healthcheck:
+          kind: exec
+          argv: [pg_isready, -U, artex, -d, artex]
+          intervalSeconds: 5
+          timeoutSeconds: 3
+          retries: 10
+        resources:
+          memoryMiB: 512
+          pids: 128
+        dataVolumes:
+          - name: pgdata
+            mountPath: /var/lib/postgresql/data
+secrets:
+  db-password:
+    generator: random_base64url
+    bytes: 32
+web:
+  route: root
+  entryPath: /
+  healthPath: /
+  allowHealthRedirect: true
+  sse: true
+  websocket: true
+access:
+  mode: plugin_login
+  applicationBearer:
+    - /api
+llm:
+  selection: single_active
+  bindings:
+    - protocol: openai_chat
+      providerValue: openai
+      env:
+        OPENAI_API_KEY: gateway_token
+        ARTEX_LLM_PROVIDER: provider
+        ARTEX_LLM_MODEL: model_alias
+        ARTEX_LLM_BASE_URL: gateway_v1_url
+    - protocol: anthropic_messages
+      providerValue: anthropic
+      env:
+        ANTHROPIC_API_KEY: gateway_token
+        ARTEX_LLM_PROVIDER: provider
+        ARTEX_LLM_MODEL: model_alias
+        ARTEX_LLM_BASE_URL: gateway_root_url
+permissions:
+  persistentData: true
+  modelGateway: true
+  egress:
+    - managed_dependency
+    - managed_model_gateway
+extensions:
+  capabilities:
+    - id: artex-mcp
+      transport: mcp_http
+      path: /mcp
+      resource: "io.artex:mcp"

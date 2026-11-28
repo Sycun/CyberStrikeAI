@@ -1,0 +1,1065 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cyberstrikeai.local/plugin/manifest/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "distribution",
+    "web",
+    "access",
+    "permissions"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "plugins.csai.io/v1"
+    },
+    "kind": {
+      "const": "WebPlugin"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "version",
+        "repository"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?(\\+[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$"
+        },
+        "repository": {
+          "$ref": "#/$defs/httpsURL"
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "distribution": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/release"
+          },
+          {
+            "$ref": "#/$defs/git"
+          },
+          {
+            "$ref": "#/$defs/container"
+          }
+        ]
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "generator",
+          "bytes"
+        ],
+        "properties": {
+          "generator": {
+            "enum": [
+              "random_base64url",
+              "random_hex"
+            ]
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 128
+          }
+        }
+      }
+    },
+    "launch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entrypoint",
+        "env"
+      ],
+      "properties": {
+        "entrypoint": {
+          "$ref": "#/$defs/file"
+        },
+        "args": {
+          "$ref": "#/$defs/args"
+        },
+        "workDir": {
+          "$ref": "#/$defs/file"
+        },
+        "env": {
+          "$ref": "#/$defs/runtimeEnv"
+        },
+        "staticEnv": {
+          "$ref": "#/$defs/staticEnv"
+        },
+        "secretEnv": {
+          "$ref": "#/$defs/secretEnv"
+        }
+      }
+    },
+    "web": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route",
+        "entryPath",
+        "healthPath"
+      ],
+      "properties": {
+        "route": {
+          "enum": [
+            "root",
+            "build_base_path",
+            "relative_prefix"
+          ]
+        },
+        "entryPath": {
+          "$ref": "#/$defs/appPath"
+        },
+        "healthPath": {
+          "$ref": "#/$defs/appPath"
+        },
+        "readyHeaderCheck": {
+          "type": "boolean",
+          "default": false,
+          "description": "Require native plugins to echo CSAI_PLUGIN_READY_TOKEN in X-CSAI-Plugin-Ready."
+        },
+        "allowHealthRedirect": {
+          "type": "boolean",
+          "default": false,
+          "description": "Accept a 3xx response with Location without following the redirect."
+        },
+        "sse": {
+          "type": "boolean",
+          "default": false
+        },
+        "websocket": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "platform",
+            "plugin_login"
+          ]
+        },
+        "applicationBearer": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/appPath"
+          }
+        },
+        "bootstrap": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "usernameEnv",
+            "passwordFileEnv"
+          ],
+          "properties": {
+            "usernameEnv": {
+              "$ref": "#/$defs/envName"
+            },
+            "passwordFileEnv": {
+              "$ref": "#/$defs/envName"
+            }
+          }
+        }
+      },
+      "dependentSchemas": {
+        "bootstrap": {
+          "properties": {
+            "mode": {
+              "const": "plugin_login"
+            }
+          }
+        },
+        "applicationBearer": {
+          "properties": {
+            "mode": {
+              "const": "plugin_login"
+            }
+          }
+        }
+      }
+    },
+    "llm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bindings"
+      ],
+      "properties": {
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/llmBinding"
+          }
+        },
+        "selection": {
+          "enum": [
+            "single_active",
+            "multi"
+          ],
+          "default": "multi"
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persistentData",
+        "modelGateway",
+        "egress"
+      ],
+      "properties": {
+        "persistentData": {
+          "type": "boolean"
+        },
+        "modelGateway": {
+          "type": "boolean"
+        },
+        "egress": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "managed_model_gateway",
+              "managed_dependency",
+              "approved_custom_model"
+            ]
+          }
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectExchange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "accepts",
+            "produces"
+          ],
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "accepts": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/qualifiedID"
+              }
+            },
+            "produces": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/qualifiedID"
+              }
+            }
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "transport",
+              "path",
+              "resource"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "transport": {
+                "enum": [
+                  "mcp_http",
+                  "mcp_sse",
+                  "openapi"
+                ]
+              },
+              "path": {
+                "$ref": "#/$defs/appPath"
+              },
+              "resource": {
+                "$ref": "#/$defs/qualifiedID"
+              },
+              "protocolVersion": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "distribution": {
+            "contains": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "release",
+                    "git"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "launch"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "llm"
+        ]
+      },
+      "then": {
+        "properties": {
+          "permissions": {
+            "properties": {
+              "modelGateway": {
+                "const": true
+              },
+              "egress": {
+                "contains": {
+                  "const": "managed_model_gateway"
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "permissions": {
+            "properties": {
+              "modelGateway": {
+                "const": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,47}$"
+    },
+    "qualifiedID": {
+      "type": "string",
+      "maxLength": 160,
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[a-zA-Z][a-zA-Z0-9._-]*$"
+    },
+    "file": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240,
+      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"
+    },
+    "appPath": {
+      "type": "string",
+      "maxLength": 240,
+      "pattern": "^/([A-Za-z0-9._~-]+/)*[A-Za-z0-9._~-]*$"
+    },
+    "httpsURL": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://",
+      "maxLength": 2048
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "envName": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+    },
+    "modelValue": {
+      "enum": [
+        "gateway_v1_url",
+        "gateway_root_url",
+        "gateway_token",
+        "model_alias",
+        "protocol",
+        "provider"
+      ]
+    },
+    "llmBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "env"
+      ],
+      "properties": {
+        "protocol": {
+          "enum": [
+            "openai_chat",
+            "anthropic_messages"
+          ]
+        },
+        "providerValue": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "env": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "$ref": "#/$defs/envName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/modelValue"
+          }
+        },
+        "configTemplate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "format",
+            "values"
+          ],
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/file"
+            },
+            "sourcePath": {
+              "$ref": "#/$defs/file"
+            },
+            "format": {
+              "enum": [
+                "json",
+                "yaml",
+                "env"
+              ]
+            },
+            "values": {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 24,
+              "propertyNames": {
+                "pattern": "^(/[A-Za-z0-9_~/-]+|[A-Za-z_][A-Za-z0-9_]{0,63})$"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/modelValue"
+              }
+            }
+          }
+        }
+      }
+    },
+    "runtimeEnv": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "$ref": "#/$defs/envName"
+      },
+      "additionalProperties": {
+        "enum": [
+          "listen_host",
+          "listen_port",
+          "data_dir",
+          "web_base_path"
+        ]
+      }
+    },
+    "args": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "string",
+        "maxLength": 2048
+      }
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "assets"
+      ],
+      "properties": {
+        "type": {
+          "const": "release"
+        },
+        "assets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "os",
+              "arch",
+              "url",
+              "name",
+              "format"
+            ],
+            "properties": {
+              "os": {
+                "enum": [
+                  "linux",
+                  "darwin",
+                  "windows"
+                ]
+              },
+              "arch": {
+                "enum": [
+                  "amd64",
+                  "arm64"
+                ]
+              },
+              "url": {
+                "$ref": "#/$defs/httpsURL"
+              },
+              "name": {
+                "$ref": "#/$defs/file"
+              },
+              "format": {
+                "enum": [
+                  "tar_gz",
+                  "zip"
+                ]
+              },
+              "sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "attestationURL": {
+                "$ref": "#/$defs/httpsURL"
+              },
+              "stripComponents": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0
+              },
+              "entrypoint": {
+                "$ref": "#/$defs/file"
+              }
+            }
+          }
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "url",
+        "dependencies",
+        "build"
+      ],
+      "properties": {
+        "type": {
+          "const": "git"
+        },
+        "url": {
+          "$ref": "#/$defs/httpsURL"
+        },
+        "revision": {
+          "type": "string",
+          "maxLength": 180,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._/-]{0,179}$",
+          "description": "Omit for the default branch. Short names and full refs are resolved during preflight."
+        },
+        "dependencies": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "minVersion"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,40}$"
+              },
+              "minVersion": {
+                "type": "string",
+                "pattern": "^[0-9]+(\\.[0-9]+){0,2}$"
+              }
+            }
+          }
+        },
+        "build": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "program",
+              "args"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.-]{1,40}$"
+              },
+              "args": {
+                "$ref": "#/$defs/args"
+              },
+              "workDir": {
+                "$ref": "#/$defs/file"
+              }
+            }
+          }
+        },
+        "outputRoot": {
+          "$ref": "#/$defs/file"
+        },
+        "entrypoint": {
+          "$ref": "#/$defs/file"
+        }
+      }
+    },
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "mode",
+        "services"
+      ],
+      "properties": {
+        "type": {
+          "const": "container"
+        },
+        "mode": {
+          "enum": [
+            "docker",
+            "compose"
+          ]
+        },
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/service"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "docker"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "services": {
+                "maxItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "role",
+        "image",
+        "resources"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/id"
+        },
+        "role": {
+          "enum": [
+            "web",
+            "dependency"
+          ]
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^[a-z0-9][a-zA-Z0-9./:_-]*(:[a-zA-Z0-9_][a-zA-Z0-9_.-]*|@sha256:[a-f0-9]{64})$",
+          "description": "Validate as an OCI repository with an explicit tag or digest."
+        },
+        "containerPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "env": {
+          "$ref": "#/$defs/runtimeEnv"
+        },
+        "staticEnv": {
+          "$ref": "#/$defs/staticEnv"
+        },
+        "secretEnv": {
+          "$ref": "#/$defs/secretEnv"
+        },
+        "depends_on": {
+          "type": "object",
+          "maxProperties": 7,
+          "propertyNames": {
+            "$ref": "#/$defs/id"
+          },
+          "additionalProperties": {
+            "enum": [
+              "service_started",
+              "service_healthy"
+            ]
+          }
+        },
+        "healthcheck": {
+          "$ref": "#/$defs/healthcheck"
+        },
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "memoryMiB",
+            "pids"
+          ],
+          "properties": {
+            "memoryMiB": {
+              "type": "integer",
+              "minimum": 32,
+              "maximum": 131072
+            },
+            "pids": {
+              "type": "integer",
+              "minimum": 8,
+              "maximum": 65536
+            }
+          }
+        },
+        "configMounts": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source",
+              "mountPath"
+            ],
+            "properties": {
+              "source": {
+                "$ref": "#/$defs/file"
+              },
+              "mountPath": {
+                "$ref": "#/$defs/appPath"
+              }
+            }
+          }
+        },
+        "dataVolumes": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "mountPath"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/id"
+              },
+              "mountPath": {
+                "$ref": "#/$defs/appPath"
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "web"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "containerPort"
+            ]
+          }
+        }
+      ]
+    },
+    "secretValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "secretRef"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "value",
+            "file"
+          ]
+        },
+        "secretRef": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "secretURI": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "secretRef",
+        "scheme",
+        "service",
+        "username"
+      ],
+      "properties": {
+        "kind": {
+          "const": "connection_uri"
+        },
+        "secretRef": {
+          "$ref": "#/$defs/id"
+        },
+        "scheme": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9+.-]{1,25}$"
+        },
+        "service": {
+          "$ref": "#/$defs/id"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "database": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,80}$"
+        },
+        "options": {
+          "type": "object",
+          "maxProperties": 12,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,39}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "healthcheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "intervalSeconds",
+        "timeoutSeconds",
+        "retries"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "http",
+            "tcp",
+            "exec"
+          ]
+        },
+        "path": {
+          "$ref": "#/$defs/appPath"
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "intervalSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "retries": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "startPeriodSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "http"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "path"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "exec"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "argv"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "argv"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "staticEnv": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "$ref": "#/$defs/envName"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 4096
+      }
+    },
+    "secretEnv": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "$ref": "#/$defs/envName"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/secretValue"
+          },
+          {
+            "$ref": "#/$defs/secretURI"
+          }
+        ]
+      }
+    }
+  }
+}
