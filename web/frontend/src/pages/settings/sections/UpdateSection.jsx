@@ -2,7 +2,7 @@
  * 更新源配置、远端版本检查和更新进度。
  */
 import { useEffect, useState } from 'react';
-import { Banner, Button, Input, Space, Tag, Timeline, Typography } from '@douyinfe/semi-ui';
+import { Banner, Button, Input, Select, Space, Tag, Timeline, Typography } from '@douyinfe/semi-ui';
 import { IconDownload, IconRefresh } from '@douyinfe/semi-icons';
 import { api, errorMessage } from '../../../lib/http';
 import { useAuth } from '../../../lib/auth';
@@ -61,6 +61,10 @@ export default function UpdateSection() {
     const [actionError, setActionError] = useState(null);
     const [activationBootID, setActivationBootID] = useState(null);
     const [sourceDraft, setSourceDraft] = useState(null);
+    const [branchDraft, setBranchDraft] = useState(null);
+    const [remoteBranches, setRemoteBranches] = useState([]);
+    const [remoteDefaultBranch, setRemoteDefaultBranch] = useState('');
+    const [loadingBranches, setLoadingBranches] = useState(false);
     const [savingSource, setSavingSource] = useState(false);
     const [sourceError, setSourceError] = useState(null);
 
@@ -77,8 +81,10 @@ export default function UpdateSection() {
     const needsRestart = consoleRes.data?.needsRestart;
     const source = consoleRes.data?.source;
     const sourceRepo = source?.repo || '';
+    const sourceBranch = source?.branch || '';
     const sourceValue = sourceDraft ?? sourceRepo;
-    const sourceChanged = sourceValue.trim() !== sourceRepo;
+    const branchValue = branchDraft ?? sourceBranch;
+    const sourceChanged = sourceValue.trim() !== sourceRepo || branchValue.trim() !== sourceBranch;
     const busy = Boolean(action || running || restarting);
     const sourceBusy = savingSource || busy || consoleRes.loading;
 
@@ -170,18 +176,39 @@ export default function UpdateSection() {
         }
     };
 
+    const fetchBranches = async () => {
+        setLoadingBranches(true);
+        setSourceError(null);
+        try {
+            const repoQuery = sourceValue.trim();
+            const payload = await api.get('/system/update/branches', repoQuery ? { repo: repoQuery } : undefined);
+            const list = Array.isArray(payload?.branches) ? payload.branches : [];
+            setRemoteBranches(list);
+            setRemoteDefaultBranch(payload?.defaultBranch || '');
+            toastSuccess(t('updateUi.branchesLoaded', { n: list.length }, `已获取 ${list.length} 个远端分支`));
+        } catch (error) {
+            setSourceError(error);
+        } finally {
+            setLoadingBranches(false);
+        }
+    };
+
     const saveSource = async event => {
         event.preventDefault();
         if (!source || !canManage || !sourceChanged || sourceBusy) return;
         setSavingSource(true);
         setSourceError(null);
         try {
-            const payload = await api.post('/system/update/source', { repo: sourceValue.trim() });
+            const payload = await api.post('/system/update/source', {
+                repo: sourceValue.trim(),
+                branch: branchValue.trim()
+            });
             if (!payload?.source || typeof payload.source.repo !== 'string') {
                 throw new Error(t('updateUi.sourceResponseMissing', null, '服务端未返回更新源，刷新后可核对配置。'));
             }
             consoleRes.setData(previous => ({ ...previous, source: payload.source }));
             setSourceDraft(null);
+            setBranchDraft(null);
             setCheckResult(null);
             setActionError(null);
             toastSuccess(t('update.sourceSaveOk', null, '更新源已保存'));
@@ -203,7 +230,13 @@ export default function UpdateSection() {
     const facts = [
         { label: t('update.root', null, '安装目录'), value: <Mono>{snapshot.root || '—'}</Mono> },
         { label: t('update.gitTree', null, 'Git 安装树'), value: yesNo(t, snapshot.installed) },
-        { label: t('update.branch', null, '分支'), value: snapshot.branch || '—' },
+        { label: t('update.branch', null, '当前分支'), value: snapshot.branch || '—' },
+        {
+            label: t('updateUi.targetBranch', null, '目标分支'),
+            value: sourceBranch
+                ? <Space spacing={4}><Mono>{sourceBranch}</Mono>{snapshot.branch && sourceBranch !== snapshot.branch && <Tag size="small" color="amber">{t('updateUi.branchSwitchPending', null, '待切换')}</Tag>}</Space>
+                : <Text type="tertiary">{t('updateUi.followDefaultBranch', null, '跟随仓库默认分支')}</Text>
+        },
         { label: t('updateUi.repo', null, '更新源仓库'), value: <Mono>{source?.repo || source?.defaultRepo || snapshot.repo || '—'}</Mono> },
         { label: t('update.commit', null, '当前提交'), value: <Mono>{shortCommit(snapshot.commit)}</Mono> },
         { label: t('update.subject', null, '提交说明'), value: truncate(snapshot.subject || '—', 80) },
@@ -268,6 +301,7 @@ export default function UpdateSection() {
                                 value={sourceValue}
                                 onChange={value => {
                                     setSourceDraft(value);
+                                    setRemoteBranches([]);
                                     setSourceError(null);
                                 }}
                                 placeholder={source.defaultRepo}
@@ -275,10 +309,48 @@ export default function UpdateSection() {
                                 disabled={savingSource}
                             />
                         </label>
+                        <div className="settings-field" style={{ marginTop: 12 }}>
+                            <Text size="small" type="tertiary">{t('updateUi.targetBranchLabel', null, '目标分支（留空 = 跟随仓库默认分支）')}</Text>
+                            <Space style={{ width: '100%' }} wrap>
+                                <Select
+                                    value={branchValue || undefined}
+                                    onChange={value => {
+                                        setBranchDraft(value || '');
+                                        setSourceError(null);
+                                    }}
+                                    placeholder={t('updateUi.targetBranchPlaceholder', null, '留空跟随默认分支，或选择/输入分支名')}
+                                    filter
+                                    allowCreate
+                                    showClear
+                                    disabled={!canManage || savingSource}
+                                    style={{ width: 340, maxWidth: '100%' }}
+                                    optionList={[
+                                        ...new Set([
+                                            ...(remoteBranches || []),
+                                            ...(sourceBranch ? [sourceBranch] : []),
+                                            ...(branchValue && branchValue.trim() ? [branchValue.trim()] : [])
+                                        ])
+                                    ].map(name => ({
+                                        value: name,
+                                        label: name === remoteDefaultBranch
+                                            ? `${name} (${t('updateUi.defaultBranchTag', null, '默认')})`
+                                            : name
+                                    }))}
+                                />
+                                <Button
+                                    icon={<IconRefresh />}
+                                    loading={loadingBranches}
+                                    disabled={savingSource}
+                                    onClick={fetchBranches}
+                                >
+                                    {t('updateUi.fetchBranches', null, '获取远端分支')}
+                                </Button>
+                            </Space>
+                        </div>
                         {canManage ? (
                             <>
-                                <Hint>{t('update.sourceRepoHint', null, '留空即使用官方仓库。')}</Hint>
-                                <Hint>{t('updateUi.sourceSaveOnly', null, '保存会修改配置文件中的 update.repo。')}</Hint>
+                                <Hint>{t('update.sourceRepoHint', null, '留空即使用官方仓库；分支留空即跟随默认分支。')}</Hint>
+                                <Hint>{t('updateUi.sourceSaveBranchHint', null, '保存会修改配置文件中的 update.repo 与 update.branch，下次点击「更新」时自动拉取并切换至该分支。')}</Hint>
                                 <div>
                                     <Button htmlType="submit" theme="solid" loading={savingSource}
                                         disabled={!sourceChanged || sourceBusy}>
@@ -313,7 +385,9 @@ export default function UpdateSection() {
                             <Space wrap spacing={8}>
                                 {checkResult.installed && (
                                     <Tag size="small" color={checkResult.updateAvailable || checkResult.buildPending || needsRestart ? 'amber' : 'green'}>
-                                        {checkResult.updateAvailable ? t('update.behindCount', { n: checkResult.behind })
+                                        {checkResult.branchSwitch
+                                            ? t('updateUi.branchSwitchTag', { from: checkResult.branch, to: checkResult.targetBranch }, `切换分支：${checkResult.branch} → ${checkResult.targetBranch}`)
+                                            : checkResult.updateAvailable ? t('update.behindCount', { n: checkResult.behind })
                                             : checkResult.buildPending ? t('updateUi.buildPending')
                                             : needsRestart ? t('update.restartNeeded')
                                             : t(checkResult.ahead > 0 ? 'updateUi.noNewerVersion' : 'updateUi.currentVersion')}

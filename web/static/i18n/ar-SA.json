@@ -4842,6 +4842,18 @@
     "auditModelSaved": "تم حفظ نموذج التدقيق",
     "auditSavedApplyFailed": "تم حفظ نموذج التدقيق، لكن فشل تطبيق الإعدادات."
   },
+  "updateUi": {
+    "targetBranch": "الفرع المستهدف",
+    "branchSwitchPending": "بانتظار التبديل",
+    "followDefaultBranch": "اتباع الفرع الافتراضي",
+    "targetBranchLabel": "الفرع المستهدف (فارغ = الفرع الافتراضي للمستودع)",
+    "targetBranchPlaceholder": "اتركه فارغاً أو اختر/أدخل اسم الفرع",
+    "defaultBranchTag": "افتراضي",
+    "fetchBranches": "جلب الفروع البعيدة",
+    "branchesLoaded": "تم جلب {{n}} فرعاً",
+    "sourceSaveBranchHint": "يحفظ update.repo و update.branch في ملف الإعدادات وسيتم التبديل عند التحديث القادم.",
+    "branchSwitchTag": "تبديل الفرع: {{from}} → {{to}}"
+  },
   "pluginHub": {
     "title": "منصة قدرات الإضافات",
     "subtitle": "ثبّت أدوات الويب الأمنية المستقلة عند الحاجة مع بقاء الشيفرة في مستودعات مؤلفيها، وتضمينها داخل CSAI مع مشاركة بوابة النماذج الموحدة.",

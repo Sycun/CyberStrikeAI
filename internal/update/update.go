@@ -119,8 +119,9 @@ func Protected(rel string) bool {
 // Empty means the official repository, so an installation with no configuration at all
 // still has exactly one answer to "where does an update come from".
 type Options struct {
-	Root string
-	Repo string
+	Root   string
+	Repo   string
+	Branch string
 	// BinaryName overrides the executable swapped after a successful update. Empty
 	// means "cyberstrike-ai" in Root; "none" means leave the binary alone.
 	BinaryName string
@@ -180,10 +181,11 @@ type Snapshot struct {
 	// came from config.yaml or is the built-in official repository.
 	Repo           string `json:"repo"`
 	RepoConfigured bool   `json:"repoConfigured"`
-	// TargetBranch is the update source's own default branch, learned from the source
-	// itself when the network answer arrives (empty until then).
-	TargetBranch string `json:"targetBranch,omitempty"`
-	Commit       string `json:"commit"`
+	// TargetBranch is the configured target branch or the update source's default branch.
+	TargetBranch     string `json:"targetBranch,omitempty"`
+	BranchConfigured bool   `json:"branchConfigured,omitempty"`
+	BranchSwitch     bool   `json:"branchSwitch,omitempty"`
+	Commit           string `json:"commit"`
 	Subject      string `json:"subject"`
 	CommittedAt  string `json:"committedAt"`
 
@@ -260,7 +262,65 @@ func nulList(blob string) []string {
 }
 
 // ValidName reports whether s can safely reach git's argv as a branch name.
-func ValidName(s string) bool { return namePattern.MatchString(s) }
+func ValidName(s string) bool {
+	if !namePattern.MatchString(s) || len(s) > 180 {
+		return false
+	}
+	if strings.Contains(s, "..") || strings.Contains(s, "//") || strings.HasSuffix(s, "/") || strings.HasSuffix(s, ".") || strings.HasSuffix(s, ".lock") {
+		return false
+	}
+	for _, part := range strings.Split(s, "/") {
+		if part == "" || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return false
+		}
+	}
+	return true
+}
+
+// ListBranches queries the update source via git ls-remote without modifying the working tree.
+func ListBranches(ctx context.Context, opts Options) (string, []string, error) {
+	root, err := opts.installRoot()
+	if err != nil {
+		return "", nil, err
+	}
+	repo := opts.repoURL()
+	if !ValidRemoteURL(repo) {
+		return "", nil, fmt.Errorf("配置的更新源仓库地址不合法")
+	}
+	out, err := gitCmd(ctx, root, "ls-remote", "--symref", repo, "HEAD", "refs/heads/*")
+	if err != nil {
+		return "", nil, fmt.Errorf("无法读取远端分支 %s：%s", repo, strings.TrimSpace(err.Error()))
+	}
+	defaultBranch := parseDefaultBranch(out)
+	seen := map[string]bool{}
+	var branches []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "ref:") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name, ok := strings.CutPrefix(fields[1], "refs/heads/")
+		if !ok || !ValidName(name) || seen[name] {
+			continue
+		}
+		seen[name] = true
+		branches = append(branches, name)
+	}
+	sort.Slice(branches, func(i, j int) bool {
+		if branches[i] == defaultBranch {
+			return true
+		}
+		if branches[j] == defaultBranch {
+			return false
+		}
+		return branches[i] < branches[j]
+	})
+	return defaultBranch, branches, nil
+}
 
 // Status reads the install tree without touching the network.
 func Status(ctx context.Context, opts Options) (*Snapshot, error) {
@@ -268,16 +328,23 @@ func Status(ctx context.Context, opts Options) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
+	configuredBranch := strings.TrimSpace(opts.Branch)
 	snap := &Snapshot{
-		Root:            root,
-		Repo:            opts.repoURL(),
-		RepoConfigured:  strings.TrimSpace(opts.Repo) != "",
-		Incoming:        []Commit{},
-		LocalChanges:    []Change{},
-		BlockingChanges: []Change{},
+		Root:             root,
+		Repo:             opts.repoURL(),
+		RepoConfigured:   strings.TrimSpace(opts.Repo) != "",
+		TargetBranch:     configuredBranch,
+		BranchConfigured: configuredBranch != "",
+		Incoming:         []Commit{},
+		LocalChanges:     []Change{},
+		BlockingChanges:  []Change{},
 	}
 	if !ValidRemoteURL(snap.Repo) {
 		snap.CheckError = "配置的更新源仓库地址不合法（只允许 https/http/ssh/git/file:// 或本机绝对路径）"
+		return snap, nil
+	}
+	if configuredBranch != "" && !ValidName(configuredBranch) {
+		snap.CheckError = "配置的目标分支名不合法"
 		return snap, nil
 	}
 
@@ -400,14 +467,20 @@ func check(ctx context.Context, opts Options) (*Snapshot, error) {
 	}
 	root := snap.Root
 
-	// The branch to follow is the source repository's own default branch, so the
-	// operator never names one and a fork whose default differs from main still works.
-	target, err := resolveDefaultBranch(ctx, root, snap.Repo)
-	if err != nil {
-		snap.CheckError = err.Error()
+	target := strings.TrimSpace(opts.Branch)
+	if target == "" {
+		var resolveErr error
+		target, resolveErr = resolveDefaultBranch(ctx, root, snap.Repo)
+		if resolveErr != nil {
+			snap.CheckError = resolveErr.Error()
+			return snap, nil
+		}
+	} else if !ValidName(target) {
+		snap.CheckError = "配置的目标分支名不合法"
 		return snap, nil
 	}
 	snap.TargetBranch = target
+	snap.BranchConfigured = strings.TrimSpace(opts.Branch) != ""
 
 	// --recurse-submodules=no and --prune keep the fetch to this repository's own
 	// history. A branch-scoped fetch means a source with many refs cannot turn the
@@ -438,8 +511,14 @@ func check(ctx context.Context, opts Options) (*Snapshot, error) {
 		return snap, nil
 	}
 	snap.Ahead, snap.Behind = ahead, behind
-	snap.Diverged = ahead > 0 && behind > 0
-	snap.UpdateAvailable = snap.Behind > 0
+	snap.BranchSwitch = snap.Branch != "" && snap.TargetBranch != "" && snap.Branch != snap.TargetBranch
+	if snap.BranchSwitch {
+		snap.Diverged = false
+		snap.UpdateAvailable = true
+	} else {
+		snap.Diverged = ahead > 0 && behind > 0
+		snap.UpdateAvailable = snap.Behind > 0
+	}
 	snap.IncomingTotal = snap.Behind
 
 	logs, err := gitCmd(ctx, root, "log", "--format=%h\x1f%s", "-n", fmt.Sprint(maxIncoming), "HEAD.."+ref)

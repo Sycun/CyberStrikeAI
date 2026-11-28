@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"cyberstrike-ai/internal/audit"
+	"cyberstrike-ai/internal/config"
 	"cyberstrike-ai/internal/update"
 	"fmt"
 	"net/http"
@@ -43,10 +44,11 @@ type UpdateHandler struct {
 	// operator last saved it; an empty string means "not configured" and the official
 	// repository is used. A function rather than a value because the config can change
 	// while the process runs.
-	source func() string
-	// saveSource persists a new source through the config layer; nil means this start
-	// has no config to write to.
+	source     func() string
 	saveSource func(repo string) error
+	// Optional full update config hooks supporting repo + branch.
+	updateCfg     func() config.UpdateConfig
+	saveUpdateCfg func(cfg config.UpdateConfig) error
 	// baseline is the binary this process is actually running: the file on disk at
 	// construction time. An update, a rollback or a CLI run that replaces it leaves a
 	// different file behind, and that difference is what "restart to activate" means.
@@ -133,26 +135,44 @@ func restartSupervised() bool {
 		strings.TrimSpace(os.Getenv("JOURNAL_STREAM")) != ""
 }
 
-func (h *UpdateHandler) options() update.Options {
-	opts := update.Options{Root: h.root}
-	if h.source != nil {
-		opts.Repo = h.source()
+// WithUpdateConfig attaches repo+branch persistence callbacks.
+func (h *UpdateHandler) WithUpdateConfig(get func() config.UpdateConfig, save func(config.UpdateConfig) error) *UpdateHandler {
+	h.updateCfg = get
+	h.saveUpdateCfg = save
+	return h
+}
+
+func (h *UpdateHandler) currentConfig() config.UpdateConfig {
+	if h.updateCfg != nil {
+		return h.updateCfg()
 	}
-	return opts
+	if h.source != nil {
+		return config.UpdateConfig{Repo: h.source()}
+	}
+	return config.UpdateConfig{}
+}
+
+func (h *UpdateHandler) options() update.Options {
+	cfg := h.currentConfig()
+	return update.Options{
+		Root:   h.root,
+		Repo:   cfg.Repo,
+		Branch: cfg.Branch,
+	}
 }
 
 // sourceView is the configured source as the page edits it: the address (empty = the
-// official repository) plus the default, so the page never hardcodes a URL the server
-// would disagree with.
+// official repository), optional branch (empty = repository default branch), plus the default.
 func (h *UpdateHandler) sourceView() gin.H {
-	repo := ""
-	if h.source != nil {
-		repo = strings.TrimSpace(h.source())
-	}
+	cfg := h.currentConfig()
+	repo := strings.TrimSpace(cfg.Repo)
+	branch := strings.TrimSpace(cfg.Branch)
 	return gin.H{
-		"repo":        repo,
-		"configured":  repo != "",
-		"defaultRepo": update.DefaultRepoURL,
+		"repo":             repo,
+		"branch":           branch,
+		"configured":       repo != "",
+		"branchConfigured": branch != "",
+		"defaultRepo":      update.DefaultRepoURL,
 	}
 }
 
@@ -209,24 +229,54 @@ func (h *UpdateHandler) Check(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": snap})
 }
 
+// Branches answers GET /api/system/update/branches: lists remote branches of the
+// configured (or previewed via ?repo=...) update source repository via git ls-remote.
+func (h *UpdateHandler) Branches(c *gin.Context) {
+	opts := h.options()
+	if repoParam := strings.TrimSpace(c.Query("repo")); repoParam != "" {
+		if !update.ValidRemoteURL(repoParam) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仓库地址不合法（只允许 https/http/ssh/git/file:// 或本机绝对路径）"})
+			return
+		}
+		opts.Repo = repoParam
+	}
+	defaultBranch, branches, err := update.ListBranches(c.Request.Context(), opts)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	if branches == nil {
+		branches = []string{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"repo":          opts.Repo,
+		"defaultBranch": defaultBranch,
+		"branches":      branches,
+	})
+}
+
 // SaveSource answers POST /api/system/update/source: the operator picks which repository
-// this installation updates from - the official one, a mirror, or their own fork - and
-// the choice lands in the update section of config.yaml. An empty address clears the
-// setting, which means the official repository again.
+// and optional target branch this installation updates from.
 func (h *UpdateHandler) SaveSource(c *gin.Context) {
 	var body struct {
-		Repo string `json:"repo"`
+		Repo   string `json:"repo"`
+		Branch string `json:"branch"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体不是合法 JSON"})
 		return
 	}
 	body.Repo = strings.TrimSpace(body.Repo)
+	body.Branch = strings.TrimSpace(body.Branch)
 	if body.Repo != "" && !update.ValidRemoteURL(body.Repo) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "仓库地址不合法（只允许 https/http/ssh/git/file:// 或本机绝对路径）"})
 		return
 	}
-	if h.saveSource == nil {
+	if body.Branch != "" && !update.ValidName(body.Branch) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "目标分支名不合法"})
+		return
+	}
+	if h.saveUpdateCfg == nil && h.saveSource == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "本次启动没有接入配置保存，更新源改不了"})
 		return
 	}
@@ -240,16 +290,28 @@ func (h *UpdateHandler) SaveSource(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "更新进行中，不能切换更新源", "job": busy})
 		return
 	}
-	if err := h.saveSource(body.Repo); err != nil {
+	if h.saveUpdateCfg != nil {
+		err = h.saveUpdateCfg(config.UpdateConfig{Repo: body.Repo, Branch: body.Branch})
+	} else {
+		err = h.saveSource(body.Repo)
+	}
+	if err != nil {
 		h.record(c, "update.source", "failure", "保存更新源失败: "+err.Error(), map[string]interface{}{"error": err.Error()})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败：" + err.Error()})
 		return
 	}
-	message := "更新源已保存：" + body.Repo
-	if body.Repo == "" {
-		message = "已恢复默认更新源（官方仓库）"
+	message := "更新源已保存"
+	if body.Repo != "" {
+		message += "：" + body.Repo
+	} else {
+		message += "（官方仓库）"
 	}
-	h.record(c, "update.source", "success", message, map[string]interface{}{"repo": body.Repo})
+	if body.Branch != "" {
+		message += " / 分支 " + body.Branch
+	} else {
+		message += " / 默认分支"
+	}
+	h.record(c, "update.source", "success", message, map[string]interface{}{"repo": body.Repo, "branch": body.Branch})
 	c.JSON(http.StatusOK, gin.H{"source": h.sourceView()})
 }
 

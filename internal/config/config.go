@@ -57,11 +57,13 @@ type Config struct {
 	Update       UpdateConfig          `yaml:"update,omitempty" json:"update,omitempty"`
 }
 
-// UpdateConfig 一键更新的更新源（可选）：一个仓库地址，更新跟随该仓库的默认分支。
-// 留空即官方仓库（internal/update.DefaultRepoURL），跟随镜像或自己的二开只需改这一处。
+// UpdateConfig 一键更新的更新源（可选）：仓库地址与目标分支。
+// 仓库留空即官方仓库（internal/update.DefaultRepoURL）；分支留空即跟随该仓库的默认分支。
 type UpdateConfig struct {
 	// Repo 更新源仓库地址（https/http/ssh/git/file:// 或本机绝对路径）；留空 = 官方仓库。
 	Repo string `yaml:"repo,omitempty" json:"repo,omitempty"`
+	// Branch 目标分支名（如 main、feat/plugin-capability-platform）；留空 = 跟随仓库默认分支。
+	Branch string `yaml:"branch,omitempty" json:"branch,omitempty"`
 }
 
 type EnsureLocalConfigResult struct {

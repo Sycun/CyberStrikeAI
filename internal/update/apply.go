@@ -261,7 +261,11 @@ func Apply(ctx context.Context, opts Options, onStep func(Step)) (*Result, error
 		return res, nil
 	}
 
-	step("fetch", fmt.Sprintf("%s（默认分支 %s）有 %d 个新提交：%s → %s", snap.sourceLabel(), snap.TargetBranch, snap.Behind, snap.Commit, snap.RemoteCommit))
+	if snap.BranchSwitch {
+		step("fetch", fmt.Sprintf("准备切换分支 %s → %s（%s → %s）", snap.Branch, snap.TargetBranch, snap.Commit, snap.RemoteCommit))
+	} else {
+		step("fetch", fmt.Sprintf("%s（分支 %s）有 %d 个新提交：%s → %s", snap.sourceLabel(), snap.TargetBranch, snap.Behind, snap.Commit, snap.RemoteCommit))
+	}
 
 	// Put operator-owned content aside, and clear the paths the incoming change would
 	// write to, so the fast-forward cannot be refused by "your local changes would be
@@ -314,12 +318,19 @@ func Apply(ctx context.Context, opts Options, onStep func(Step)) (*Result, error
 		return nil, err
 	}
 
-	if out, err := gitCmd(ctx, root, "merge", "--ff-only", "--no-verify", ref); err != nil {
+	var moveOut string
+	var moveErr error
+	if snap.BranchSwitch {
+		moveOut, moveErr = gitCmd(ctx, root, "checkout", "-B", snap.TargetBranch, ref)
+	} else {
+		moveOut, moveErr = gitCmd(ctx, root, "merge", "--ff-only", "--no-verify", ref)
+	}
+	if moveErr != nil {
 		if restoreErr := restoreProtected(backupDir, kept); restoreErr != nil {
-			return nil, &Error{Reason: "backup_failed", Message: fmt.Sprintf("快进合并失败，恢复本地内容又失败：%v", restoreErr)}
+			return nil, &Error{Reason: "backup_failed", Message: fmt.Sprintf("更新工作树失败，恢复本地内容又失败：%v", restoreErr)}
 		}
 		_ = clearBuildPending(root)
-		return nil, &Error{Reason: "merge_failed", Message: fmt.Sprintf("快进合并失败：%v\n%s", err, strings.TrimSpace(out))}
+		return nil, &Error{Reason: "merge_failed", Message: fmt.Sprintf("更新工作树失败：%v\n%s", moveErr, strings.TrimSpace(moveOut))}
 	}
 	// The merge wrote upstream's version of the content paths; the operator's copies win
 	// them back, which is what "update the code, keep my work" means.

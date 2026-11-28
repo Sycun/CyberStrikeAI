@@ -2254,10 +2254,18 @@ func (h *ConfigHandler) ApplyConfig(c *gin.Context) {
 // SetUpdateSource 记录一键更新的更新源（单个仓库地址；空 = 回到官方仓库）。
 // 走与其他设置相同的写入路径：备份旧文件、按 YAML 文档只改 update 段、原子落盘。
 func (h *ConfigHandler) SetUpdateSource(repo string) error {
+	return h.SetUpdateConfig(config.UpdateConfig{Repo: repo})
+}
+
+// SetUpdateConfig 记录一键更新的仓库地址和目标分支（留空分别回到官方仓库/默认分支）。
+func (h *ConfigHandler) SetUpdateConfig(cfg config.UpdateConfig) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	previous := h.config.Update
-	h.config.Update = config.UpdateConfig{Repo: strings.TrimSpace(repo)}
+	h.config.Update = config.UpdateConfig{
+		Repo:   strings.TrimSpace(cfg.Repo),
+		Branch: strings.TrimSpace(cfg.Branch),
+	}
 	if err := h.saveConfig(); err != nil {
 		h.config.Update = previous
 		return err
@@ -2270,6 +2278,13 @@ func (h *ConfigHandler) UpdateSource() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.config.Update.Repo
+}
+
+// GetUpdateConfig 读当前配置的更新源仓库和目标分支。
+func (h *ConfigHandler) GetUpdateConfig() config.UpdateConfig {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.config.Update
 }
 
 // saveConfig 保存配置到文件
@@ -2430,18 +2445,27 @@ func updateMCPConfig(doc *yaml.Node, cfg config.MCPConfig) {
 	setIntInMap(mcpNode, "port", cfg.Port)
 }
 
-// updateUpdateSourceConfig 写入一键更新的更新源（update 段的单个 repo 字段）。
-// 留空时把整段删掉，而不是留下一个空的 update: 块——"没有配置"应当就是文件里没有这一段，
-// 运行时按官方仓库处理。
+// updateUpdateSourceConfig 写入一键更新的更新源（update 段的 repo 与可选 branch 字段）。
+// 两项均留空时把整段删掉，运行时按官方仓库默认分支处理。
 func updateUpdateSourceConfig(doc *yaml.Node, cfg config.UpdateConfig) {
 	root := doc.Content[0]
 	repo := strings.TrimSpace(cfg.Repo)
-	if repo == "" {
+	branch := strings.TrimSpace(cfg.Branch)
+	if repo == "" && branch == "" {
 		removeKeyFromMap(root, "update")
 		return
 	}
 	node := ensureMap(root, "update")
-	setStringInMap(node, "repo", repo)
+	if repo != "" {
+		setStringInMap(node, "repo", repo)
+	} else {
+		removeKeyFromMap(node, "repo")
+	}
+	if branch != "" {
+		setStringInMap(node, "branch", branch)
+	} else {
+		removeKeyFromMap(node, "branch")
+	}
 }
 
 func updateVisionConfig(doc *yaml.Node, cfg config.VisionConfig) {
