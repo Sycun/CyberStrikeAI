@@ -859,7 +859,7 @@ func (h *AgentHandler) ProcessMessageForRobot(ctx context.Context, platform stri
 		conversationID = conv.ID
 		_ = h.db.SetResourceOwner("conversation", conversationID, ownerUserID)
 	} else {
-		if _, getErr := h.db.GetConversation(conversationID); getErr != nil || !h.db.UserCanAccessResource(ownerUserID, principal.ScopeFor("chat:write"), "conversation", conversationID) {
+		if exists, getErr := h.db.ConversationExists(conversationID); getErr != nil || !exists || !h.db.UserCanAccessResource(ownerUserID, principal.ScopeFor("chat:write"), "conversation", conversationID) {
 			return "", "", fmt.Errorf("对话不存在")
 		}
 	}

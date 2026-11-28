@@ -115,7 +115,7 @@ func (h *AgentHandler) prepareMultiAgentSession(req *ChatRequest, c *gin.Context
 			_ = h.db.AssignResourceToUser(session.UserID, "conversation", conversationID)
 		}
 	} else {
-		if _, err := h.db.GetConversation(conversationID); err != nil {
+		if exists, err := h.db.ConversationExists(conversationID); err != nil || !exists {
 			return nil, fmt.Errorf("对话不存在")
 		}
 		if !canAccess("conversation", conversationID) {

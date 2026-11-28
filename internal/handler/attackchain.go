@@ -60,9 +60,8 @@ func (h *AttackChainHandler) GetAttackChain(c *gin.Context) {
 		return
 	}
 
-	// 检查对话是否存在
-	_, err := h.db.GetConversation(conversationID)
-	if err != nil {
+	// 检查对话是否存在（轻量校验，避免在命中缓存时加载全量过程详情）
+	if exists, err := h.db.ConversationExists(conversationID); err != nil || !exists {
 		h.logger.Warn("对话不存在", zap.String("conversationId", conversationID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "对话不存在"})
 		return
@@ -128,9 +127,8 @@ func (h *AttackChainHandler) RegenerateAttackChain(c *gin.Context) {
 		return
 	}
 
-	// 检查对话是否存在
-	_, err := h.db.GetConversation(conversationID)
-	if err != nil {
+	// 检查对话是否存在（轻量校验，避免在命中缓存时加载全量过程详情）
+	if exists, err := h.db.ConversationExists(conversationID); err != nil || !exists {
 		h.logger.Warn("对话不存在", zap.String("conversationId", conversationID), zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "对话不存在"})
 		return

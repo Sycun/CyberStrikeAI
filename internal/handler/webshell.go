@@ -656,7 +656,17 @@ func (h *WebShellHandler) GetAIHistory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
 		return
 	}
-	conv, err := h.db.GetConversationByWebshellConnectionID(id)
+	includeStr := strings.ToLower(strings.TrimSpace(c.DefaultQuery("include_process_details", "0")))
+	includeDetails := includeStr == "1" || includeStr == "true" || includeStr == "yes"
+	var (
+		conv *database.Conversation
+		err  error
+	)
+	if includeDetails {
+		conv, err = h.db.GetConversationByWebshellConnectionID(id)
+	} else {
+		conv, err = h.db.GetConversationByWebshellConnectionIDLite(id)
+	}
 	if err != nil {
 		h.logger.Warn("获取 WebShell AI 对话失败", zap.String("connectionId", id), zap.Error(err))
 		c.JSON(http.StatusOK, gin.H{"conversationId": nil, "messages": []database.Message{}})

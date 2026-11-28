@@ -1,5 +1,6 @@
 /** 通用异步数据装载：统一 loading / error / reload 语义，支持卸载自动取消与静默轮询防重入。 */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { runWithAbortSignal } from '../lib/http';
 
 export function useResource(loader, deps = [], { initial = null, skip = false } = {}) {
     const [data, setData] = useState(initial);
@@ -23,7 +24,7 @@ export function useResource(loader, deps = [], { initial = null, skip = false } 
         if (!options.silent) setLoading(true);
         setError(null);
         try {
-            const result = await loader({ signal: controller.signal });
+            const result = await runWithAbortSignal(controller.signal, () => loader({ signal: controller.signal }));
             if (!controller.signal.aborted && current === seq.current) setData(result);
             return result;
         } catch (err) {

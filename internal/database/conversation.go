@@ -287,6 +287,35 @@ func (db *DB) GetConversationByWebshellConnectionID(connectionID string) (*Conve
 	return &conv, nil
 }
 
+// GetConversationByWebshellConnectionIDLite 获取该 WebShell 连接下最近一条对话（仅消息正文，不加载 process_details）。
+func (db *DB) GetConversationByWebshellConnectionIDLite(connectionID string) (*Conversation, error) {
+	if connectionID == "" {
+		return nil, fmt.Errorf("connectionID is empty")
+	}
+	var conv Conversation
+	var createdAt, updatedAt string
+	var pinned int
+	err := db.QueryRow(
+		"SELECT id, title, pinned, created_at, updated_at FROM conversations WHERE webshell_connection_id = ? ORDER BY updated_at DESC LIMIT 1",
+		connectionID,
+	).Scan(&conv.ID, &conv.Title, &pinned, &createdAt, &updatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("查询对话失败: %w", err)
+	}
+	conv.Pinned = pinned != 0
+	conv.CreatedAt = parseDBTime(createdAt)
+	conv.UpdatedAt = parseDBTime(updatedAt)
+	messages, err := db.GetMessagesLite(conv.ID)
+	if err != nil {
+		return nil, fmt.Errorf("加载消息失败: %w", err)
+	}
+	conv.Messages = messages
+	return &conv, nil
+}
+
 // WebShellConversationItem 用于侧边栏列表，不含消息
 type WebShellConversationItem struct {
 	ID        string    `json:"id"`
@@ -1552,7 +1581,7 @@ func turnSliceRange(msgs []Message, anchorID string) (start, end int, err error)
 
 // DeleteConversationTurn 删除锚点所在轮次的全部消息（用户提问 + 该轮助手回复等），并清空 last_react_*，避免与消息表不一致。
 func (db *DB) DeleteConversationTurn(conversationID, anchorMessageID string) (deletedIDs []string, err error) {
-	msgs, err := db.GetMessages(conversationID)
+	msgs, err := db.GetMessagesLite(conversationID)
 	if err != nil {
 		return nil, err
 	}

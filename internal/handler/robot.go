@@ -421,7 +421,7 @@ func (h *RobotHandler) HandleMessage(platform, userID, text string) (reply strin
 		return "无法创建或获取对话，请稍后再试。"
 	}
 	// 若对话标题为「新对话 xx:xx」格式（由「新对话」命令创建），将标题更新为首条消息内容，与 Web 端体验一致
-	if conv, err := h.db.GetConversation(convID); err == nil && strings.HasPrefix(conv.Title, "新对话 ") {
+	if curTitle, err := h.db.GetConversationTitle(convID); err == nil && strings.HasPrefix(curTitle, "新对话 ") {
 		newTitle := safeTruncateString(text, 50)
 		if newTitle != "" {
 			_ = h.db.UpdateConversationTitle(convID, newTitle)
@@ -717,12 +717,12 @@ func (h *RobotHandler) cmdSwitch(platform, userID, convID string) string {
 	if accessErr != nil {
 		return "当前平台账号尚未绑定。"
 	}
-	conv, err := h.db.GetConversation(convID)
+	title, err := h.db.GetConversationTitle(convID)
 	if err != nil || !h.db.UserCanAccessResource(access.User.ID, robotPrincipal(access).ScopeFor("chat:read"), "conversation", convID) {
 		return "对话不存在或 ID 错误。"
 	}
-	h.setConversation(platform, userID, conv.ID)
-	return fmt.Sprintf("已切换到对话：「%s」\nID: %s", conv.Title, conv.ID)
+	h.setConversation(platform, userID, convID)
+	return fmt.Sprintf("已切换到对话：「%s」\nID: %s", title, convID)
 }
 
 func (h *RobotHandler) cmdNew(platform, userID string) string {
@@ -768,14 +768,14 @@ func (h *RobotHandler) cmdStatus(platform, userID string) string {
 	if !h.db.UserCanAccessResource(access.User.ID, robotPrincipal(access).ScopeFor("chat:read"), "conversation", convID) {
 		return "当前对话不存在或无权访问。"
 	}
-	conv, err := h.db.GetConversation(convID)
+	title, err := h.db.GetConversationTitle(convID)
 	if err != nil {
 		return "当前对话 ID: " + convID + "（获取标题失败）"
 	}
 	role := h.getRole(platform, userID)
-	reply := fmt.Sprintf("【当前状态】\n当前对话: %s\n对话 ID: %s\n当前模式: %s\n当前角色: %s", conv.Title, conv.ID, robotAgentModeLabel(h.getAgentMode(platform, userID)), role)
+	reply := fmt.Sprintf("【当前状态】\n当前对话: %s\n对话 ID: %s\n当前模式: %s\n当前角色: %s", title, convID, robotAgentModeLabel(h.getAgentMode(platform, userID)), role)
 	if h.projectsEnabled() {
-		projectID, _ := h.db.GetConversationProjectID(conv.ID)
+		projectID, _ := h.db.GetConversationProjectID(convID)
 		reply += "\n当前项目: " + h.formatProjectLabel(projectID)
 	} else {
 		reply += "\n当前项目: 未启用"

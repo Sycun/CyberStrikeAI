@@ -35,6 +35,7 @@ export function writeStoredAuth(session) {
 }
 
 let currentToken = null;
+let activeGetSignal = null;
 
 export function setAuthToken(token) {
     currentToken = token || null;
@@ -42,6 +43,20 @@ export function setAuthToken(token) {
 
 export function getAuthToken() {
     return currentToken;
+}
+
+/**
+ * 在同步启动一组只读请求期间绑定默认 AbortSignal（由 useResource 调用），
+ * 使全站各页面未显式透传 signal 的 api.get / Promise.all 请求在切页卸载时也能自动中止底层 fetch。
+ */
+export function runWithAbortSignal(signal, fn) {
+    const previous = activeGetSignal;
+    activeGetSignal = signal || null;
+    try {
+        return fn();
+    } finally {
+        activeGetSignal = previous;
+    }
 }
 
 export class ApiError extends Error {
@@ -85,7 +100,10 @@ async function readError(response) {
 }
 
 export async function request(path, options = {}) {
-    const { method = 'GET', body, query, headers = {}, signal, raw = false, timeout = 60000 } = options;
+    const { method = 'GET', body, query, headers = {}, signal: explicitSignal, raw = false, timeout = 60000 } = options;
+    const signal = explicitSignal !== undefined
+        ? explicitSignal
+        : (method.toUpperCase() === 'GET' ? activeGetSignal : undefined);
     const finalHeaders = { Accept: 'application/json', ...headers };
     let payload = body;
     if (body !== undefined && body !== null && !(body instanceof FormData) && typeof body !== 'string' && !(body instanceof Blob)) {

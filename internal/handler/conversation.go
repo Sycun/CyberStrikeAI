@@ -126,7 +126,7 @@ func (h *ConversationHandler) SetConversationProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if _, err := h.db.GetConversation(id); err != nil {
+	if exists, err := h.db.ConversationExists(id); err != nil || !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "对话不存在"})
 		return
 	}
@@ -602,8 +602,8 @@ func (h *ConversationHandler) UpdateConversation(c *gin.Context) {
 		return
 	}
 
-	// 返回更新后的对话
-	conv, err := h.db.GetConversation(id)
+	// 返回更新后的对话（轻量元数据与消息，避免重命名时加载大体量过程详情）
+	conv, err := h.db.GetConversationLite(id)
 	if err != nil {
 		h.logger.Error("获取更新后的对话失败", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -660,7 +660,7 @@ func (h *ConversationHandler) DeleteConversationTurn(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.db.GetConversation(conversationID); err != nil {
+	if exists, err := h.db.ConversationExists(conversationID); err != nil || !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "对话不存在"})
 		return
 	}
